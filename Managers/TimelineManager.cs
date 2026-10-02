@@ -22,12 +22,11 @@ public unsafe class TimelineManager
 
         try
         {
-            chara->Mode = Character.CharacterModes.Normal;
-            chara->PlayTimeline(anim.TimelineId);
+            chara->PlayTimeline(anim.TimelineId, 0);
 
             if (anim.FacialExpressionId > 0)
             {
-                chara->PlayTimeline(anim.FacialExpressionId);
+                chara->PlayTimeline(anim.FacialExpressionId, 0);
             }
         }
         catch (Exception ex)
@@ -45,7 +44,7 @@ public unsafe class TimelineManager
 
         try
         {
-            chara->PlayTimeline(facialId);
+            chara->PlayTimeline(facialId, 0);
         }
         catch (Exception ex)
         {
@@ -62,8 +61,8 @@ public unsafe class TimelineManager
 
         try
         {
-            chara->StopTimeline();
-            chara->PlayTimeline(1); // 1 = Default Idle
+            chara->StopTimeline(0);
+            chara->PlayTimeline(1, 0); // 1 = Default Idle
         }
         catch (Exception ex)
         {

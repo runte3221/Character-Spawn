@@ -29,29 +29,30 @@ public unsafe class NamePlateController : IDisposable
         }
     }
 
-    private void OnNamePlateUpdate(INamePlateUpdateHandler handler)
+    private void OnNamePlateUpdate(INamePlateUpdateContext context, IReadOnlyList<INamePlateUpdateHandler> handlers)
     {
         var spawned = getActors();
         if (spawned.Count == 0) return;
 
-        var go = handler.GameObject;
-        if (go == null) return;
-
-        var charaAddr = (nint)go.Address;
-        var match = spawned.FirstOrDefault(a => a.NativeAddress == charaAddr);
-        if (match == null) return;
-
-        // 非表示設定の場合
-        if (!match.NamePlate.Show)
+        foreach (var handler in handlers)
         {
-            handler.RemoveName();
-            return;
-        }
+            var go = handler.GameObject;
+            if (go == null) continue;
 
-        // カスタム名が指定されている場合
-        if (!string.IsNullOrWhiteSpace(match.NamePlate.CustomName))
-        {
-            handler.Name = match.NamePlate.CustomName;
+            var charaAddr = (nint)go.Address;
+            var match = spawned.FirstOrDefault(a => a.NativeAddress == charaAddr);
+            if (match == null) continue;
+
+            // 非表示設定の場合
+            if (!match.NamePlate.Show)
+            {
+                handler.RemoveName();
+            }
+            // カスタム名が指定されている場合
+            else if (!string.IsNullOrWhiteSpace(match.NamePlate.CustomName))
+            {
+                handler.Name = match.NamePlate.CustomName;
+            }
         }
     }
 

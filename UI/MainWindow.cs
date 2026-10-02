@@ -16,8 +16,6 @@ public class MainWindow : Window, IDisposable
     private readonly ActorManager actorManager;
     private readonly IPluginLog log;
 
-    private int activeTab = 0;
-
     public MainWindow(
         Configuration configuration,
         CharacterLibraryTab libraryTab,
@@ -49,21 +47,18 @@ public class MainWindow : Window, IDisposable
         {
             if (ImGui.BeginTabItem("Character Library"))
             {
-                activeTab = 0;
                 libraryTab.Draw(OnSpawnRequested);
                 ImGui.EndTabItem();
             }
 
             if (ImGui.BeginTabItem("Stage & Scene"))
             {
-                activeTab = 1;
                 stageTab.Draw();
                 ImGui.EndTabItem();
             }
 
             if (ImGui.BeginTabItem("Settings"))
             {
-                activeTab = 2;
                 DrawSettingsTab();
                 ImGui.EndTabItem();
             }

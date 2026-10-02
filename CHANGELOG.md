@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2026-10-02
+### Fixed
+- Fixed `OnTerritoryChanged` signature to `uint` parameter.
+- Fixed `PlayTimeline` and `StopTimeline` calls to supply required slot parameter.
+- Fixed `OnNamePlateUpdate` signature to `(INamePlateUpdateContext, IReadOnlyList<INamePlateUpdateHandler>)`.
+- Removed unused `activeTab` field in `MainWindow`.
+
 ## [0.1.2] - 2026-10-02
 ### Fixed
 - Fixed compilation error by switching from deprecated `ImGuiNET` to Dalamud API 15 standard `Dalamud.Bindings.ImGui`.

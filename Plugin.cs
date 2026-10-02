@@ -109,7 +109,7 @@ public sealed class Plugin : IDalamudPlugin
         actorManager.UpdateFrame();
     }
 
-    private void OnTerritoryChanged(ushort territoryType)
+    private void OnTerritoryChanged(uint territoryType)
     {
         // ゾーン移動時は安全に現在のアクターを破棄
         actorManager.DespawnAll();
