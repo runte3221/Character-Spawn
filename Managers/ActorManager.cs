@@ -130,7 +130,7 @@ public unsafe class ActorManager : IDisposable
                         var equipSpan = nativeChara->DrawData.EquipmentModelIds;
                         for (int i = 0; i < template.NpcEquipmentModelIds.Length && i < equipSpan.Length; i++)
                         {
-                            equipSpan[i] = template.NpcEquipmentModelIds[i];
+                            equipSpan[i] = new EquipmentModelId { Value = template.NpcEquipmentModelIds[i] };
                         }
                     }
 
