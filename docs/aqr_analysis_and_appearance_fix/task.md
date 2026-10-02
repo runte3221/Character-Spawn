@@ -24,6 +24,10 @@
 - [x] **デッドコード・残骸ポーリングの完全クリーンアップ**
   - [x] 未使用の `readyJobs`, `pendingNpcJobs` クラスおよびポーリングループを完全削除
   - [x] `UpdateFrame` を視線追従と `monsterRedrawJobs` のみにスリム化
+- [x] **3Dモデル不可視化（ギズモのみ表示）の修正 (`ActorManager.cs`)**
+  - [x] `SpawnCharacter` での `nativeChara->GameObject.EnableDraw()` の復元
+  - [x] 各パイプライン（A/B/C）完了直後の `EnableDraw()` 呼び出し
+  - [x] `UpdateFrame` での `IsReadyToDraw() -> EnableDraw()` 継続的可視化ループの追加
 - [x] **② シーン作成・演出機能の透過的連動確認**
   - [x] 全パイプライン（A/B/C/D）のアクターに対するギズモ移動・配置記録
   - [x] アニメーション（エモート、表情、ループ）、視線追従の適用確認

@@ -17,7 +17,7 @@ Write-Host "==========================================================" -Foregro
 # Step 1: Bump version and validate manifests
 Write-Host "`n[Step 1/5] Bumping version across all manifests..." -ForegroundColor Yellow
 & "$PSScriptRoot\bump-version.ps1" -Version $Version
-if ($LASTEXITCODE -ne 0) {
+if (-not $?) {
     throw "Version bump failed!"
 }
 
@@ -53,7 +53,7 @@ for ($i = 1; $i -le $maxAttempts; $i++) {
         $res = Invoke-RestMethod -Uri "https://api.github.com/repos/runte3221/Character-Spawn/actions/runs?per_page=1"
         $latestRun = $res.workflow_runs | Select-Object -First 1
         if ($latestRun) {
-            Write-Host "  Attempt $i/$maxAttempts: Status = $($latestRun.status), Conclusion = $($latestRun.conclusion) ($($latestRun.html_url))"
+            Write-Host "  Attempt $i/$($maxAttempts): Status = $($latestRun.status), Conclusion = $($latestRun.conclusion) ($($latestRun.html_url))"
             if ($latestRun.status -eq "completed") {
                 if ($latestRun.conclusion -eq "success") {
                     $runSuccess = $true
@@ -93,13 +93,13 @@ for ($j = 1; $j -le $cdnMaxAttempts; $j++) {
                 $cdnSuccess = $true
                 break
             } else {
-                Write-Host "  Attempt $j/$cdnMaxAttempts: CDN still serving version '$($entry.AssemblyVersion)'. Waiting 10s for Fastly CDN cache expiry..."
+                Write-Host "  Attempt $j/$($cdnMaxAttempts): CDN still serving version '$($entry.AssemblyVersion)'. Waiting 10s for Fastly CDN cache expiry..."
             }
         } else {
-            Write-Host "  Attempt $j/$cdnMaxAttempts: CDN still serving old non-array format. Waiting 10s for Fastly CDN cache expiry..."
+            Write-Host "  Attempt $j/$($cdnMaxAttempts): CDN still serving old non-array format. Waiting 10s for Fastly CDN cache expiry..."
         }
     } catch {
-        Write-Host "  Attempt $j/$cdnMaxAttempts: Request error ($_) - retrying in 10s..."
+        Write-Host "  Attempt $j/$($cdnMaxAttempts): Request error ($_) - retrying in 10s..."
     }
     Start-Sleep -Seconds 10
 }

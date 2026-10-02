@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.43] - 2026-10-03
+### Fixed
+- **スポーンアクターの3Dモデル不可視化（ギズモのみ表示）の根本解決**:
+  - **根本原因の解明 (Brio ActorSpawnService 比較解析)**:
+    - v0.1.42 で不要なポーリングキュー（`readyJobs`）を削除した際、ゲームエンジンの描画有効化処理（`nativeChara->GameObject.EnableDraw()`）の呼び出しまで除去されていたため、アクター生成後にゲームエンジンが 3D メッシュのロード・レンダリングを開始せず、不可視（ギズモのみ）のまま固まっていた。
+  - **対策 1: Brio / AQR 黄金律 `EnableDraw` の完全復元**:
+    - `SpawnCharacter` でのベースライン設定時、および各パイプライン（A: Glamourer/Penumbra、B: MCDF、C: NPC）の完了直後に `nativeChara->GameObject.EnableDraw()` を明示的に呼び出し、即時レンダリングを開始。
+  - **対策 2: 継続的描画可視化ループの追加 (`UpdateFrame`)**:
+    - `UpdateFrame` 内で全アクティブアクターの描画状態を監視し、`IsReadyToDraw() -> EnableDraw()` の実行および `DrawObject` の非表示フラグ（0x10）の解除を自動保証（モンスターパイプライン D の Redraw 待機中は干渉しないよう安全に除外）。
+
 ## [0.1.42] - 2026-10-03
 ### Fixed
 - **AQR (AQuestReborn) ＆ HDM (Housing Decorator/Doll Master) 参照仕様の完全分離と4系統独立パイプライン構築**:

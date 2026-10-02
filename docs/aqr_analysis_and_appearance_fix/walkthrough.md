@@ -97,4 +97,22 @@ Dalamud プラグインインストーラで「ダウンロードが失敗しま
    - 公開された raw.githubusercontent.com 上の `repo.json` の配列パース検証
    を一貫して自動実行し、リリースの不整合を完全に根絶。
 
+---
+
+## 7. 3Dモデル不可視化（ギズモのみ表示）の修正 (`0.1.43.0`)
+
+### 発生した問題
+自キャラ（Ruma Meow）の誤爆は根絶されたが、スポーンさせたパペット（Kimo-1-Nude）の座標にギズモのみが表示され、アクターの 3D モデル（姿）が表示されない。
+
+### 原因
+Brio の `ActorSpawnService.cs` および `ActorRedrawService.cs` と比較解析した結果、Brio ではアクター生成後に必ず `EnableDraw`（`IsReadyToDraw() -> EnableDraw()`）を実行している。
+v0.1.42 で旧ポーリングキュー（`readyJobs`）を削除した際、`EnableDraw()` の呼び出しまで一緒に除去されていたため、ゲームエンジンが 3D メッシュのロード・レンダリングを開始せず不可視のまま固まっていた。
+
+### 対策
+1. **`SpawnCharacter` 内での `EnableDraw()` 復元**:
+   ベースライン生成時、および各パイプライン（A/B/C）の完了直後に `nativeChara->GameObject.EnableDraw()` を呼び出し、即時レンダリングを開始。
+2. **`UpdateFrame` 内での描画状態継続保証**:
+   全アクティブアクターを毎フレーム監視し、`IsReadyToDraw()` に達したアクターに `EnableDraw()` を実行。また、DrawObject の非表示フラグ（`0x10`）を自動解除。
+
+
 

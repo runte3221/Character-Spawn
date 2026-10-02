@@ -254,6 +254,9 @@ public unsafe class ActorManager : IDisposable
             nativeChara->GameObject.DefaultRotation = rot;
             nativeChara->Alpha = 1.0f;
 
+            // 描画開始 (Brio / AQR 黄金律: EnableDraw)
+            nativeChara->GameObject.EnableDraw();
+
             // グローバルインデックスの解決 (Two Index Spaces Trap 対策)
             var objRef = objectTable.CreateObjectReference((nint)nativeChara) as ICharacter;
             if (objRef == null)
@@ -336,6 +339,7 @@ public unsafe class ActorManager : IDisposable
             if (template.SourceType == CharacterSourceType.Npc)
             {
                 ApplyNpcAppearance(nativeChara, globalIdx, template, spawned);
+                nativeChara->GameObject.EnableDraw();
                 spawned.IsReady = true;
 
                 activeActors.Add(spawned);
@@ -349,6 +353,7 @@ public unsafe class ActorManager : IDisposable
             // =========================================================================
             // スポーン完了直後に同一フレーム・同一コンテキストで即時直列実行！
             ApplyAppearanceDirect(nativeChara, globalIdx, template, spawned);
+            nativeChara->GameObject.EnableDraw();
             spawned.IsReady = true;
 
             activeActors.Add(spawned);
@@ -620,6 +625,41 @@ public unsafe class ActorManager : IDisposable
                         logManager?.Error($"MonsterRedrawJob exception: {ex}");
                         if (i < monsterRedrawJobs.Count) monsterRedrawJobs.RemoveAt(i);
                     }
+                }
+            }
+
+            // 全アクティブアクターの描画可視化保証 (Brio DrawWhenReady & AQR 準拠)
+            foreach (var actor in activeActors)
+            {
+                if (actor.NativeAddress == 0) continue;
+                if (actor.GlobalIndex >= objectTable.Length) continue;
+
+                var obj = objectTable[actor.GlobalIndex];
+                if (obj is not ICharacter charaObj || charaObj.Address == nint.Zero) continue;
+                var chara = (Character*)charaObj.Address;
+
+                // モンスターの再描画待機中（DisableDraw中）は干渉しない
+                if (monsterRedrawJobs.Any(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex)) continue;
+
+                // 1. DrawObject が存在する場合、非表示フラグ(0x10)があれば解除
+                if (chara->GameObject.DrawObject != null)
+                {
+                    if ((chara->GameObject.DrawObject->Flags & 0x10) != 0)
+                    {
+                        chara->GameObject.DrawObject->Flags &= unchecked((byte)~0x10);
+                        chara->GameObject.EnableDraw();
+                    }
+                }
+                else
+                {
+                    // DrawObject 未生成なら EnableDraw を試行
+                    chara->GameObject.EnableDraw();
+                }
+
+                // 2. 描画準備完了状態なら確実に EnableDraw を実行
+                if (chara->GameObject.IsReadyToDraw())
+                {
+                    chara->GameObject.EnableDraw();
                 }
             }
         }
