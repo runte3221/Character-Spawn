@@ -307,6 +307,20 @@ public class CharacterLibraryTab
                 return;
             }
 
+            ImGui.SameLine();
+
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.2f, 0.45f, 0.7f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.3f, 0.55f, 0.85f, 1.0f));
+            if (ImGui.Button("Revert Player", new Vector2(100, 26)))
+            {
+                actorManager.RevertLocalPlayer();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Restore Local Player's original appearance and Penumbra collection.");
+            }
+            ImGui.PopStyleColor(2);
+
             ImGui.Spacing();
 
             // スポーン状態に応じた表示

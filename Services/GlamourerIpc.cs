@@ -837,7 +837,10 @@ public class GlamourerIpc
     /// <summary>
     /// 自キャラ (LocalPlayer Index 0) の Glamourer ステートを解除・リバートして本来の姿を復元
     /// </summary>
-    public bool RevertLocalPlayer(string? playerName = null)
+    /// <summary>
+    /// 自キャラ (LocalPlayer Index 0) の Glamourer ステートを解除・リバートして本来の姿を復元
+    /// </summary>
+    public bool RevertLocalPlayer(string? playerName = null, ICharacter? playerCharacter = null)
     {
         if (!IsAvailable) return false;
         try
@@ -845,6 +848,19 @@ public class GlamourerIpc
             log.Information($"Reverting LocalPlayer (Index 0, Name: '{playerName}') in Glamourer...");
             UnlockState(0, playerName);
             bool ok = false;
+
+            // 1. Direct ICharacter Revert (Mare / AQR 黄金パターン)
+            if (playerCharacter != null && revertCharacter != null)
+            {
+                try
+                {
+                    revertCharacter.InvokeAction(playerCharacter);
+                    ok = true;
+                }
+                catch { }
+            }
+
+            // 2. Name-based Revert
             if (!string.IsNullOrWhiteSpace(playerName) && revertStateNameV2Ulong != null)
             {
                 try
@@ -854,6 +870,8 @@ public class GlamourerIpc
                 }
                 catch { }
             }
+
+            // 3. Index 0 Revert
             if (revertStateV2Ulong != null)
             {
                 try
@@ -872,10 +890,17 @@ public class GlamourerIpc
                 }
                 catch { }
             }
+
+            // 4. Revert to Automation (自動復元設定の反映)
             if (revertToAutomationV2Ulong != null)
             {
                 try { revertToAutomationV2Ulong.InvokeFunc(0, 0, 7UL); } catch { }
             }
+            else if (revertToAutomationV2Uint != null)
+            {
+                try { revertToAutomationV2Uint.InvokeFunc(0, 0, 7U); } catch { }
+            }
+
             return ok;
         }
         catch (Exception ex)

@@ -29,6 +29,7 @@ public unsafe class ActorManager : IDisposable
     private readonly IDalamudPluginInterface? pluginInterface;
     private readonly CustomizePlusIpc? customizePlusIpc;
     private readonly GameDataService? gameDataService;
+    private readonly IFramework? framework;
 
     private readonly List<SpawnedActorData> activeActors = new();
     private readonly List<ushort> createdIndexes = new();
@@ -84,7 +85,8 @@ public unsafe class ActorManager : IDisposable
         McdfParser? mcdfParser = null,
         IDalamudPluginInterface? pluginInterface = null,
         CustomizePlusIpc? customizePlusIpc = null,
-        GameDataService? gameDataService = null)
+        GameDataService? gameDataService = null,
+        IFramework? framework = null)
     {
         this.clientState = clientState;
         this.objectTable = objectTable;
@@ -98,6 +100,7 @@ public unsafe class ActorManager : IDisposable
         this.pluginInterface = pluginInterface;
         this.customizePlusIpc = customizePlusIpc;
         this.gameDataService = gameDataService;
+        this.framework = framework;
 
         this.clientState.TerritoryChanged += OnTerritoryChanged;
     }
@@ -330,9 +333,10 @@ public unsafe class ActorManager : IDisposable
 
             // 4. MCDF および通常Penumbraコレクションの初期事前適用 (0.1.23 準拠)
             // ゲームエンジンが DrawObject を構築する前にコレクションを割り当てることで、MODテクスチャを初回から正しくバインドさせる
+            // ※ Glamourer はまだ ActorObjectManager に登録されていないため、ここではコレクションのみ割り当て、Glamourer は ReadyJob で適用する
             if (template.ModelCharaId == 0 && template.SourceType != CharacterSourceType.Npc)
             {
-                ApplyAppearanceDirect(nativeChara, globalIdx, template, spawned);
+                ApplyAppearanceDirect(nativeChara, globalIdx, template, spawned, applyGlamourer: false);
             }
 
             // 5. 描画準備完了待機ジョブにエンキュー（IsReadyToDraw() を待って EnableDraw() を実行）
@@ -887,18 +891,18 @@ public unsafe class ActorManager : IDisposable
     /// 外見（Glamourer / Penumbra / MCDF）の即時直接適用
     /// HDM & AQR アーキテクチャ準拠
     /// </summary>
-    public void ApplyAppearanceDirect(Character* chara, ushort globalIndex, CharacterTemplate template, SpawnedActorData? spawned = null)
+    public void ApplyAppearanceDirect(Character* chara, ushort globalIndex, CharacterTemplate template, SpawnedActorData? spawned = null, bool applyGlamourer = true)
     {
         if (chara == null) return;
         int actorIndex = (int)globalIndex;
 
-        logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId})...");
+        logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId}, ApplyGlamourer: {applyGlamourer})...");
 
         // Fresh な ICharacter 参照を ObjectTable から解決 (AQuestReborn 準拠: 生ポインタに直接外見適用)
         var charaObj = (globalIndex < objectTable.Length) ? objectTable[globalIndex] as ICharacter : null;
 
         // 前のキャラのステートや割り当てをリセット
-        if (glamourerIpc != null && glamourerIpc.IsAvailable)
+        if (applyGlamourer && glamourerIpc != null && glamourerIpc.IsAvailable)
         {
             glamourerIpc.UnlockState(actorIndex, spawned?.PuppetName);
             if (!string.IsNullOrEmpty(spawned?.DisplayName) && spawned.DisplayName != spawned.PuppetName)
@@ -911,8 +915,6 @@ public unsafe class ActorManager : IDisposable
         {
             penumbraIpc.UnassignCollectionForActor(actorIndex);
         }
-
-
 
         // 1. MCDF の場合: AQR / Mare 準拠（内包 Mod ファイルのキャッシュ展開 + Penumbra Temporary Collection + Glamourer）
         if (template.SourceType == CharacterSourceType.Mcdf)
@@ -951,6 +953,12 @@ public unsafe class ActorManager : IDisposable
                                 }
                                 logManager?.Info($"MCDF: Assigned Penumbra temporary collection {tempGuid} to actor #{actorIndex} (Success: {assignOk}) with {bundle.ModPaths.Count} mod files.");
                             }
+                        }
+
+                        // 事前適用フェーズ（まだ描画準備未完了）の場合はコレクション割り当てのみで一旦戻る
+                        if (!applyGlamourer)
+                        {
+                            return;
                         }
 
                         // Glamourer デザインの適用 (ICharacter ポインタ直接適用で自キャラ誤爆を 100% 根絶)
@@ -1001,7 +1009,7 @@ public unsafe class ActorManager : IDisposable
         {
             bool penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
             logManager?.Info($"Penumbra SetCollection '{template.PenumbraCollectionName}' on Global#{actorIndex}: {penSuccess}");
-            if (penSuccess)
+            if (penSuccess && applyGlamourer)
             {
                 penumbraIpc.Redraw(actorIndex);
             }
@@ -1041,6 +1049,12 @@ public unsafe class ActorManager : IDisposable
                 penumbraIpc.Redraw(actorIndex);
             }
             logManager?.Info($"Applied Humanoid NPC appearance to Global#{actorIndex}.");
+            return;
+        }
+
+        // 事前適用フェーズ（まだ描画準備未完了）の場合はここで終了。Glamourer は ReadyJob で適用する
+        if (!applyGlamourer)
+        {
             return;
         }
 
@@ -1233,20 +1247,36 @@ public unsafe class ActorManager : IDisposable
     }
 
     /// <summary>
-    /// 自キャラ (LocalPlayer Index 0) の Glamourer ステートをリバートして本来の姿に復元する
+    /// 自キャラ (LocalPlayer Index 0) の Glamourer ステートおよび Penumbra コレクションをリバートして本来の姿に復元する
     /// </summary>
     public void RevertLocalPlayer()
     {
-        try
+        void ExecuteRevert()
         {
-            var player = objectTable.Length > 0 ? objectTable[0] : null;
-            string? name = player?.Name.TextValue;
-            glamourerIpc?.RevertLocalPlayer(name);
-            logManager?.Info($"Reverted LocalPlayer state via Glamourer (Name: '{name}').");
+            try
+            {
+                var player = objectTable.Length > 0 ? objectTable[0] as ICharacter : null;
+                string? name = player?.Name.TextValue;
+                glamourerIpc?.RevertLocalPlayer(name, player);
+                if (penumbraIpc != null && penumbraIpc.IsAvailable)
+                {
+                    penumbraIpc.UnassignCollectionForActor(0);
+                }
+                logManager?.Info($"Reverted LocalPlayer state via Glamourer & Penumbra on main thread (Name: '{name}').");
+            }
+            catch (Exception ex)
+            {
+                logManager?.Warning($"RevertLocalPlayer failed: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+
+        if (framework != null)
         {
-            logManager?.Warning($"RevertLocalPlayer failed: {ex.Message}");
+            framework.RunOnFrameworkThread(ExecuteRevert);
+        }
+        else
+        {
+            ExecuteRevert();
         }
     }
 

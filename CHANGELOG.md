@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.41] - 2026-10-03
+### Fixed
+- **AQuestReborn (AQR) 実装完全解析 & Proteus 外部干渉防御による自キャラ変身根絶と外見適用の完全分離**:
+  - **根本原因 1: `RevertLocalPlayer` のメインスレッド外呼び出し (`Not on main thread!`) の解消**:
+    - v0.1.40 で追加した自動 Revert が、プラグイン初期化スレッド（非メインスレッド）から呼ばれたため `Not on main thread!` 例外となり、過去のテストで変身していた自キャラが元に戻っていなかった。
+    - `Framework.RunOnFrameworkThread` でメインスレッド上での確実な自キャラ復元を保証。さらに `revertCharacter`（ICharacter 直接）も併用し、自キャラの本来の姿と Penumbra コレクションを確実に復元。
+  - **根本原因 2: スポーン直後での Glamourer 呼び出しによる未登録エラーと Proteus 誤爆の完全排除**:
+    - アクター生成直後（`SpawnCharacter` 内）は、まだ Glamourer の `ActorObjectManager` にアクターが登録されていないため、外見適用が失敗し、さらに外部プラグイン `Proteus` が `DesignApplied` シグナルを検知して自キャラの Penumbra コレクション（`GetPlayerCollectionId()`）を上書きしてしまっていた。
+    - **対策**: スポーン直後は Penumbra コレクションの事前割り当てのみ（`applyGlamourer: false`）に限定し、Glamourer デザインの適用および Redraw はアクターの描画準備が整った `ReadyJob`（メインスレッド）でのみ実行するよう完全分離。
+  - **根本原因 3: UI 上での自キャラ即時復元ボタンの追加**:
+    - Character タブの操作ボタン並びに「Revert Player」ボタンを追加し、ワンクリックでいつでも自キャラを本来の姿・コレクションに復元可能に。
+
 ## [0.1.40] - 2026-10-03
 ### Fixed
 - **AQuestReborn (AQR) ソースコード・MCDF-Loader・0.1.23完全同期による MCDF/Penumbra/Glamourer 適用不具合および自キャラ誤認の根本解決**:

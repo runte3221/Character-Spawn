@@ -69,7 +69,7 @@ public sealed class Plugin : IDalamudPlugin
         // Managers
         timelineManager = new TimelineManager(Log);
         headTrackingManager = new HeadTrackingManager(ObjectTable, Log);
-        actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser, PluginInterface, customizePlusIpc, gameDataService);
+        actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser, PluginInterface, customizePlusIpc, gameDataService, Framework);
         namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
 
         // UI
@@ -99,8 +99,11 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update += OnFrameworkUpdate;
         ClientState.TerritoryChanged += OnTerritoryChanged;
 
-        // 過去のセッションで自キャラがGlamourerによって誤変身させられていた場合の自動復元
-        try { actorManager.RevertLocalPlayer(); } catch { }
+        // 過去のセッションで自キャラがGlamourerによって誤変身させられていた場合の自動復元 (メインスレッド上で安全に実行)
+        Framework.RunOnFrameworkThread(() =>
+        {
+            try { actorManager.RevertLocalPlayer(); } catch { }
+        });
 
         logManager.Info("Character Spawn initialized successfully.");
     }
