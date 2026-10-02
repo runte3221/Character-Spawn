@@ -18,5 +18,9 @@
    - ギズモ操作中（ホバー・ドラッグ中）は `NoInputs` を解除してクリック透過を遮断し、足元のキャラをクリックして「New NPC: Failed to get response.」ダイアログが暴発する問題を根本解決。ギズモ外では `NoInputs` を維持し自由なカメラ操作を両立。
    - `ActorManager` でスポーンしたアクターに `TargetableStatus = 0` および `EventId = 0` を設定。
    - メインウィンドウ左上に重複表示されていたギズモボタンを削除。
-6. **バージョン更新**:
-   - `v0.1.20` / `0.1.20.0` に更新。
+6. **180度境界での回転ジッター解消 (v0.1.21)**:
+   - オイラー角分解（`ImGuizmo.DecomposeMatrixToComponents`）による ±180° 不連続性とフィードバックループ振動を廃止。
+   - `Matrix4x4.CreateFromQuaternion` と Stagehand 準拠のクォータニオンマトリクス分解に移行。
+   - 分解後のクォータニオンから前方ベクトル（`Vector3.Transform(Vector3.UnitZ, newRot)`）を取得し、`MathF.Atan2(forward.X, forward.Z)` により 180 度境界を完全に跨いで 360 度シームレスに回転可能に改善。
+7. **バージョン更新**:
+   - `v0.1.21` / `0.1.21.0` に更新。

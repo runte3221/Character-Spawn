@@ -135,14 +135,14 @@ public unsafe class GizmoRenderer
             var vp = ImGui.GetWindowViewport();
             ImGuizmo.SetRect(vp.Pos.X, vp.Pos.Y, vp.Size.X, vp.Size.Y);
 
-            // ターゲットアクターの Transform 行列を構築 (オイラー角 Degree で Recompose)
+            // ターゲットアクターの Transform 行列を構築 (Quaternion を用いて 180 度境界でのフリップ・ジンバルロックを完全に防止)
             var pos = selectedActor.Transform.Position;
-            float yawDeg = selectedActor.Transform.Rotation * (180.0f / MathF.PI);
-            var rotVec = new Vector3(0, yawDeg, 0);
+            var rotQuat = Quaternion.CreateFromAxisAngle(Vector3.UnitY, selectedActor.Transform.Rotation);
             var scaleVec = Vector3.One * (selectedActor.Transform.Scale > 0 ? selectedActor.Transform.Scale : 1.0f);
 
-            var matrix = Matrix4x4.Identity;
-            ImGuizmo.RecomposeMatrixFromComponents(ref pos.X, ref rotVec.X, ref scaleVec.X, ref matrix.M11);
+            var matrix = Matrix4x4.CreateScale(scaleVec) *
+                         Matrix4x4.CreateFromQuaternion(rotQuat) *
+                         Matrix4x4.CreateTranslation(pos);
 
             // 操作モード: Translate (軸矢印 + XY/XZ/YZ平面Quad) / RotateY (水平回転リング: キャラクターの向き変更に最適化)
             var op = configuration.CurrentGizmoMode == GizmoMode.Rotate
@@ -154,14 +154,14 @@ public unsafe class GizmoRenderer
             // ImGuizmo によるマニピュレート
             if (ImGuizmo.Manipulate(ref viewMatrix.M11, ref projMatrix.M11, op, mode, ref matrix.M11))
             {
-                var newPos = Vector3.Zero;
-                var newRotVec = Vector3.Zero;
-                var newScale = Vector3.One;
+                if (Matrix4x4.Decompose(matrix, out var newScale, out var newRot, out var newPos))
+                {
+                    // クォータニオンから前方ベクトルを算出し、Atan2 で 360 度シームレスに水平回転角（Yaw）を導出
+                    var forward = Vector3.Transform(Vector3.UnitZ, newRot);
+                    float newYawRad = MathF.Atan2(forward.X, forward.Z);
 
-                ImGuizmo.DecomposeMatrixToComponents(ref matrix.M11, ref newPos.X, ref newRotVec.X, ref newScale.X);
-
-                float newYawRad = newRotVec.Y * (MathF.PI / 180.0f);
-                onTransformChanged(newPos, newYawRad);
+                    onTransformChanged(newPos, newYawRad);
+                }
             }
 
             // 次フレームの NoInputs 判定用にホバー・使用状態を記録

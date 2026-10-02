@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.21] - 2026-10-02
+### Fixed
+- **Continuous 360-Degree Horizontal Rotation (Resolved 180° Flip & Jitter)**:
+  - Fixed character rotation getting stuck and jittering around the 180-degree mark.
+  - Replaced Euler angle matrix decomposition (`ImGuizmo.DecomposeMatrixToComponents`), which suffered from a ±180° discontinuity and feedback-loop jitter, with Stagehand-compliant `Quaternion` matrix composition (`Matrix4x4.CreateFromQuaternion`).
+  - Extracted the actor's forward direction vector via `Vector3.Transform(Vector3.UnitZ, newRot)` and computed seamless continuous heading with `MathF.Atan2(forward.X, forward.Z)`. The character now rotates smoothly and continuously past 180° without any jitter or angle wrapping limits.
+
 ## [0.1.20] - 2026-10-02
 ### Fixed
 - **Horizontal Actor Rotation (Yaw Ring)**:

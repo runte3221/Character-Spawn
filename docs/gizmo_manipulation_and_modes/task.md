@@ -21,6 +21,11 @@
 - [x] バージョン更新 (0.1.20 / 0.1.20.0)
   - `package.json`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json`
   - `CHANGELOG.md` 追記
+## v0.1.21 修正タスク
+- [x] 180度付近での回転詰まり・ジッター解消（Quaternion + Forward Vector Atan2 による 360 度連続回転）
+- [x] バージョン更新 (0.1.21 / 0.1.21.0)
+  - `package.json`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json`
+  - `CHANGELOG.md` 追記
 - [x] Git Commit & Push
 - [x] GitHub Actions ビルド待機 & XIVLauncher 全バージョンフォルダへの最新 DLL 配置
 - [x] 完了報告
