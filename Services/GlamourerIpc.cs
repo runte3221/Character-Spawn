@@ -248,6 +248,7 @@ public class GlamourerIpc
         string json = jObj.ToString(Newtonsoft.Json.Formatting.None);
         byte[] bytes = System.Text.Encoding.UTF8.GetBytes(json);
         using var ms = new MemoryStream();
+        ms.WriteByte(6); // Glamourer Design Version 6 byte (fixes 'Unknown Version 31' exception)
         using (var gz = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionMode.Compress, true))
         {
             gz.Write(bytes, 0, bytes.Length);

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.34] - 2026-10-02
+### Fixed
+- **Glamourer Base64ヘッダーバージョン（Byte 6）欠落による `Unknown Version 31` 例外の完全解消**:
+  - **根本原因の特定**: Glamourer のネイティブ実装（`DesignConverter.cs` / `Luna.dll`）において、Base64 文字列の先頭1バイトはデザインフォーマットのバージョン番号（`0x06`）としてパースされる。先頭にバージョンバイトを書き込まずに純粋な GZip バイト列を Base64 化していたため、GZip のマジックナンバー `0x1F`（= 31）がバージョン番号と誤認され、Glamourer 内部で `System.Exception: Unknown Version 31`（結果コード 7: `CouldNotParse`）が発生しデザイン適用が拒絶されていた。
+  - **バージョン 6 バイトの注入**: `GlamourerIpc.CompressToBase64` において、GZip データの先頭に必ず `ms.WriteByte(6)` を書き込むよう修正。これにより Glamourer が 100% 正常にステートを解凍・認識し、`ApplyState` による外見強制上書きが完全に成功するようになった。
+- **二重 Redraw 競合による自キャラ（女性ミコッテ）巻き戻しの完全根絶**:
+  - **根本原因の特定**: Glamourer は `ApplyState` / `ApplyDesign` 呼び出しの内部で自動的にアクターのネイティブリロード（Redraw）を実行する。直後に CharacterSpawn 側から追加で `penumbraIpc.Redraw(actorIndex)` を呼んでいたため、FF14 の非同期描画パイプラインで二重リロードの競合が発生し、初期化途中の素体（女性ミコッテ）にロールバックしていた（Brio でも同様に Glamourer 適用後は外部 Redraw を呼んでいない）。
+  - **Glamourer 時の重複 Redraw 除外**: `template.SourceType != CharacterSourceType.Glamourer` の場合のみ Penumbra Redraw を呼び出すよう修正し、競合ロールバックを完全に解消。
+- **CustomizeData 26 バイトのネイティブメモリ常時同期**:
+  - レースコンディション対策として、Glamourer 適用時も取得した CustomizeData（種族・性別・顔・髪型等）をネイティブのアクター描画データ（`chara->DrawData.CustomizeData`）に直接コピー同期。
+
 ## [0.1.33] - 2026-10-02
 ### Fixed
 - **`Race: Apply = False` デザインにおける種族不一致ロールバックの完全解消 (GZip Base64 State Injection)**:

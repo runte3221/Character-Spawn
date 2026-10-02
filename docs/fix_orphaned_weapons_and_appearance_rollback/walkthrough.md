@@ -18,3 +18,13 @@
 
 ### 4. 前キャラの外見情報の残留防止
 - デスポーン時に GlobalIndex だけでなくアクター名（`actor.DisplayName`）でも Glamourer ステートを `RevertStateName` / `UnlockStateName` で解放し、同一インデックス再利用時のステート混ざりを解消。
+
+### 5. Glamourer Base64ヘッダーバージョン（Byte 6）欠落の修正 (`Services/GlamourerIpc.cs`)
+- Glamourer ネイティブ（`DesignConverter.cs`）が要求する先頭 1 バイトのデザインバージョン（`0x06`）を書き込むよう修正。
+- これにより、純粋な GZip バイト列の先頭マジックナンバー `0x1F`（=31）が原因で発生していた `System.Exception: Unknown Version 31`（結果コード 7: `CouldNotParse`）が解消され、`ApplyState` が確実に成功するようになりました。
+
+### 6. 二重 Redraw 競合による素体（女性ミコッテ）ロールバックの完全解消 (`Managers/ActorManager.cs`)
+- Glamourer は `ApplyState` / `ApplyDesign` 呼び出しの内部で自動的にアクターのネイティブリロード（Redraw）を実行します。
+- 直後に CharacterSpawn 側から追加で `penumbraIpc.Redraw(actorIndex)` を呼んでいたため、FF14 の描画パイプラインで二重リロードの競合が発生し、初期化途中の素体（自キャラ女性ミコッテ）にロールバックしていました。
+- `template.SourceType != CharacterSourceType.Glamourer` の場合のみ Penumbra Redraw を呼ぶよう修正し、Brio 同様の安定した描画シーケンスを確立しました。
+

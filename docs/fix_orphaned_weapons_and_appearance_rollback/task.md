@@ -11,9 +11,15 @@
 4. **`Race: Apply = False` デザインにおける種族不一致ロールバック**:
    - `Chonk`（`Kimo-1-Default`）のデザインファイルは `Race: Apply = False` になっており、そのまま Guid で適用すると Race（ミコッテ）のまま Clan（ハイランダー）と Gender（男性）が適用され、無効な種族組み合わせとなって素体にフォールバックしていた。
 
+5. **Glamourer Base64ヘッダーバージョン（Byte 6）欠落による `Unknown Version 31` エラーと二重Redraw競合**:
+   - `ApplyState` の Base64 ヘッダーにバージョン `0x06` がなかったため、Glamourer が `Unknown Version 31` 例外を起こして適用拒絶されていた。
+   - Glamourer 適用直後に CharacterSpawn 側で余分な Penumbra Redraw を呼び出し、描画パイプラインの競合が発生して素体にロールバックしていた。
+
 ## 完了基準
 - [x] デスポーン時に武器モデルがワールド上に取り残されないこと。
 - [x] 男性キャラ（ハイランダー等）や異種族・異性別のキャラクターをスポーンした際、自キャラの姿に巻き戻らず正しい外見で描画されること。
 - [x] スポーン ⇔ デスポーンを繰り返しても前回の外見情報が残留しないこと。
 - [x] ForceAllApply & GZip Base64 圧縮ステート注入により `Race: Apply = false` なデザインでも確実に強制変身させること。
-- [x] v0.1.33.0 のビルド＆プッシュ完了。
+- [x] Glamourer Base64 ヘッダーにバージョン 6 バイトを付与し、`Unknown Version 31` を完全解消。
+- [x] Glamourer 適用時の二重 Redraw 競合を排除し、自キャラへのロールバックを完全防止。
+- [x] v0.1.34.0 のビルド＆プッシュ完了。

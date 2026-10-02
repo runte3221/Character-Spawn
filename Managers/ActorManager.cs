@@ -1039,13 +1039,13 @@ public unsafe class ActorManager : IDisposable
             {
                 var (glamSuccess, custBytes) = glamourerIpc.ApplyDesignToActorEx(designString, actorIndex);
                 logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
-                if (!glamSuccess && custBytes != null && custBytes.Length >= 26)
+                if (custBytes != null && custBytes.Length >= 26)
                 {
                     fixed (byte* pCust = custBytes)
                     {
                         Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
                     }
-                    logManager?.Info($"Glamourer fallback: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
+                    logManager?.Info($"Glamourer: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
                 }
             }
             else if (template.SourceType == CharacterSourceType.PlayerClone)
@@ -1074,8 +1074,8 @@ public unsafe class ActorManager : IDisposable
         chara->DrawData.HideWeapons(!template.WeaponVisible);
         chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-        // 6. Penumbra Redraw (AQuestReborn 方式: 最後に必ず Redraw)
-        if (penumbraIpc.IsAvailable)
+        // 6. Penumbra Redraw (Brio 準拠: Glamourer 適用時は Glamourer 自身が Redraw するため、二重呼び出しによる素体巻き戻しを回避)
+        if (template.SourceType != CharacterSourceType.Glamourer && penumbraIpc.IsAvailable)
         {
             penumbraIpc.Redraw(actorIndex);
             logManager?.Info($"Triggered Penumbra Redraw for Global#{actorIndex}.");
