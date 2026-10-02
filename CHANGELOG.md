@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.2] - 2026-10-02
+### Fixed
+- Fixed compilation error by switching from deprecated `ImGuiNET` to Dalamud API 15 standard `Dalamud.Bindings.ImGui`.
+
 ## [0.1.1] - 2026-10-02
 ### Fixed
 - Fixed native actor management using SigScanner delegates for FFXIV 7.x compatibility.
