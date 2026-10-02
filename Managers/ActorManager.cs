@@ -15,13 +15,18 @@ public unsafe class ActorManager : IDisposable
     private readonly IClientState clientState;
     private readonly IObjectTable objectTable;
     private readonly IPluginLog log;
+    private readonly LogManager? logManager;
     private readonly TimelineManager timelineManager;
     private readonly HeadTrackingManager headTrackingManager;
     private readonly GlamourerIpc glamourerIpc;
     private readonly PenumbraIpc penumbraIpc;
+    private readonly McdfParser? mcdfParser;
 
     private readonly List<SpawnedActorData> activeActors = new();
     private readonly List<ushort> createdIndexes = new();
+
+    // 単一プレビューアクター（Characterタブ専用）
+    public SpawnedActorData? CurrentPreviewActor { get; private set; }
 
     public IReadOnlyList<SpawnedActorData> ActiveActors => activeActors;
 
@@ -33,24 +38,59 @@ public unsafe class ActorManager : IDisposable
         TimelineManager timelineManager,
         HeadTrackingManager headTrackingManager,
         GlamourerIpc glamourerIpc,
-        PenumbraIpc penumbraIpc)
+        PenumbraIpc penumbraIpc,
+        LogManager? logManager = null,
+        McdfParser? mcdfParser = null)
     {
         this.clientState = clientState;
         this.objectTable = objectTable;
         this.log = log;
+        this.logManager = logManager;
         this.timelineManager = timelineManager;
         this.headTrackingManager = headTrackingManager;
         this.glamourerIpc = glamourerIpc;
         this.penumbraIpc = penumbraIpc;
+        this.mcdfParser = mcdfParser;
 
         this.clientState.TerritoryChanged += OnTerritoryChanged;
     }
 
     private void OnTerritoryChanged(uint territoryType)
     {
-        log.Information("Territory changed. Clearing spawned actors tracking.");
+        logManager?.Info("Territory changed. Clearing spawned actors tracking.");
         activeActors.Clear();
         createdIndexes.Clear();
+        CurrentPreviewActor = null;
+    }
+
+    /// <summary>
+    /// Characterタブ専用のプレビュー用スポーン
+    /// 既存のプレビューアクターがあれば自動的にデスポーンしてから新しく生成する
+    /// </summary>
+    public SpawnedActorData? SpawnPreviewCharacter(CharacterTemplate template)
+    {
+        DespawnPreviewCharacter();
+
+        var spawned = SpawnCharacter(template);
+        if (spawned != null)
+        {
+            CurrentPreviewActor = spawned;
+            logManager?.Info($"Set CurrentPreviewActor to '{spawned.DisplayName}' (Instance: {spawned.InstanceId}).");
+        }
+        return spawned;
+    }
+
+    /// <summary>
+    /// Characterタブ専用のプレビューアクターを破棄
+    /// </summary>
+    public void DespawnPreviewCharacter()
+    {
+        if (CurrentPreviewActor != null)
+        {
+            logManager?.Info($"Despawning current preview character: {CurrentPreviewActor.DisplayName}");
+            DespawnCharacter(CurrentPreviewActor);
+            CurrentPreviewActor = null;
+        }
     }
 
     /// <summary>
@@ -63,7 +103,7 @@ public unsafe class ActorManager : IDisposable
             var com = ClientObjectManager.Instance();
             if (com == null)
             {
-                log.Error("ClientObjectManager instance is null.");
+                logManager?.Error("ClientObjectManager instance is null.");
                 return null;
             }
 
@@ -71,7 +111,7 @@ public unsafe class ActorManager : IDisposable
             uint idCheck = com->CreateBattleCharacter((uint)(2 + createdIndexes.Count), 0);
             if (idCheck == 0xFFFFFFFF)
             {
-                log.Error("ClientObjectManager.CreateBattleCharacter returned 0xFFFFFFFF (failed to allocate).");
+                logManager?.Error("ClientObjectManager.CreateBattleCharacter returned 0xFFFFFFFF (slot limit reached).");
                 return null;
             }
 
@@ -81,7 +121,7 @@ public unsafe class ActorManager : IDisposable
             var newObject = com->GetObjectByIndex(newId);
             if (newObject == null)
             {
-                log.Error($"Failed to retrieve spawned GameObject at index {newId}.");
+                logManager?.Error($"Failed to retrieve spawned GameObject at index {newId}.");
                 return null;
             }
 
@@ -89,32 +129,38 @@ public unsafe class ActorManager : IDisposable
             var pos = spawnPosition ?? GetDefaultSpawnPosition();
             var rot = spawnRotation ?? 0.0f;
 
-            // 1. 外見のベースコピー（自キャラが存在する場合はプレイヤーからコピー）
-            var localPlayer = objectTable.Length > 0 ? objectTable[0] : null;
-            if (localPlayer != null && localPlayer.Address != 0)
-            {
-                var sourceNative = (Character*)localPlayer.Address;
-                nativeChara->CharacterSetup.CopyFromCharacter(sourceNative, CharacterCopyFlags.WeaponHiding);
-                nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
-            }
+            logManager?.Info($"Spawning '{template.Name}' (Source: {template.SourceType}, ModelChara: {template.ModelCharaId}, WeaponVisible: {template.WeaponVisible}) at index {newId}...");
 
-            // 2. モンスター／NPCモデルおよび外見データの適用
-            if (template.SourceType == CharacterSourceType.Monster && template.ModelCharaId > 0)
+            bool isMonsterOrNonHumanoid = template.ModelCharaId > 0;
+
+            if (isMonsterOrNonHumanoid)
             {
+                // ========== 非人型アクター（モンスター、モーグリ等の固有モデル） ==========
+                // 人型の自キャラから CopyFromCharacter を行うとスケルトンやリソースコンテナが破損するため、
+                // 人型コピーは絶対に行わず、ModelContainer に ModelCharaId を設定して自身の再構築を行う
+                logManager?.Info($"Setting Non-humanoid ModelCharaId: {template.ModelCharaId}");
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
+
+                // 武器は非表示に設定
+                nativeChara->DrawData.HideWeapons();
+
+                // 自身のコンテナから再構築
                 nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
             }
-            else if (template.SourceType == CharacterSourceType.Npc)
+            else
             {
-                if (template.ModelCharaId > 0)
+                // ========== 人型アクター（Humanモデル） ==========
+                // 自キャラが存在する場合は人型スケルトンのベースとしてコピー
+                var localPlayer = objectTable.Length > 0 ? objectTable[0] : null;
+                if (localPlayer != null && localPlayer.Address != 0)
                 {
-                    // 非人型NPC（モーグリ等の固有モデル）
-                    nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
-                    nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
+                    var sourceNative = (Character*)localPlayer.Address;
+                    nativeChara->CharacterSetup.CopyFromCharacter(sourceNative, CharacterCopyFlags.WeaponHiding);
                 }
-                else
+
+                // NPC (ENpc) 人型外見データの適用
+                if (template.SourceType == CharacterSourceType.Npc)
                 {
-                    // 人型NPC（ミューヌ等のHumanモデル）
                     // カスタマイズデータ（26バイト）を適用
                     if (template.CustomizeData != null && template.CustomizeData.Length >= 26)
                     {
@@ -122,6 +168,7 @@ public unsafe class ActorManager : IDisposable
                         {
                             Buffer.MemoryCopy(pCust, &nativeChara->DrawData.CustomizeData, 26, 26);
                         }
+                        logManager?.Info("Applied NPC 26-byte CustomizeData.");
                     }
 
                     // 装備モデルIDを適用
@@ -132,24 +179,32 @@ public unsafe class ActorManager : IDisposable
                         {
                             equipSpan[i] = new EquipmentModelId { Value = template.NpcEquipmentModelIds[i] };
                         }
+                        logManager?.Info($"Applied {template.NpcEquipmentModelIds.Length} NPC EquipmentModelIds.");
                     }
-
-                    nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
                 }
+
+                // 武器の表示・非表示制御
+                if (!template.WeaponVisible)
+                {
+                    nativeChara->DrawData.HideWeapons();
+                    logManager?.Info("Weapon hidden per template WeaponVisible=false setting.");
+                }
+
+                nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
             }
 
-            // 3. 位置・回転を設定
+            // 位置・回転を設定
             nativeChara->GameObject.DefaultPosition = pos;
             nativeChara->GameObject.Position = pos;
             nativeChara->GameObject.Rotation = rot;
             nativeChara->GameObject.DefaultRotation = rot;
 
-            // 4. キャラクター名を設定（ゲーム内制限20文字）
+            // キャラクター名を設定（ゲーム内制限20文字）
             var rawName = string.IsNullOrWhiteSpace(template.Name) ? "Character" : template.Name;
             var cnpcName = rawName.Length > 20 ? rawName.Substring(0, 20) : rawName;
             ((GameObject*)nativeChara)->SetName(cnpcName);
 
-            // 5. 描画を有効化
+            // 描画を有効化
             nativeChara->GameObject.EnableDraw();
 
             var spawned = new SpawnedActorData
@@ -175,17 +230,17 @@ public unsafe class ActorManager : IDisposable
             // ターゲット可否フラグ
             ApplyTargetable(spawned);
 
-            // 外部アピアランス（Glamourer / Penumbra）の適用
+            // 外部アピアランス（Glamourer / Penumbra / MCDF）の適用
             ApplyExternalAppearance(spawned, template);
 
             activeActors.Add(spawned);
-            log.Information($"Successfully spawned character '{spawned.DisplayName}' (ID:{newId}, Addr:0x{spawned.NativeAddress:X}) at {pos}");
+            logManager?.Info($"Spawn successful: '{spawned.DisplayName}' at slot {newId} (Addr: 0x{spawned.NativeAddress:X}).");
 
             return spawned;
         }
         catch (Exception ex)
         {
-            log.Error($"Exception during SpawnCharacter: {ex}");
+            logManager?.Error($"Exception during SpawnCharacter: {ex}");
             return null;
         }
     }
@@ -250,7 +305,7 @@ public unsafe class ActorManager : IDisposable
                     {
                         createdIndexes.Remove((ushort)idx);
                         com->DeleteObjectByIndex((ushort)idx, 0);
-                        log.Information($"Deleted actor at object index {idx}.");
+                        logManager?.Info($"Deleted actor '{actor.DisplayName}' at slot {idx}.");
                     }
                 }
                 actor.NativeAddress = 0;
@@ -258,11 +313,15 @@ public unsafe class ActorManager : IDisposable
         }
         catch (Exception ex)
         {
-            log.Error($"Failed to despawn actor {actor.DisplayName}: {ex.Message}");
+            logManager?.Error($"Failed to despawn actor {actor.DisplayName}: {ex.Message}");
         }
         finally
         {
             activeActors.Remove(actor);
+            if (CurrentPreviewActor == actor)
+            {
+                CurrentPreviewActor = null;
+            }
         }
     }
 
@@ -278,6 +337,8 @@ public unsafe class ActorManager : IDisposable
         }
         activeActors.Clear();
         createdIndexes.Clear();
+        CurrentPreviewActor = null;
+        logManager?.Info("Despawned all active actors.");
     }
 
     /// <summary>
@@ -287,7 +348,7 @@ public unsafe class ActorManager : IDisposable
     {
         headTrackingManager.UpdateTracking(activeActors);
 
-        // 各アクターの描画状態を監視・強制（Brio / AQR方式）
+        // 各アクターの描画状態を監視・保証
         foreach (var actor in activeActors)
         {
             if (actor.NativeAddress == 0) continue;
@@ -323,12 +384,36 @@ public unsafe class ActorManager : IDisposable
         var chara = (Character*)spawned.NativeAddress;
         var actorIndex = chara->ObjectIndex;
 
+        // Penumbraコレクションの適用
+        if (penumbraIpc.IsAvailable)
+        {
+            if (!string.IsNullOrWhiteSpace(template.PenumbraCollectionName))
+            {
+                bool penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
+                logManager?.Info($"Penumbra SetCollection '{template.PenumbraCollectionName}' result: {penSuccess}");
+            }
+        }
+
         // Glamourerの適用
         if (glamourerIpc.IsAvailable)
         {
-            if (!string.IsNullOrWhiteSpace(template.GlamourerDesignString))
+            string? designString = template.GlamourerDesignString;
+
+            // MCDF の場合：デザイン文字列が空なら MCDF ファイルから再パースを試みる
+            if (template.SourceType == CharacterSourceType.Mcdf && string.IsNullOrWhiteSpace(designString) && !string.IsNullOrWhiteSpace(template.McdfFilePath) && mcdfParser != null)
             {
-                glamourerIpc.ApplyDesignToActor(template.GlamourerDesignString, actorIndex);
+                var parsed = mcdfParser.ParseMcdf(template.McdfFilePath);
+                if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
+                {
+                    designString = parsed.GlamourerDesign;
+                    logManager?.Info("Loaded Glamourer design string from MCDF file on spawn.");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(designString))
+            {
+                bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
+                logManager?.Info($"Glamourer ApplyDesign result: {glamSuccess}");
             }
             else if (template.SourceType == CharacterSourceType.PlayerClone)
             {
@@ -336,25 +421,29 @@ public unsafe class ActorManager : IDisposable
                 if (!string.IsNullOrWhiteSpace(playerDesign))
                 {
                     glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex);
+                    logManager?.Info("Applied player customization clone via Glamourer.");
                 }
                 else
                 {
                     glamourerIpc.ReapplyState(actorIndex);
                 }
             }
-            else
+            else if (template.SourceType != CharacterSourceType.Monster && template.ModelCharaId == 0)
             {
                 glamourerIpc.ReapplyState(actorIndex);
             }
         }
+        else
+        {
+            if (template.SourceType == CharacterSourceType.Glamourer || template.SourceType == CharacterSourceType.Mcdf)
+            {
+                logManager?.Warning("Glamourer IPC not detected. Could not apply external appearance design.");
+            }
+        }
 
-        // Penumbraコレクションの適用と RedrawObject のトリガー
+        // Penumbra RedrawObject
         if (penumbraIpc.IsAvailable)
         {
-            if (!string.IsNullOrWhiteSpace(template.PenumbraCollectionName))
-            {
-                penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
-            }
             penumbraIpc.Redraw(actorIndex);
         }
     }

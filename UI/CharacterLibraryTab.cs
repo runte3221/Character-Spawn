@@ -4,6 +4,7 @@ using Dalamud.Plugin.Services;
 using Dalamud.Bindings.ImGui;
 using CharacterSpawn.Models;
 using CharacterSpawn.Services;
+using CharacterSpawn.Managers;
 
 namespace CharacterSpawn.UI;
 
@@ -14,9 +15,11 @@ public class CharacterLibraryTab
     private readonly GlamourerIpc glamourerIpc;
     private readonly PenumbraIpc penumbraIpc;
     private readonly McdfParser mcdfParser;
+    private readonly ActorManager actorManager;
     private readonly IObjectTable objectTable;
     private readonly ITargetManager targetManager;
     private readonly IPluginLog log;
+    private readonly LogManager? logManager;
 
     // Selection state
     private CharacterTemplate? selectedTemplate;
@@ -31,7 +34,7 @@ public class CharacterLibraryTab
     // Modal fields
     private string modalName = string.Empty;
     private string modalFolder = string.Empty;
-    private CharacterSourceType modalSourceType = CharacterSourceType.PlayerClone;
+    private CharacterSourceType modalSourceType = CharacterSourceType.Glamourer;
 
     // Glamourer & Penumbra modal fields
     private string glamourerSearch = string.Empty;
@@ -63,32 +66,36 @@ public class CharacterLibraryTab
         GlamourerIpc glamourerIpc,
         PenumbraIpc penumbraIpc,
         McdfParser mcdfParser,
+        ActorManager actorManager,
         IObjectTable objectTable,
         ITargetManager targetManager,
-        IPluginLog log)
+        IPluginLog log,
+        LogManager? logManager = null)
     {
         this.configuration = configuration;
         this.gameDataService = gameDataService;
         this.glamourerIpc = glamourerIpc;
         this.penumbraIpc = penumbraIpc;
         this.mcdfParser = mcdfParser;
+        this.actorManager = actorManager;
         this.objectTable = objectTable;
         this.targetManager = targetManager;
         this.log = log;
+        this.logManager = logManager;
     }
 
-    public void Draw(Action<CharacterTemplate> onSpawnRequested)
+    public void Draw()
     {
         // Split view: Left = Tree pane, Right = Detail pane
         ImGui.Columns(2, "LibraryMainColumns", true);
 
-        // --- LEFT PANE: Tree View & Tree Action Buttons ---
+        // --- LEFT PANE: Tree View & Action Buttons ---
         DrawLeftPane();
 
         ImGui.NextColumn();
 
-        // --- RIGHT PANE: Selected Character Detail ---
-        DrawRightPane(onSpawnRequested);
+        // --- RIGHT PANE: Selected Character Detail & Preview ---
+        DrawRightPane();
 
         ImGui.Columns(1);
 
@@ -102,7 +109,6 @@ public class CharacterLibraryTab
         var contentHeight = ImGui.GetContentRegionAvail().Y - (ImGui.GetFrameHeightWithSpacing() + 8f);
         if (ImGui.BeginChild("LibraryTreeScroll", new Vector2(-1, contentHeight), true))
         {
-            // Collect all unique folders
             var allFolders = new HashSet<string>(configuration.Folders);
             foreach (var t in configuration.Templates)
             {
@@ -196,7 +202,7 @@ public class CharacterLibraryTab
         }
     }
 
-    private void DrawRightPane(Action<CharacterTemplate> onSpawnRequested)
+    private void DrawRightPane()
     {
         if (selectedTemplate == null)
         {
@@ -204,6 +210,7 @@ public class CharacterLibraryTab
             return;
         }
 
+        // Chara Name
         ImGui.TextUnformatted("Chara Name");
         ImGui.SetNextItemWidth(-1);
         if (ImGui.InputText("##InlineCharaName", ref editInlineName, 64))
@@ -214,11 +221,65 @@ public class CharacterLibraryTab
 
         ImGui.Spacing();
 
-        // Action buttons: [Spawn] [edit] [delete]
-        if (ImGui.Button("Spawn", new Vector2(90, 26)))
+        // [x] Weapon Visible
+        bool weaponVis = selectedTemplate.WeaponVisible;
+        if (ImGui.Checkbox("Weapon Visible", ref weaponVis))
         {
-            log.Information($"Spawn requested for template: {selectedTemplate.Name} ({selectedTemplate.Id})");
-            onSpawnRequested(selectedTemplate);
+            selectedTemplate.WeaponVisible = weaponVis;
+            configuration.Save();
+
+            // もしプレビュー中なら武器非表示をリアルタイム反映
+            if (actorManager.CurrentPreviewActor != null && actorManager.CurrentPreviewActor.NativeAddress != 0)
+            {
+                unsafe
+                {
+                    var nativeChara = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actorManager.CurrentPreviewActor.NativeAddress;
+                    if (!weaponVis)
+                    {
+                        nativeChara->DrawData.HideWeapons();
+                    }
+                    else
+                    {
+                        nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, FFXIVClientStructs.FFXIV.Client.Game.Character.CharacterSetupContainer.CopyFlags.None);
+                    }
+                }
+            }
+        }
+        ImGui.SameLine();
+        ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1.0f), "  <= 武器表示ON/OFF");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        // プレビュー状態の判定
+        bool isPreviewingCurrent = actorManager.CurrentPreviewActor != null &&
+                                  actorManager.CurrentPreviewActor.TemplateId == selectedTemplate.Id &&
+                                  actorManager.CurrentPreviewActor.IsSpawned;
+
+        // Action buttons: [Spawn / Despawn] [edit] [delete]
+        if (isPreviewingCurrent)
+        {
+            // 赤色 Despawn ボタン
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.85f, 0.15f, 0.15f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(1.0f, 0.25f, 0.25f, 1.0f));
+            ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.7f, 0.1f, 0.1f, 1.0f));
+
+            if (ImGui.Button("Despawn", new Vector2(90, 26)))
+            {
+                actorManager.DespawnPreviewCharacter();
+            }
+
+            ImGui.PopStyleColor(3);
+        }
+        else
+        {
+            // 通常 Spawn ボタン
+            if (ImGui.Button("Spawn", new Vector2(90, 26)))
+            {
+                logManager?.Info($"Preview Spawn requested for template: {selectedTemplate.Name}");
+                actorManager.SpawnPreviewCharacter(selectedTemplate);
+            }
         }
 
         ImGui.SameLine();
@@ -232,6 +293,10 @@ public class CharacterLibraryTab
 
         if (ImGui.Button("delete", new Vector2(70, 26)))
         {
+            if (isPreviewingCurrent)
+            {
+                actorManager.DespawnPreviewCharacter();
+            }
             configuration.Templates.Remove(selectedTemplate);
             configuration.Save();
             selectedTemplate = null;
@@ -239,10 +304,37 @@ public class CharacterLibraryTab
         }
 
         ImGui.Spacing();
+
+        // スポーン状態に応じた表示（画像3, 4準拠）
+        if (isPreviewingCurrent)
+        {
+            ImGui.TextColored(new Vector4(0.2f, 0.9f, 0.3f, 1.0f), $"{selectedTemplate.Name} Spawning...");
+
+            ImGui.Spacing();
+
+            bool showGizmo = configuration.ShowGizmo;
+            if (ImGui.Checkbox("Gizmo", ref showGizmo))
+            {
+                configuration.ShowGizmo = showGizmo;
+                configuration.Save();
+            }
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1.0f), "  <= ギズモ表示ON/OFF");
+        }
+        else
+        {
+            // プレビュー機能の説明文（画像3準拠）
+            ImGui.Spacing();
+            ImGui.BeginChild("PreviewExplanationBox", new Vector2(-1, 140), true);
+            ImGui.TextWrapped("現在のMAP上に仮置きして見た目などの情報がきちんと反映してるか確認をできるようにするだけの機能（プレビュー機能）\n\nSpawnを実行後、ボタンが Despawn に切り替わる。\nDespawnを実行するとスポーンしていたものが消える");
+            ImGui.EndChild();
+        }
+
+        ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
-        // Character Details Overview
+        // テンプレート詳細情報
         ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1.0f), "Template Details:");
         ImGui.BulletText($"Source Type: {selectedTemplate.SourceType}");
         if (!string.IsNullOrWhiteSpace(selectedTemplate.FolderPath))
@@ -278,13 +370,16 @@ public class CharacterLibraryTab
     {
         if (selectedTemplate != null)
         {
+            if (actorManager.CurrentPreviewActor?.TemplateId == selectedTemplate.Id)
+            {
+                actorManager.DespawnPreviewCharacter();
+            }
             configuration.Templates.Remove(selectedTemplate);
             configuration.Save();
             selectedTemplate = null;
         }
         else if (!string.IsNullOrWhiteSpace(selectedFolder))
         {
-            // Remove folder and reset any templates inside to root
             configuration.Folders.Remove(selectedFolder);
             foreach (var t in configuration.Templates.Where(t => t.FolderPath == selectedFolder))
             {
@@ -301,7 +396,7 @@ public class CharacterLibraryTab
         editingTemplate = new CharacterTemplate();
         modalName = "New Character";
         modalFolder = selectedFolder ?? string.Empty;
-        modalSourceType = CharacterSourceType.PlayerClone;
+        modalSourceType = CharacterSourceType.Glamourer;
 
         glamourerSearch = string.Empty;
         selectedGlamourerDesignGuid = string.Empty;
@@ -355,17 +450,20 @@ public class CharacterLibraryTab
     {
         if (!isModalOpen) return;
 
-        ImGui.SetNextWindowSize(new Vector2(560, 520), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new Vector2(500, 520), ImGuiCond.FirstUseEver);
         string title = isEditing ? "Edit Character###CharModal" : "New Chara###CharModal";
 
         if (ImGui.Begin(title, ref isModalOpen, ImGuiWindowFlags.NoCollapse))
         {
+            // Chara Name
             ImGui.TextUnformatted("Chara Name");
             ImGui.SetNextItemWidth(-1);
             ImGui.InputText("##ModalCharaName", ref modalName, 64);
 
             ImGui.Spacing();
-            ImGui.TextUnformatted("Select Folder:");
+
+            // Select Folder
+            ImGui.TextUnformatted("Select Folder");
             ImGui.SetNextItemWidth(-1);
             if (ImGui.BeginCombo("##ModalFolderCombo", string.IsNullOrEmpty(modalFolder) ? "(Root / No Folder)" : modalFolder))
             {
@@ -384,73 +482,100 @@ public class CharacterLibraryTab
             }
 
             ImGui.Spacing();
-            ImGui.Separator();
-            ImGui.Spacing();
 
-            ImGui.TextUnformatted("Select Appearance Source:");
+            // Select Appearance Source (4ボタングリッド: 画像2準拠)
+            ImGui.TextUnformatted("Select Appearance Source");
 
-            string[] sourceNames = ["Glamourer & Penumbra", "Monster / Mob", "NPC (ENpc)", "MCDF File", "Clone Player/Target"];
-            int comboIndex = modalSourceType switch
+            float btnWidth = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) / 2f;
+            float btnHeight = 32f;
+
+            var activeBtnCol = new Vector4(0.8f, 0.12f, 0.12f, 1.0f);
+            var hoverBtnCol = new Vector4(0.95f, 0.25f, 0.25f, 1.0f);
+
+            // 上段: [ Glamourer&Penumbra ] [ MCDF ]
+            bool isGlam = modalSourceType == CharacterSourceType.Glamourer;
+            if (isGlam)
             {
-                CharacterSourceType.Glamourer => 0,
-                CharacterSourceType.Monster => 1,
-                CharacterSourceType.Npc => 2,
-                CharacterSourceType.Mcdf => 3,
-                _ => 4
-            };
-
-            ImGui.SetNextItemWidth(-1);
-            if (ImGui.Combo("##SourceTypeCombo", ref comboIndex, sourceNames, sourceNames.Length))
-            {
-                modalSourceType = comboIndex switch
-                {
-                    0 => CharacterSourceType.Glamourer,
-                    1 => CharacterSourceType.Monster,
-                    2 => CharacterSourceType.Npc,
-                    3 => CharacterSourceType.Mcdf,
-                    _ => CharacterSourceType.PlayerClone
-                };
+                ImGui.PushStyleColor(ImGuiCol.Button, activeBtnCol);
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverBtnCol);
             }
-
-            ImGui.Spacing();
-            ImGui.Separator();
-            ImGui.Spacing();
-
-            // Source Specific Section
-            switch (modalSourceType)
+            if (ImGui.Button("Glamourer&Penumbra", new Vector2(btnWidth, btnHeight)))
             {
-                case CharacterSourceType.Glamourer:
-                    DrawModalGlamourerSection();
-                    break;
-                case CharacterSourceType.Monster:
-                    DrawModalMonsterSection();
-                    break;
-                case CharacterSourceType.Npc:
-                    DrawModalNpcSection();
-                    break;
-                case CharacterSourceType.Mcdf:
-                    DrawModalMcdfSection();
-                    break;
-                case CharacterSourceType.PlayerClone:
-                    DrawModalCloneSection();
-                    break;
+                modalSourceType = CharacterSourceType.Glamourer;
             }
-
-            ImGui.Spacing();
-            ImGui.Separator();
-            ImGui.Spacing();
-
-            // Bottom Buttons
-            if (ImGui.Button("Save to Chara", new Vector2(140, 30)))
-            {
-                SaveModalTemplate();
-                isModalOpen = false;
-            }
+            if (isGlam) ImGui.PopStyleColor(2);
 
             ImGui.SameLine();
 
-            if (ImGui.Button("Cancel", new Vector2(100, 30)))
+            bool isMcdf = modalSourceType == CharacterSourceType.Mcdf;
+            if (isMcdf)
             {
+                ImGui.PushStyleColor(ImGuiCol.Button, activeBtnCol);
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverBtnCol);
+            }
+            if (ImGui.Button("MCDF", new Vector2(btnWidth, btnHeight)))
+            {
+                modalSourceType = CharacterSourceType.Mcdf;
+            }
+            if (isMcdf) ImGui.PopStyleColor(2);
+
+            // 下段: [ NPC(ENpc) ] [ Monster/Mob ]
+            bool isNpc = modalSourceType == CharacterSourceType.Npc;
+            if (isNpc)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Button, activeBtnCol);
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverBtnCol);
+            }
+            if (ImGui.Button("NPC(ENpc)", new Vector2(btnWidth, btnHeight)))
+            {
+                modalSourceType = CharacterSourceType.Npc;
+            }
+            if (isNpc) ImGui.PopStyleColor(2);
+
+            ImGui.SameLine();
+
+            bool isMonster = modalSourceType == CharacterSourceType.Monster;
+            if (isMonster)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Button, activeBtnCol);
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverBtnCol);
+            }
+            if (ImGui.Button("Monster/Mob", new Vector2(btnWidth, btnHeight)))
+            {
+                modalSourceType = CharacterSourceType.Monster;
+            }
+            if (isMonster) ImGui.PopStyleColor(2);
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            // 選んだ source に対応した項目が下段に表示される（画像2準拠）
+            var detailHeight = ImGui.GetContentRegionAvail().Y - (36f + ImGui.GetStyle().ItemSpacing.Y);
+            if (ImGui.BeginChild("SourceDetailRegion", new Vector2(-1, detailHeight), false))
+            {
+                switch (modalSourceType)
+                {
+                    case CharacterSourceType.Glamourer:
+                        DrawModalGlamourerSection();
+                        break;
+                    case CharacterSourceType.Mcdf:
+                        DrawModalMcdfSection();
+                        break;
+                    case CharacterSourceType.Npc:
+                        DrawModalNpcSection();
+                        break;
+                    case CharacterSourceType.Monster:
+                        DrawModalMonsterSection();
+                        break;
+                }
+                ImGui.EndChild();
+            }
+
+            // 最下部 [ Save to Chara ]
+            if (ImGui.Button("Save to Chara", new Vector2(-1, 32)))
+            {
+                SaveModalTemplate();
                 isModalOpen = false;
             }
 
@@ -466,8 +591,10 @@ public class CharacterLibraryTab
         }
         else
         {
-            ImGui.TextColored(new Vector4(1.0f, 0.5f, 0.2f, 1.0f), "Glamourer IPC: Not Detected");
+            ImGui.TextColored(new Vector4(1.0f, 0.4f, 0.2f, 1.0f), "Glamourer IPC: Not Detected");
         }
+
+        ImGui.Spacing();
 
         // Glamourer Design Combo (AQR Style)
         ImGui.TextUnformatted("Glamourer Design:");
@@ -546,60 +673,6 @@ public class CharacterLibraryTab
         }
     }
 
-    private void DrawModalMonsterSection()
-    {
-        ImGui.InputTextWithHint("##SearchMonsters", "Search Monsters (up to 500)...", ref monsterSearchQuery, 64);
-        var monsters = gameDataService.SearchMonsters(monsterSearchQuery, 500);
-
-        if (ImGui.BeginListBox("##ModalMonsterList", new Vector2(-1, 160)))
-        {
-            foreach (var m in monsters)
-            {
-                bool isSelected = modalSelectedMonster?.Id == m.Id;
-                if (ImGui.Selectable($"[{m.Id}] {m.Name}", isSelected))
-                {
-                    modalSelectedMonster = m;
-                    modalName = m.Name;
-                }
-            }
-            ImGui.EndListBox();
-        }
-
-        if (modalSelectedMonster != null)
-        {
-            ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), $"Selected: [{modalSelectedMonster.Id}] {modalSelectedMonster.Name} (Model: {modalSelectedMonster.ModelCharaId})");
-        }
-    }
-
-    private void DrawModalNpcSection()
-    {
-        ImGui.InputTextWithHint("##SearchNpcs", "Search NPCs (up to 500)...", ref npcSearchQuery, 64);
-        var npcs = gameDataService.SearchNpcs(npcSearchQuery, 500);
-
-        if (ImGui.BeginListBox("##ModalNpcList", new Vector2(-1, 160)))
-        {
-            foreach (var n in npcs)
-            {
-                bool isSelected = modalSelectedNpc?.Id == n.Id;
-                if (ImGui.Selectable($"[{n.Id}] {n.Name}", isSelected))
-                {
-                    modalSelectedNpc = n;
-                    modalName = n.Name;
-                    cachedNpcAppearance = gameDataService.GetNpcAppearanceData(n.Id);
-                }
-            }
-            ImGui.EndListBox();
-        }
-
-        if (modalSelectedNpc != null)
-        {
-            string typeDesc = modalSelectedNpc.ModelCharaId > 0 
-                ? $"Non-humanoid Model ({modalSelectedNpc.ModelCharaId})" 
-                : "Humanoid (Custom Appearance & Equipment loaded)";
-            ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), $"Selected: [{modalSelectedNpc.Id}] {modalSelectedNpc.Name} - {typeDesc}");
-        }
-    }
-
     private void DrawModalMcdfSection()
     {
         ImGui.TextUnformatted("MCDF File:");
@@ -629,7 +702,7 @@ public class CharacterLibraryTab
                         if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
                         {
                             customGlamourerString = parsed.GlamourerDesign;
-                            log.Information("Parsed Glamourer design from selected MCDF.");
+                            logManager?.Info($"Parsed Glamourer design from selected MCDF: {fileName}");
                         }
                     }
                 }
@@ -638,48 +711,72 @@ public class CharacterLibraryTab
 
         if (!string.IsNullOrWhiteSpace(modalMcdfPath))
         {
+            ImGui.Spacing();
             if (ImGui.Button("Re-parse MCDF"))
             {
                 var parsed = mcdfParser.ParseMcdf(modalMcdfPath);
                 if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
                 {
                     customGlamourerString = parsed.GlamourerDesign;
-                    log.Information("Loaded Glamourer design from MCDF archive.");
+                    logManager?.Info("Reloaded Glamourer design from MCDF archive.");
                 }
             }
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), System.IO.Path.GetFileName(modalMcdfPath));
         }
     }
 
-    private void DrawModalCloneSection()
+    private void DrawModalNpcSection()
     {
-        ImGui.TextUnformatted("Clone Appearance from World Actor:");
+        ImGui.InputTextWithHint("##SearchNpcs", "Search NPCs (All items, no limit)...", ref npcSearchQuery, 64);
+        var npcs = gameDataService.SearchNpcs(npcSearchQuery, 0);
 
-        if (ImGui.Button("Copy from Local Player"))
+        if (ImGui.BeginListBox("##ModalNpcList", new Vector2(-1, 160)))
         {
-            var player = objectTable.Length > 0 ? objectTable[0] : null;
-            if (player != null)
+            foreach (var n in npcs)
             {
-                modalName = $"{player.Name.TextValue} Clone";
-                if (glamourerIpc.IsAvailable)
+                bool isSelected = modalSelectedNpc?.Id == n.Id;
+                if (ImGui.Selectable($"[{n.Id}] {n.Name}", isSelected))
                 {
-                    customGlamourerString = glamourerIpc.GetCustomization(0) ?? string.Empty;
+                    modalSelectedNpc = n;
+                    modalName = n.Name;
+                    cachedNpcAppearance = gameDataService.GetNpcAppearanceData(n.Id);
                 }
             }
+            ImGui.EndListBox();
         }
 
-        ImGui.SameLine();
-
-        if (ImGui.Button("Copy from Current Target"))
+        if (modalSelectedNpc != null)
         {
-            var target = targetManager.Target;
-            if (target != null)
+            string typeDesc = modalSelectedNpc.ModelCharaId > 0 
+                ? $"Non-humanoid Model ({modalSelectedNpc.ModelCharaId})" 
+                : "Humanoid (Custom Appearance & Equipment loaded)";
+            ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), $"Selected: [{modalSelectedNpc.Id}] {modalSelectedNpc.Name} - {typeDesc}");
+        }
+    }
+
+    private void DrawModalMonsterSection()
+    {
+        ImGui.InputTextWithHint("##SearchMonsters", "Search Monsters (All items, no limit)...", ref monsterSearchQuery, 64);
+        var monsters = gameDataService.SearchMonsters(monsterSearchQuery, 0);
+
+        if (ImGui.BeginListBox("##ModalMonsterList", new Vector2(-1, 160)))
+        {
+            foreach (var m in monsters)
             {
-                modalName = $"{target.Name.TextValue} Clone";
-                if (glamourerIpc.IsAvailable)
+                bool isSelected = modalSelectedMonster?.Id == m.Id;
+                if (ImGui.Selectable($"[{m.Id}] {m.Name}", isSelected))
                 {
-                    customGlamourerString = glamourerIpc.GetCustomization(target.ObjectIndex) ?? string.Empty;
+                    modalSelectedMonster = m;
+                    modalName = m.Name;
                 }
             }
+            ImGui.EndListBox();
+        }
+
+        if (modalSelectedMonster != null)
+        {
+            ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), $"Selected: [{modalSelectedMonster.Id}] {modalSelectedMonster.Name} (Model: {modalSelectedMonster.ModelCharaId})");
         }
     }
 
@@ -705,6 +802,7 @@ public class CharacterLibraryTab
             target.ModelCharaId = modalSelectedMonster.ModelCharaId;
             target.CustomizeData = null;
             target.NpcEquipmentModelIds = null;
+            target.WeaponVisible = false; // モンスターはデフォルトで武器非表示
         }
         else if (modalSourceType == CharacterSourceType.Npc && modalSelectedNpc != null)
         {
@@ -717,6 +815,14 @@ public class CharacterLibraryTab
                 target.CustomizeData = cachedNpcAppearance.CustomizeData;
                 target.NpcEquipmentModelIds = cachedNpcAppearance.EquipmentModelIds;
             }
+            if (target.ModelCharaId > 0)
+            {
+                target.WeaponVisible = false; // 非人型NPC（モーグリ等）は武器非表示
+            }
+        }
+        else if (modalSourceType == CharacterSourceType.Mcdf)
+        {
+            target.ModelCharaId = 0;
         }
 
         if (!isEditing)
@@ -724,7 +830,6 @@ public class CharacterLibraryTab
             configuration.Templates.Add(target);
         }
 
-        // If folder is not recorded in Folders list, register it
         if (!string.IsNullOrWhiteSpace(modalFolder) && !configuration.Folders.Contains(modalFolder))
         {
             configuration.Folders.Add(modalFolder);
@@ -733,7 +838,7 @@ public class CharacterLibraryTab
         configuration.Save();
         selectedTemplate = target;
         editInlineName = target.Name;
-        log.Information($"Saved character template '{target.Name}' (Source: {target.SourceType}, Folder: {target.FolderPath}).");
+        logManager?.Info($"Saved character template '{target.Name}' (Source: {target.SourceType}, Model: {target.ModelCharaId}, Folder: {target.FolderPath}).");
     }
 
     private void DrawNewFolderPopup()

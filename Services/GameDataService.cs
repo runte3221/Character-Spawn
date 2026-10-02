@@ -1,11 +1,14 @@
+using System.Reflection;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
+using CharacterSpawn.Managers;
 
 namespace CharacterSpawn.Services;
 
 public class GameDataService
 {
     private readonly IDataManager dataManager;
+    private readonly LogManager? logManager;
 
     public record NpcEntry(uint Id, string Name, uint ModelCharaId);
     public record MonsterEntry(uint Id, string Name, uint ModelCharaId);
@@ -22,35 +25,36 @@ public class GameDataService
     private List<TimelineEntry>? cachedTimelines;
     private List<TimelineEntry>? cachedFacialExpressions;
 
-    public GameDataService(IDataManager dataManager)
+    public GameDataService(IDataManager dataManager, LogManager? logManager = null)
     {
         this.dataManager = dataManager;
+        this.logManager = logManager;
     }
 
-    public IReadOnlyList<NpcEntry> SearchNpcs(string query, int maxResults = 500)
+    public IReadOnlyList<NpcEntry> SearchNpcs(string query, int maxResults = 0)
     {
         cachedNpcs ??= BuildNpcCache();
 
-        if (string.IsNullOrWhiteSpace(query))
-            return cachedNpcs.Take(maxResults).ToList();
+        IEnumerable<NpcEntry> filtered = cachedNpcs;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(n => n.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || n.Id.ToString().Contains(query));
+        }
 
-        return cachedNpcs
-            .Where(n => n.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || n.Id.ToString().Contains(query))
-            .Take(maxResults)
-            .ToList();
+        return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
     }
 
-    public IReadOnlyList<MonsterEntry> SearchMonsters(string query, int maxResults = 500)
+    public IReadOnlyList<MonsterEntry> SearchMonsters(string query, int maxResults = 0)
     {
         cachedMonsters ??= BuildMonsterCache();
 
-        if (string.IsNullOrWhiteSpace(query))
-            return cachedMonsters.Take(maxResults).ToList();
+        IEnumerable<MonsterEntry> filtered = cachedMonsters;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(m => m.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || m.Id.ToString().Contains(query));
+        }
 
-        return cachedMonsters
-            .Where(m => m.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || m.Id.ToString().Contains(query))
-            .Take(maxResults)
-            .ToList();
+        return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
     }
 
     public NpcAppearanceData? GetNpcAppearanceData(uint enpcId)
@@ -130,19 +134,19 @@ public class GameDataService
         return new NpcAppearanceData(0, cust, equip);
     }
 
-    public IReadOnlyList<TimelineEntry> SearchTimelines(string query, int maxResults = 50)
+    public IReadOnlyList<TimelineEntry> SearchTimelines(string query, int maxResults = 0)
     {
         cachedTimelines ??= BuildTimelineCache();
 
-        if (string.IsNullOrWhiteSpace(query))
-            return cachedTimelines.Take(maxResults).ToList();
+        IEnumerable<TimelineEntry> filtered = cachedTimelines;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(t => t.Key.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                           t.Description.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                           t.Id.ToString().Contains(query));
+        }
 
-        return cachedTimelines
-            .Where(t => t.Key.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                        t.Description.Contains(query, StringComparison.OrdinalIgnoreCase) ||
-                        t.Id.ToString().Contains(query))
-            .Take(maxResults)
-            .ToList();
+        return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
     }
 
     public IReadOnlyList<TimelineEntry> GetFacialExpressions()
@@ -172,32 +176,115 @@ public class GameDataService
             list.Add(new NpcEntry(row.RowId, name, modelChara));
         }
 
+        logManager?.Info($"Built ENpc cache: {list.Count} NPCs loaded.");
         return list;
     }
 
     private List<MonsterEntry> BuildMonsterCache()
     {
         var list = new List<MonsterEntry>();
-        var sheet = dataManager.GetExcelSheet<BNpcName>();
+        var nameSheet = dataManager.GetExcelSheet<BNpcName>();
         var baseSheet = dataManager.GetExcelSheet<BNpcBase>();
 
-        if (sheet == null) return list;
+        if (nameSheet == null) return list;
 
-        foreach (var row in sheet)
+        // Load BNpcLink mappings (BNpcNameId -> BNpcBaseId)
+        var nameToBaseMap = LoadBNpcLinks();
+
+        foreach (var row in nameSheet)
         {
             var name = row.Singular.ExtractText();
             if (string.IsNullOrWhiteSpace(name)) continue;
 
             uint modelChara = 0;
-            if (baseSheet != null && baseSheet.TryGetRow(row.RowId, out var baseRow))
+
+            // 1. Try BNpcLink mapping
+            if (nameToBaseMap.TryGetValue(row.RowId, out var baseIds) && baseSheet != null)
             {
-                modelChara = baseRow.ModelChara.RowId;
+                foreach (var bId in baseIds)
+                {
+                    if (baseSheet.TryGetRow(bId, out var baseRow))
+                    {
+                        var mId = baseRow.ModelChara.RowId;
+                        if (mId > 0)
+                        {
+                            modelChara = mId;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 2. Fallback: try row.RowId directly if not found
+            if (modelChara == 0 && baseSheet != null && baseSheet.TryGetRow(row.RowId, out var fallbackRow))
+            {
+                modelChara = fallbackRow.ModelChara.RowId;
             }
 
             list.Add(new MonsterEntry(row.RowId, name, modelChara));
         }
 
+        logManager?.Info($"Built BNpc cache: {list.Count} monsters loaded (mapped with BNpcLink).");
         return list;
+    }
+
+    private Dictionary<uint, List<uint>> LoadBNpcLinks()
+    {
+        var map = new Dictionary<uint, List<uint>>();
+
+        try
+        {
+            // 1. Try Embedded Resource
+            var assembly = Assembly.GetExecutingAssembly();
+            var resourceName = assembly.GetManifestResourceNames()
+                .FirstOrDefault(n => n.EndsWith("BNpcLink.csv", StringComparison.OrdinalIgnoreCase));
+
+            Stream? stream = null;
+            if (resourceName != null)
+            {
+                stream = assembly.GetManifestResourceStream(resourceName);
+            }
+
+            // 2. Fallback to local file if not embedded
+            if (stream == null)
+            {
+                var localPath = Path.Combine(AppContext.BaseDirectory, "Resources", "BNpcLink.csv");
+                if (File.Exists(localPath))
+                {
+                    stream = File.OpenRead(localPath);
+                }
+            }
+
+            if (stream != null)
+            {
+                using var reader = new StreamReader(stream);
+                string? line;
+                while ((line = reader.ReadLine()) != null)
+                {
+                    var parts = line.Split(',');
+                    if (parts.Length >= 2 && uint.TryParse(parts[0], out var nameId) && uint.TryParse(parts[1], out var baseId))
+                    {
+                        if (!map.TryGetValue(nameId, out var list))
+                        {
+                            list = new List<uint>();
+                            map[nameId] = list;
+                        }
+                        list.Add(baseId);
+                    }
+                }
+                logManager?.Info($"Loaded {map.Count} BNpcLink mapping entries.");
+            }
+            else
+            {
+                logManager?.Warning("BNpcLink.csv could not be loaded from embedded resources or local directory.");
+            }
+        }
+        catch (Exception ex)
+        {
+            logManager?.Error($"Failed to load BNpcLinks: {ex.Message}");
+        }
+
+        return map;
     }
 
     private List<TimelineEntry> BuildTimelineCache()

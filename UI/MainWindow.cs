@@ -12,6 +12,7 @@ public class MainWindow : Window, IDisposable
     private readonly Configuration configuration;
     private readonly CharacterLibraryTab libraryTab;
     private readonly StageSceneTab stageTab;
+    private readonly LogTab logTab;
     private readonly GizmoRenderer gizmoRenderer;
     private readonly ActorManager actorManager;
     private readonly IPluginLog log;
@@ -20,6 +21,7 @@ public class MainWindow : Window, IDisposable
         Configuration configuration,
         CharacterLibraryTab libraryTab,
         StageSceneTab stageTab,
+        LogTab logTab,
         GizmoRenderer gizmoRenderer,
         ActorManager actorManager,
         IPluginLog log)
@@ -28,6 +30,7 @@ public class MainWindow : Window, IDisposable
         this.configuration = configuration;
         this.libraryTab = libraryTab;
         this.stageTab = stageTab;
+        this.logTab = logTab;
         this.gizmoRenderer = gizmoRenderer;
         this.actorManager = actorManager;
         this.log = log;
@@ -45,13 +48,13 @@ public class MainWindow : Window, IDisposable
     {
         if (ImGui.BeginTabBar("CharacterSpawnTabs"))
         {
-            if (ImGui.BeginTabItem("Character Library"))
+            if (ImGui.BeginTabItem("Character"))
             {
-                libraryTab.Draw(OnSpawnRequested);
+                libraryTab.Draw();
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Stage & Scene"))
+            if (ImGui.BeginTabItem("Scene"))
             {
                 stageTab.Draw();
                 ImGui.EndTabItem();
@@ -63,26 +66,30 @@ public class MainWindow : Window, IDisposable
                 ImGui.EndTabItem();
             }
 
+            if (ImGui.BeginTabItem("Log"))
+            {
+                logTab.Draw();
+                ImGui.EndTabItem();
+            }
+
             ImGui.EndTabBar();
         }
 
-        // Render 3D Gizmo for selected actor
-        var selectedActor = stageTab.SelectedActor;
-        if (selectedActor != null && selectedActor.IsSpawned)
+        // Render 3D Gizmo
+        // 1. StageSceneTab で選択中のアクター
+        // 2. または CharacterTab でプレビュー中のアクター
+        var targetActor = stageTab.SelectedActor;
+        if (targetActor == null || !targetActor.IsSpawned)
         {
-            gizmoRenderer.Render(selectedActor, (newPos, newRot) =>
-            {
-                actorManager.UpdateActorTransform(selectedActor, newPos, newRot);
-            });
+            targetActor = actorManager.CurrentPreviewActor;
         }
-    }
 
-    private void OnSpawnRequested(CharacterTemplate template)
-    {
-        var spawned = actorManager.SpawnCharacter(template);
-        if (spawned != null)
+        if (targetActor != null && targetActor.IsSpawned && configuration.ShowGizmo)
         {
-            stageTab.SelectActor(spawned);
+            gizmoRenderer.Render(targetActor, (newPos, newRot) =>
+            {
+                actorManager.UpdateActorTransform(targetActor, newPos, newRot);
+            });
         }
     }
 
@@ -92,7 +99,7 @@ public class MainWindow : Window, IDisposable
         ImGui.Separator();
 
         bool showGizmo = configuration.ShowGizmo;
-        if (ImGui.Checkbox("Enable 3D Gizmo on Stage", ref showGizmo))
+        if (ImGui.Checkbox("Enable 3D Gizmo on Stage & Preview", ref showGizmo))
         {
             configuration.ShowGizmo = showGizmo;
             configuration.Save();

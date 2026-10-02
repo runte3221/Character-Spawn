@@ -1,48 +1,66 @@
-# Character Spawn v0.1.8 改修ウォークスルー
+# Character Spawn v0.1.9 改修ウォークスルー
 
 ## 概要
 
-本アップデート (v0.1.8) では、ユーザーから提供されたレイアウト設計（フォルダ階層ツリー構造＋右側詳細パネル＋作成/編集モーダル）に沿って **Character Library UI を全面刷新** し、併せて報告されていた **4 件の主要な不具合・改善要望** をすべて解消しました。
+本アップデート (v0.1.9) では、ユーザーから報告されたすべての不具合（Glamourer/Penumbra IPC 接続、Monster/NPC 上限撤廃およびモデル破損、武器残存、MCDF スポーン、3D ギズモのドラッグ不良）を根本解決し、提供画像に基づいた **Character タブのプレビュー専用化**、**New Chara モーダルの 4 ボタングリッド化**、ならびに原因追跡のための **Log タブの新設** を完了しました。
 
 ---
 
 ## 修正・実装内容の詳細
 
-### 1. Character Library レイアウトの刷新（提供画像準拠）
-- **左ペイン（フォルダ・キャラ階層ツリー）**:
-  - ルート直下のキャラクターおよび作成したフォルダ（`📁 FolderName`）をツリービュー（`TreeNodeEx`）で階層表示。
-  - フォルダの開閉展開および配下キャラクターの選択（ハイライト表示）に対応。
-  - 下部に `[New Chara]`、`[New Folder]`、`[Delete]` ボタンを均等配置。
-- **右ペイン（選択キャラクター詳細パネル）**:
-  - 選択中のキャラクター名をインライン表示・即時編集（テキストボックス入力で即座に設定ファイルへ反映）。
-  - `[Spawn]`、`[edit]`、`[delete]` の 3 アクションボタンを配置。
-  - 外見タイプ（Monster/NPC/Glamourer等）、フォルダ、モデルID、装備保持状況などの詳細サマリーを表示。
-- **New Chara / Edit Chara モーダルウィンドウ**:
-  - `[New Chara]` または `[edit]` をクリックした際に開く専用ポップアップダイアログ。
-  - キャラ名入力、所属フォルダ選択コンボボックス、外見ソース選択、および各ソース固有の詳細設定を集約。
-  - 下部に `[Save to Chara]` と `[Cancel]` ボタンを設置。
+### 1. Glamourer & Penumbra IPC の接続復旧（動的ポーリング対応）
+- **原因と修正**:
+  - 実機プラグイン解析により、Glamourer 1.7.x の API が `Glamourer.ApiVersion.V2`（引数なし・戻り値 `(int, int)`）、`Glamourer.GetDesignList.V2`、`Glamourer.ApplyState`、Penumbra が `Penumbra.ApiVersion.V5`、`Penumbra.GetCollections.V5`、`Penumbra.SetCollectionForObject.V5`、`Penumbra.RedrawObject.V5` に変更されていることを特定。
+  - これらの最新 IPC キーに対応するとともに、従来のキーへのフォールバックも維持。
+  - プロパティ参照時に 1.5 秒間隔で動的検出を行うポーリング機構を実装し、プラグインのロード順に関わらず確実に IPC 接続を確立・維持できるようにしました。
 
-### 2. Glamourer & Penumbra 選択の改善（AQRスタイル）
-- **Glamourer Design ドロップダウン**:
-  - `Glamourer.GetDesignList` IPC から取得した保存済みデザイン一覧を検索テキストフィルター付きのコンボボックスで選択可能に。
-  - デザイン名を選択すると自動でキャラ名にも反映され、Guid が設定される。直接の文字列入力にも対応。
-- **Penumbra Collection ドロップダウン**:
-  - `Penumbra.GetCollections` IPC から取得したコレクション一覧を検索テキストフィルター付きコンボボックスで選択可能に。
+### 2. 「Log」タブの新設（リアルタイムログ収集・ワンクリックコピー）
+- **LogManager の新設**:
+  - プラグイン内で発生するアクター生成、ModelCharaId 取得、CustomizeData 適用、IPC 通信結果などをメモリ内リングバッファ（最新 1,000 件）に記録。
+- **Log タブ（MainWindow）**:
+  - Settings タブの隣に「Log」タブを追加。
+  - ログレベル別の色分け（Error=赤、Warning=黄、Info=白）、検索テキストフィルター、自動スクロール、およびワンクリックで全文をクリップボードにコピーする `[ Copy All ]` ボタンを装備。
 
-### 3. Monster / Mob 検索件数の上限緩和
-- これまで 10 件固定で絞り込まれていた制限を撤廃し、最大 500 件まで検索結果を取得可能に拡張。
-- 縦 160px のスムーズなスクロールリストボックスで多数のモンスターを快適に閲覧・選択可能。
+### 3. Monster / Mob の検索上限撤廃 & モデル解決（マタガイガイ、食道楽のゼゼルン）
+- **上限撤廃**: `SearchMonsters` の検索上限（500 件）を撤廃し、全モンスターを制限なく検索・選択可能に。
+- **マタガイガイの自キャラ化解消**:
+  - ゲーム内では `BNpcName` と `BNpcBase` の RowId が一致しないため、Brio と同等の `BNpcLink`（13,312 件の NameId -> BaseId マッピング）を埋め込みリソースとして内蔵。
+  - モンスター選択時に正しい `BNpcBase` を経由して `ModelCharaId` を確実に解決できるようになりました。
+- **食道楽のゼゼルンのギズモのみ表示解消**:
+  - 非人型モデル（`ModelCharaId > 0`）に対し、人型自キャラからの `CopyFromCharacter` を実行しないよう完全に分離。
+  - モンスター固有のモデルコンテナで直接構築を行い、描画オブジェクトが破損する問題を解決。
 
-### 4. NPC (ENpc) 検索上限緩和 & スポーン時の外見不具合解消
-- **検索件数上限の拡大**: 最大 500 件まで検索結果を取得可能に。
-- **自キャラの姿でスポーンしてしまう問題の根本修正**:
-  - **非人型NPC（レターモーグリ等）**: `ModelCharaId > 0` の場合、`nativeChara->ModelContainer.ModelCharaId` にモデルIDを設定し、`CopyFromCharacter(nativeChara, CharacterCopyFlags.None)` で Native モデルを更新。
-  - **人型NPC（ミューヌ等）**: `ENpcBase` から抽出した 26 バイトの `CustomizeData`（種族、性別、顔、髪型、肌色等）および `NpcEquip` / `ENpcBase` から取得した 10 スロットの装備モデルID（Head, Body, Hands, Legs, Feet 等）を `nativeChara->DrawData.CustomizeData` と `EquipmentModelIds` に直接コピーして適用。
+### 4. NPC (ENpc) の検索上限撤廃 & 武器表示制御（レターモーグリ、ル・スーシモ）
+- **上限撤廃**: `SearchNpcs` の検索上限を撤廃し、全 NPC を全件検索可能に。
+- **レターモーグリのギズモのみ表示解消**: 非人型 NPC のモデルコンテナ初期化を同様に分離し、モーグリ等の非人型モデルが正常に描画されるよう修正。
+- **武器表示制御（Weapon Visible トグル）**:
+  - 右ペインの Chara Name 下に `[x] Weapon Visible` チェックボックスを追加（画像3準拠）。
+  - チェック OFF 時は `nativeChara->DrawData.HideWeapons()` を呼び出し、自キャラの武器が意図せず表示される問題を完全に解消。
 
-### 5. MCDF ファイル選択のエクスプローラー連携
-- 手動のテキストパス入力を改善し、`[Browse...]` ボタンを新設。
-- Windows の `comdlg32.dll`（`GetOpenFileNameW` API）を STA バックグラウンドスレッドで起動し、ゲームのフレーム描画を停止させることなくネイティブの「ファイルを開く」ダイアログで `.mcdf` ファイルを選択可能に。
-- ファイル選択と同時に自動でアーカイブをパースし、含まれる Glamourer デザインを抽出。
+### 5. MCDF ファイルスポーン時の外見データ適用
+- MCDF 選択時、パースした Glamourer デザイン文字列をプレビューアクターの生成時に `Glamourer.ApplyState` / `ApplyByString` を経由して確実に適用。自キャラがスポーンしてしまう問題を解消。
+
+### 6. Character タブの仕様変更（プレビュー専用化：画像3, 4準拠）
+- Character タブでのスポーンを Scene タブとは完全に切り離し、MAP 上で見た目を確認するための「プレビュー用」に変更。
+- **ボタン挙動**:
+  - 未スポーン時: `[ Spawn ]` `[ edit ]` `[ delete ]`
+  - スポーン実行後: ボタンが赤色 `[ Despawn ]` に切り替わり、押すとプレビューアクターを即座に破棄。
+- **スポーン中表示**:
+  - 緑色テキストで `[Name] Spawning...` を表示。
+  - その下に `[x] Gizmo`（ギズモ表示 ON/OFF）チェックボックスを配置。
+- **プレビュー機能説明文**: 未スポーン時に機能説明ボックスを表示。
+
+### 7. New Chara モーダル UI のボタン化（画像2準拠）
+- `Select Appearance Source` のプルダウンを廃止し、2×2 のボタングリッドに変更：
+  - 上段: `[ Glamourer&Penumbra ]` `[ MCDF ]`
+  - 下段: `[ NPC(ENpc) ]` `[ Monster/Mob ]`
+- 選択中のボタンは赤色背景で強調ハイライト。
+- 境界線の下に、選択した source に対応した入力欄（Glamourer デザイン/コレクション、MCDF ファイル選択、NPC/Monster リスト）を動的に表示。
+
+### 8. 3D ギズモのドラッグ操作不良の修正
+- ハンドルの当たり判定（クリック判定半径）を大幅に拡大。
+- 原点から終点までの軸ライン全体に対する線分当たり判定を追加し、軸のどこをクリック・ドラッグしても直感的にアクターを移動できるように改善。
+- スクリーン投影内積計算の感度と Y 軸の上下反転方向を最適化。
 
 ---
 
@@ -50,26 +68,38 @@
 
 | ファイル | 変更概要 |
 | :--- | :--- |
-| `Services/FilePicker.cs` (新規) | Win32 `GetOpenFileNameW` によるネイティブファイル選択ダイアログの実装 |
-| `Services/GameDataService.cs` | 検索件数上限を 500 件に拡張、ENpcBase からの CustomizeData (26B) および装備抽出 |
-| `Managers/ActorManager.cs` | スポーン時の NPC 外見適用処理（非人型 ModelCharaId、人型 CustomizeData & 装備モデルID） |
-| `UI/CharacterLibraryTab.cs` | 提供画像に合わせた階層ツリー・詳細・モーダル UI の全面刷新 |
-| `Models/CharacterModels.cs` | `FolderPath`、`NpcEquipmentModelIds` フィールドの追加 |
-| `Configuration.cs` | 空フォルダ保持用 `Folders` リストの追加 |
-| `package.json` | バージョンを `0.1.8` に更新 |
-| `CharacterSpawn.json` | `AssemblyVersion` を `0.1.8.0` に更新 |
-| `CharacterSpawn.csproj` | `Version`, `AssemblyVersion`, `FileVersion` を `0.1.8.0` に更新 |
-| `repo.json` | `AssemblyVersion` を `0.1.8.0` に更新 |
-| `CHANGELOG.md` | v0.1.8 リリースノートを追記 |
-| `docs/character_spawn/task.md` | タスク完了状態に更新 |
+| `Services/GlamourerIpc.cs` | 最新 IPC キー（`.V2`）対応、動的検出ポーリング |
+| `Services/PenumbraIpc.cs` | 最新 IPC キー（`.V5`）対応、動的検出ポーリング |
+| `Managers/LogManager.cs` (新規) | メモリ内リングバッファによるログ収集マネージャー |
+| `UI/LogTab.cs` (新規) | ゲーム内リアルタイムログビューア（コピー・検索付き） |
+| `Resources/BNpcLink.csv` (新規) | 13,312 件の BNpcName -> BNpcBase マッピングリソース |
+| `Services/GameDataService.cs` | 検索上限撤廃、`BNpcLink` を用いたモンスター ModelCharaId 解決 |
+| `Managers/ActorManager.cs` | 非人型モデル初期化の分離、武器表示フラグ制御、プレビューアクター管理 |
+| `UI/CharacterLibraryTab.cs` | プレビュー専用化（Spawn ⇔ 赤色 Despawn、Spawning...、Gizmoトグル、Weapon Visible、4ボタングリッドモーダル） |
+| `UI/MainWindow.cs` | 「Log」タブ追加、タブ名整理（`Character`, `Scene`, `Settings`, `Log`）、プレビューギズモ描画 |
+| `UI/GizmoRenderer.cs` | ギズモ当たり判定拡大・軸ラインドラッグ対応・感度最適化 |
+| `Models/CharacterModels.cs` | `WeaponVisible` プロパティの追加 |
+| `Plugin.cs` | `LogManager` / `LogTab` の DI 登録および初期化 |
+| `CharacterSpawn.csproj` | バージョン `0.1.9.0` 更新、`BNpcLink.csv` の EmbeddedResource 登録 |
+| `CharacterSpawn.json` | `AssemblyVersion` を `0.1.9.0` に更新 |
+| `package.json` | バージョンを `0.1.9` に更新 |
+| `repo.json` | `AssemblyVersion` を `0.1.9.0` に更新 |
+| `CHANGELOG.md` | v0.1.9 リリースノート追記 |
+| `docs/character_spawn/task.md` | 全タスク完了状態に更新 |
 
 ---
 
-## 次のステップ（ユーザーによるゲーム内動作確認）
+## 動作確認手順
 
-1. GitHub リポジトリへプッシュ後、GitHub Actions CI により最新ビルド (`latest.zip`) が Releases に自動発行されます。
-2. ゲーム内 Dalamud プラグイン一覧より「Character Spawn」をアップデート（または再読み込み）。
+1. GitHub リポジトリへプッシュ後、GitHub Actions CI により最新ビルド (`latest.zip`) が自動発行されます。
+2. ゲーム内 Dalamud プラグイン一覧より「Character Spawn」をアップデート。
 3. `/charaspawn` でウィンドウを開き、以下を確認してください：
-   - Character Library タブが左ツリー＋右詳細パネルの構成になっていること。
-   - `[New Chara]` でモーダルが開き、Glamourer/Penumbra ドロップダウン、Monster/NPC の多数スクロールリスト、MCDF のエクスプローラー選択ができること。
-   - レターモーグリやミューヌをスポーンさせた際、自キャラにならず本来の姿で出現すること。
+   - タブが `[ Character ]` `[ Scene ]` `[ Settings ]` `[ Log ]` になっていること。
+   - `[ New Chara ]` をクリックすると 4 ボタングリッドでソースを選択でき、選択中ボタンが赤色ハイライトされること。
+   - Glamourer & Penumbra 選択時に IPC が Connected となり、デザインやコレクションが選択できること。
+   - NPC(ENpc) や Monster/Mob で上限なく全件検索できること。
+   - レターモーグリ、食道楽のゼゼルン、マタガイガイなどをスポーンさせた際、自キャラやギズモのみにならず正しいモデルで出現すること。
+   - ル・スーシモなどの人型 NPC で `Weapon Visible` を OFF にすると武器が非表示になること。
+   - Character タブでのスポーン後、ボタンが赤色 `[ Despawn ]` に変わり、`Spawning...` と `Gizmo` チェックボックスが表示されること。
+   - 3D ギズモの軸をクリックしてドラッグすることで、スムーズに移動・回転できること。
+   - 「Log」タブで詳細なスポーンログを確認・コピーできること。

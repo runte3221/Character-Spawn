@@ -6,66 +6,168 @@ namespace CharacterSpawn.Services;
 
 public class GlamourerIpc
 {
+    private readonly IDalamudPluginInterface pi;
     private readonly IPluginLog log;
-    private readonly ICallGateSubscriber<string, int, object?>? applyByString;
-    private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
-    private readonly ICallGateSubscriber<int, (int, int)>? getApiVersions;
-    private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getDesignList;
-    private readonly ICallGateSubscriber<int, uint, uint, object?>? reapplyState;
 
-    public bool IsAvailable { get; private set; }
+    // V2 IPC Subscribers
+    private readonly ICallGateSubscriber<(int, int)>? apiVersionV2;
+    private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getDesignListV2;
+    private readonly ICallGateSubscriber<string, int, uint, uint, object?>? applyStateV2;
+    private readonly ICallGateSubscriber<int, uint, uint, object?>? reapplyStateV2;
+    private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
+
+    // Fallback Subscribers
+    private readonly ICallGateSubscriber<int, (int, int)>? apiVersionsLegacy;
+    private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getDesignListLegacy;
+    private readonly ICallGateSubscriber<string, int, object?>? applyByStringLegacy;
+
+    private bool isAvailable = false;
+    private DateTime lastAvailabilityCheck = DateTime.MinValue;
+
+    public bool IsAvailable
+    {
+        get
+        {
+            if ((DateTime.UtcNow - lastAvailabilityCheck).TotalSeconds > 1.5)
+            {
+                CheckAvailability();
+            }
+            return isAvailable;
+        }
+    }
 
     public GlamourerIpc(IDalamudPluginInterface pi, IPluginLog log)
     {
+        this.pi = pi;
         this.log = log;
 
         try
         {
-            getApiVersions = pi.GetIpcSubscriber<int, (int, int)>("Glamourer.ApiVersions");
-            applyByString = pi.GetIpcSubscriber<string, int, object?>("Glamourer.ApplyByString");
+            apiVersionV2 = pi.GetIpcSubscriber<(int, int)>("Glamourer.ApiVersion.V2");
+            getDesignListV2 = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList.V2");
+            applyStateV2 = pi.GetIpcSubscriber<string, int, uint, uint, object?>("Glamourer.ApplyState");
+            reapplyStateV2 = pi.GetIpcSubscriber<int, uint, uint, object?>("Glamourer.ReapplyState");
             getCustomizationFromActor = pi.GetIpcSubscriber<int, string?>("Glamourer.GetCustomizationFromActor");
-            getDesignList = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList");
-            reapplyState = pi.GetIpcSubscriber<int, uint, uint, object?>("Glamourer.ReapplyState");
+
+            apiVersionsLegacy = pi.GetIpcSubscriber<int, (int, int)>("Glamourer.ApiVersions");
+            getDesignListLegacy = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList");
+            applyByStringLegacy = pi.GetIpcSubscriber<string, int, object?>("Glamourer.ApplyByString");
 
             CheckAvailability();
         }
         catch (Exception ex)
         {
-            log.Warning($"Glamourer IPC subscription failed: {ex.Message}");
-            IsAvailable = false;
+            log.Warning($"Glamourer IPC subscription init failed: {ex.Message}");
+            isAvailable = false;
         }
     }
 
     public bool CheckAvailability()
     {
-        try
+        lastAvailabilityCheck = DateTime.UtcNow;
+
+        // Try V2 first
+        if (apiVersionV2 != null)
         {
-            if (getApiVersions == null) return false;
-            var (major, minor) = getApiVersions.InvokeFunc(0);
-            IsAvailable = major >= 1;
-            return IsAvailable;
+            try
+            {
+                var (major, minor) = apiVersionV2.InvokeFunc();
+                isAvailable = major >= 1;
+                if (isAvailable) return true;
+            }
+            catch
+            {
+                // V2 not available, try fallback
+            }
         }
-        catch
+
+        // Try Legacy
+        if (apiVersionsLegacy != null)
         {
-            IsAvailable = false;
-            return false;
+            try
+            {
+                var (major, minor) = apiVersionsLegacy.InvokeFunc(0);
+                isAvailable = major >= 1;
+                return isAvailable;
+            }
+            catch
+            {
+                // Legacy not available
+            }
         }
+
+        isAvailable = false;
+        return false;
+    }
+
+    public Dictionary<Guid, string> GetDesigns()
+    {
+        if (!IsAvailable) return new();
+
+        // 1. Try V2
+        if (getDesignListV2 != null)
+        {
+            try
+            {
+                var list = getDesignListV2.InvokeFunc();
+                if (list != null) return list;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer V2 GetDesignList failed: {ex.Message}");
+            }
+        }
+
+        // 2. Try Legacy
+        if (getDesignListLegacy != null)
+        {
+            try
+            {
+                var list = getDesignListLegacy.InvokeFunc();
+                if (list != null) return list;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer Legacy GetDesignList failed: {ex.Message}");
+            }
+        }
+
+        return new();
     }
 
     public bool ApplyDesignToActor(string designString, int actorIndex)
     {
-        if (!IsAvailable || applyByString == null) return false;
+        if (!IsAvailable) return false;
 
-        try
+        // 1. Try ApplyState (V2)
+        if (applyStateV2 != null)
         {
-            applyByString.InvokeAction(designString, actorIndex);
-            return true;
+            try
+            {
+                applyStateV2.InvokeAction(designString, actorIndex, 0, 0);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer ApplyState failed, trying fallback: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+
+        // 2. Try Legacy ApplyByString
+        if (applyByStringLegacy != null)
         {
-            log.Error($"Failed to apply Glamourer design: {ex.Message}");
-            return false;
+            try
+            {
+                applyByStringLegacy.InvokeAction(designString, actorIndex);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Glamourer ApplyByString fallback failed: {ex.Message}");
+            }
         }
+
+        return false;
     }
 
     public string? GetCustomization(int actorIndex)
@@ -78,38 +180,28 @@ public class GlamourerIpc
         }
         catch (Exception ex)
         {
-            log.Error($"Failed to get Glamourer customization: {ex.Message}");
+            log.Debug($"Failed to get Glamourer customization: {ex.Message}");
             return null;
-        }
-    }
-
-    public Dictionary<Guid, string> GetDesigns()
-    {
-        if (!IsAvailable || getDesignList == null) return new();
-
-        try
-        {
-            return getDesignList.InvokeFunc();
-        }
-        catch
-        {
-            return new();
         }
     }
 
     public bool ReapplyState(int actorIndex)
     {
-        if (!IsAvailable || reapplyState == null) return false;
+        if (!IsAvailable) return false;
 
-        try
+        if (reapplyStateV2 != null)
         {
-            reapplyState.InvokeAction(actorIndex, 0, 0);
-            return true;
+            try
+            {
+                reapplyStateV2.InvokeAction(actorIndex, 0, 0);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer ReapplyState failed: {ex.Message}");
+            }
         }
-        catch (Exception ex)
-        {
-            log.Warning($"Failed to reapply Glamourer state for actor {actorIndex}: {ex.Message}");
-            return false;
-        }
+
+        return false;
     }
 }

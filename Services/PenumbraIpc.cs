@@ -6,93 +6,202 @@ namespace CharacterSpawn.Services;
 
 public class PenumbraIpc
 {
+    private readonly IDalamudPluginInterface pi;
     private readonly IPluginLog log;
-    private readonly ICallGateSubscriber<(int, int)>? getApiVersions;
-    private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getCollections;
-    private readonly ICallGateSubscriber<string, int, int>? setCollectionForObject;
-    private readonly ICallGateSubscriber<int, int, object?>? redrawObject;
 
-    public bool IsAvailable { get; private set; }
+    // V5 IPC Subscribers
+    private readonly ICallGateSubscriber<(int, int)>? apiVersionV5;
+    private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getCollectionsV5;
+    private readonly ICallGateSubscriber<string, int, int, object?>? setCollectionForObjectV5;
+    private readonly ICallGateSubscriber<int, int, object?>? redrawObjectV5;
+
+    // Fallback Subscribers
+    private readonly ICallGateSubscriber<(int, int)>? apiVersionLegacy;
+    private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getCollectionsLegacy;
+    private readonly ICallGateSubscriber<string, int, int>? setCollectionForObjectLegacy;
+    private readonly ICallGateSubscriber<int, int, object?>? redrawObjectLegacy;
+
+    private bool isAvailable = false;
+    private DateTime lastAvailabilityCheck = DateTime.MinValue;
+
+    public bool IsAvailable
+    {
+        get
+        {
+            if ((DateTime.UtcNow - lastAvailabilityCheck).TotalSeconds > 1.5)
+            {
+                CheckAvailability();
+            }
+            return isAvailable;
+        }
+    }
 
     public PenumbraIpc(IDalamudPluginInterface pi, IPluginLog log)
     {
+        this.pi = pi;
         this.log = log;
 
         try
         {
-            getApiVersions = pi.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion");
-            getCollections = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections");
-            setCollectionForObject = pi.GetIpcSubscriber<string, int, int>("Penumbra.SetCollectionForObject");
-            redrawObject = pi.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject");
+            apiVersionV5 = pi.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5");
+            getCollectionsV5 = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections.V5");
+            setCollectionForObjectV5 = pi.GetIpcSubscriber<string, int, int, object?>("Penumbra.SetCollectionForObject.V5");
+            redrawObjectV5 = pi.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject.V5");
+
+            apiVersionLegacy = pi.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion");
+            getCollectionsLegacy = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections");
+            setCollectionForObjectLegacy = pi.GetIpcSubscriber<string, int, int>("Penumbra.SetCollectionForObject");
+            redrawObjectLegacy = pi.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject");
 
             CheckAvailability();
         }
         catch (Exception ex)
         {
-            log.Warning($"Penumbra IPC subscription failed: {ex.Message}");
-            IsAvailable = false;
+            log.Warning($"Penumbra IPC subscription init failed: {ex.Message}");
+            isAvailable = false;
         }
     }
 
     public bool CheckAvailability()
     {
-        try
+        lastAvailabilityCheck = DateTime.UtcNow;
+
+        // Try V5 first
+        if (apiVersionV5 != null)
         {
-            if (getApiVersions == null) return false;
-            var (major, minor) = getApiVersions.InvokeFunc();
-            IsAvailable = major >= 4;
-            return IsAvailable;
+            try
+            {
+                var (major, minor) = apiVersionV5.InvokeFunc();
+                isAvailable = major >= 4;
+                if (isAvailable) return true;
+            }
+            catch
+            {
+                // V5 not available
+            }
         }
-        catch
+
+        // Try Legacy
+        if (apiVersionLegacy != null)
         {
-            IsAvailable = false;
-            return false;
+            try
+            {
+                var (major, minor) = apiVersionLegacy.InvokeFunc();
+                isAvailable = major >= 4;
+                return isAvailable;
+            }
+            catch
+            {
+                // Legacy not available
+            }
         }
+
+        isAvailable = false;
+        return false;
     }
 
     public Dictionary<Guid, string> GetCollections()
     {
-        if (!IsAvailable || getCollections == null) return new();
+        if (!IsAvailable) return new();
 
-        try
+        // 1. Try V5
+        if (getCollectionsV5 != null)
         {
-            return getCollections.InvokeFunc();
+            try
+            {
+                var list = getCollectionsV5.InvokeFunc();
+                if (list != null) return list;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Penumbra V5 GetCollections failed: {ex.Message}");
+            }
         }
-        catch
+
+        // 2. Try Legacy
+        if (getCollectionsLegacy != null)
         {
-            return new();
+            try
+            {
+                var list = getCollectionsLegacy.InvokeFunc();
+                if (list != null) return list;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Penumbra Legacy GetCollections failed: {ex.Message}");
+            }
         }
+
+        return new();
     }
 
     public bool SetCollectionForActor(string collectionName, int actorIndex)
     {
-        if (!IsAvailable || setCollectionForObject == null) return false;
+        if (!IsAvailable) return false;
 
-        try
+        // 1. Try V5
+        if (setCollectionForObjectV5 != null)
         {
-            var result = setCollectionForObject.InvokeFunc(collectionName, actorIndex);
-            return result == 0;
+            try
+            {
+                setCollectionForObjectV5.InvokeAction(collectionName, actorIndex, 0);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Penumbra V5 SetCollectionForObject failed: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+
+        // 2. Try Legacy
+        if (setCollectionForObjectLegacy != null)
         {
-            log.Error($"Failed to set Penumbra collection: {ex.Message}");
-            return false;
+            try
+            {
+                var result = setCollectionForObjectLegacy.InvokeFunc(collectionName, actorIndex);
+                return result == 0;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Penumbra SetCollectionForObject fallback failed: {ex.Message}");
+            }
         }
+
+        return false;
     }
 
     public bool Redraw(int actorIndex)
     {
-        if (!IsAvailable || redrawObject == null) return false;
+        if (!IsAvailable) return false;
 
-        try
+        // 1. Try V5
+        if (redrawObjectV5 != null)
         {
-            redrawObject.InvokeAction(actorIndex, 0);
-            return true;
+            try
+            {
+                redrawObjectV5.InvokeAction(actorIndex, 0);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Penumbra V5 RedrawObject failed: {ex.Message}");
+            }
         }
-        catch (Exception ex)
+
+        // 2. Try Legacy
+        if (redrawObjectLegacy != null)
         {
-            log.Warning($"Failed to trigger Penumbra Redraw for actor {actorIndex}: {ex.Message}");
-            return false;
+            try
+            {
+                redrawObjectLegacy.InvokeAction(actorIndex, 0);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Penumbra RedrawObject fallback failed: {ex.Message}");
+            }
         }
+
+        return false;
     }
 }

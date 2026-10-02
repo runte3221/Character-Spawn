@@ -32,6 +32,7 @@ public sealed class Plugin : IDalamudPlugin
     public Configuration Configuration { get; init; }
     public WindowSystem WindowSystem { get; init; } = new("CharacterSpawnPlugin");
 
+    private readonly LogManager logManager;
     private readonly GameDataService gameDataService;
     private readonly GlamourerIpc glamourerIpc;
     private readonly PenumbraIpc penumbraIpc;
@@ -45,6 +46,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly GizmoRenderer gizmoRenderer;
     private readonly CharacterLibraryTab libraryTab;
     private readonly StageSceneTab stageTab;
+    private readonly LogTab logTab;
     private readonly MainWindow mainWindow;
 
     public Plugin()
@@ -52,8 +54,12 @@ public sealed class Plugin : IDalamudPlugin
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Configuration.Initialize(PluginInterface);
 
+        // Logging
+        logManager = new LogManager(Log);
+        logManager.Info("Character Spawn plugin initializing (v0.1.9)...");
+
         // Services
-        gameDataService = new GameDataService(DataManager);
+        gameDataService = new GameDataService(DataManager, logManager);
         glamourerIpc = new GlamourerIpc(PluginInterface, Log);
         penumbraIpc = new PenumbraIpc(PluginInterface, Log);
         mcdfParser = new McdfParser(Log);
@@ -61,14 +67,15 @@ public sealed class Plugin : IDalamudPlugin
         // Managers
         timelineManager = new TimelineManager(Log);
         headTrackingManager = new HeadTrackingManager(ObjectTable, Log);
-        actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc);
+        actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser);
         namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
 
         // UI
         gizmoRenderer = new GizmoRenderer(GameGui, Configuration);
-        libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, ObjectTable, TargetManager, Log);
+        logTab = new LogTab(logManager);
+        libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, actorManager, ObjectTable, TargetManager, Log, logManager);
         stageTab = new StageSceneTab(Configuration, actorManager, gameDataService, ClientState, ObjectTable, Log);
-        mainWindow = new MainWindow(Configuration, libraryTab, stageTab, gizmoRenderer, actorManager, Log);
+        mainWindow = new MainWindow(Configuration, libraryTab, stageTab, logTab, gizmoRenderer, actorManager, Log);
 
         WindowSystem.AddWindow(mainWindow);
 
@@ -89,6 +96,8 @@ public sealed class Plugin : IDalamudPlugin
 
         Framework.Update += OnFrameworkUpdate;
         ClientState.TerritoryChanged += OnTerritoryChanged;
+
+        logManager.Info("Character Spawn initialized successfully.");
     }
 
     private void OnCommand(string command, string args)
@@ -113,17 +122,15 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnTerritoryChanged(uint territoryType)
     {
-        // ゾーン移動時は安全に現在のアクターを破棄
         actorManager.DespawnAll();
 
         if (!Configuration.AutoRestoreScenesOnZoneChange)
             return;
 
-        // 新ゾーンにAuto-Spawn設定されたシーンがあれば自動呼び出し
         var autoScenes = Configuration.Scenes.Where(s => s.TerritoryTypeId == territoryType && s.AutoSpawnOnZone).ToList();
         foreach (var scene in autoScenes)
         {
-            Log.Information($"Auto-spawning scene '{scene.Name}' for territory {territoryType}");
+            logManager.Info($"Auto-spawning scene '{scene.Name}' for territory {territoryType}");
             foreach (var actorData in scene.Actors)
             {
                 var template = Configuration.Templates.FirstOrDefault(t => t.Id == actorData.TemplateId);
