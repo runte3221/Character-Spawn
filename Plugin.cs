@@ -99,6 +99,9 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update += OnFrameworkUpdate;
         ClientState.TerritoryChanged += OnTerritoryChanged;
 
+        // 過去のセッションで自キャラがGlamourerによって誤変身させられていた場合の自動復元
+        try { actorManager.RevertLocalPlayer(); } catch { }
+
         logManager.Info("Character Spawn initialized successfully.");
     }
 

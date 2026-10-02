@@ -97,6 +97,20 @@ public class MainWindow : Window, IDisposable
             configuration.AutoRestoreScenesOnZoneChange = autoRestore;
             configuration.Save();
         }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        ImGui.TextUnformatted("Character Recovery");
+        if (ImGui.Button("Revert Local Player (Glamourer)", new Vector2(250, 0)))
+        {
+            actorManager.RevertLocalPlayer();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Restores the local player character to their original appearance by reverting Glamourer state.");
+        }
     }
 
     public void Dispose()

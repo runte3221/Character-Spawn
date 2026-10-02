@@ -833,4 +833,55 @@ public class GlamourerIpc
 
         return false;
     }
+
+    /// <summary>
+    /// 自キャラ (LocalPlayer Index 0) の Glamourer ステートを解除・リバートして本来の姿を復元
+    /// </summary>
+    public bool RevertLocalPlayer(string? playerName = null)
+    {
+        if (!IsAvailable) return false;
+        try
+        {
+            log.Information($"Reverting LocalPlayer (Index 0, Name: '{playerName}') in Glamourer...");
+            UnlockState(0, playerName);
+            bool ok = false;
+            if (!string.IsNullOrWhiteSpace(playerName) && revertStateNameV2Ulong != null)
+            {
+                try
+                {
+                    int ecName = revertStateNameV2Ulong.InvokeFunc(playerName, 0, 7UL);
+                    if (ecName == 0) ok = true;
+                }
+                catch { }
+            }
+            if (revertStateV2Ulong != null)
+            {
+                try
+                {
+                    int ec = revertStateV2Ulong.InvokeFunc(0, 0, 7UL);
+                    if (ec == 0) ok = true;
+                }
+                catch { }
+            }
+            else if (revertStateV2Uint != null)
+            {
+                try
+                {
+                    int ec = revertStateV2Uint.InvokeFunc(0, 0, 7U);
+                    if (ec == 0) ok = true;
+                }
+                catch { }
+            }
+            if (revertToAutomationV2Ulong != null)
+            {
+                try { revertToAutomationV2Ulong.InvokeFunc(0, 0, 7UL); } catch { }
+            }
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"RevertLocalPlayer failed: {ex.Message}");
+            return false;
+        }
+    }
 }

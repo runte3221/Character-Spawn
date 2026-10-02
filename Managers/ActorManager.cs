@@ -267,13 +267,18 @@ public unsafe class ActorManager : IDisposable
             nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
             nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-            // AQR / Brio 完全準拠:
-            // ClientObjectManager.CreateBattleCharacter で作成された BattleCharacter の ObjectKind / BattleNpcSubKind / NameId は
-            // 絶対に弄らない（ObjectKind.Pc に書き換えるとゲームエンジンと Penumbra/Glamourer が自キャラと誤認して自キャラが変身する）
+            // 0.1.23 & AQR 黄金パターン:
+            // BattleNpcSubKind.Player, OwnerId = 0xE000_0000, NameId = 0, HomeWorld を設定し、
+            // Penumbra / Glamourer が正規のプレイヤー型アクターとして識別できるようにする
+            nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc;
+            nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
+            nativeChara->GameObject.OwnerId = 0xE000_0000;
+            nativeChara->NameId = 0;
+            nativeChara->HomeWorld = meNative->HomeWorld;
             nativeChara->GameObject.TargetableStatus = 0;
             nativeChara->GameObject.EventId = 0;
 
-            string puppetName = GetPuppetName(template);
+            string puppetName = NextPuppetName();
             nativeChara->GameObject.SetName(puppetName);
 
             // 位置・回転・透明度の設定
@@ -322,6 +327,13 @@ public unsafe class ActorManager : IDisposable
                 },
                 IsTargetable = false
             };
+
+            // 4. MCDF および通常Penumbraコレクションの初期事前適用 (0.1.23 準拠)
+            // ゲームエンジンが DrawObject を構築する前にコレクションを割り当てることで、MODテクスチャを初回から正しくバインドさせる
+            if (template.ModelCharaId == 0 && template.SourceType != CharacterSourceType.Npc)
+            {
+                ApplyAppearanceDirect(nativeChara, globalIdx, template, spawned);
+            }
 
             // 5. 描画準備完了待機ジョブにエンキュー（IsReadyToDraw() を待って EnableDraw() を実行）
             readyJobs.Add(new ReadyJob
@@ -1218,6 +1230,24 @@ public unsafe class ActorManager : IDisposable
         var rot = player.Rotation;
         var forward = new Vector3((float)Math.Sin(rot), 0, (float)Math.Cos(rot));
         return player.Position + (forward * 1.5f);
+    }
+
+    /// <summary>
+    /// 自キャラ (LocalPlayer Index 0) の Glamourer ステートをリバートして本来の姿に復元する
+    /// </summary>
+    public void RevertLocalPlayer()
+    {
+        try
+        {
+            var player = objectTable.Length > 0 ? objectTable[0] : null;
+            string? name = player?.Name.TextValue;
+            glamourerIpc?.RevertLocalPlayer(name);
+            logManager?.Info($"Reverted LocalPlayer state via Glamourer (Name: '{name}').");
+        }
+        catch (Exception ex)
+        {
+            logManager?.Warning($"RevertLocalPlayer failed: {ex.Message}");
+        }
     }
 
     public void Dispose()

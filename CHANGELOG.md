@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.40] - 2026-10-03
+### Fixed
+- **AQuestReborn (AQR) ソースコード・MCDF-Loader・0.1.23完全同期による MCDF/Penumbra/Glamourer 適用不具合および自キャラ誤認の根本解決**:
+  - **根本原因 1: 自キャラ（LocalPlayer 0）の過去セッションにおけるGlamourerステート残留の解消**:
+    - 以前のバージョンでの実行時に自キャラに対してGlamourerステートが適用され、Glamourer内部に保持されたままリバートされていなかったため、自キャラ自体がKimo-1-Nudeの姿のまま固まっていた。
+    - パペットスポーン時に自キャラの素体（`CharacterSetup.CopyFromCharacter`）をコピーするため、自キャラもパペットも同一の変身姿になり、自キャラが乗っ取られたように見えていた。
+    - **対策**: プラグイン起動時およびUIのSettingsタブに「Revert Local Player (Glamourer)」を追加。自キャラのGlamourerロック解除とリバートを実行して本来の姿に完全復元。
+  - **根本原因 2: Penumbraコレクション事前適用（Pre-Assignment）の復元 (v0.1.23準拠)**:
+    - 正常動作していたv0.1.23では、アクター生成直後（描画開始前、`DisableDraw`中）にPenumbra一時コレクション・通常コレクションを事前割り当てしていた。
+    - ゲームエンジンが DrawObject を構築し始める前にコレクションをアクターにバインドしておくことで、MODテクスチャや体型モデルが初回の描画構築時から確実に反映されるように修正。
+  - **根本原因 3: パペットIdentity（ObjectKind, BattleNpcSubKind, OwnerId, NameId）の完全復元 (v0.1.23 & AQR準拠)**:
+    - `ObjectKind.BattleNpc`, `BattleNpcSubKind.Player`, `OwnerId = 0xE000_0000`, `NameId = 0`, `HomeWorld` を設定し、PenumbraおよびGlamourerがパペットを正規のプレイヤー型アクターとして識別できるように復元。
+    - パペット名には一意の英字識別子（"Cs Aa", "Cs Ab"等）を付与し、自キャラの名前との混同を完全防止。
+  - **MCDF 一時コレクション・Mod 登録・Glamourer 適用・Penumbra Redraw の完全同期**:
+    - AQR (MCDF-Loader) の実装に完全準拠し、一時コレクションの作成・割り当て、ModファイルおよびManipulationDataの登録、Glamourer外見適用、Penumbra Redrawを一連のフローとして同期実行。
+
 ## [0.1.39] - 2026-10-03
 ### Fixed
 - **AQuestReborn (AQR) バイナリ完全リバースエンジニアリング準拠によるパペットスポーン & 外見・コレクション適用の根本修復**:
