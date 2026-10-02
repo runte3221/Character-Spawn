@@ -28,7 +28,6 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<int, uint, ulong, int>? revertToAutomationV2Ulong;
     private readonly ICallGateSubscriber<int, uint, uint, int>? revertToAutomationV2Uint;
     private readonly ICallGateSubscriber<int, uint, int>? unlockStateV2;
-    private readonly ICallGateSubscriber<int, object?>? revertLegacy;
 
     // Fallback Subscribers
     private readonly ICallGateSubscriber<int, (int, int)>? apiVersionsLegacy;
@@ -75,7 +74,6 @@ public class GlamourerIpc
             revertToAutomationV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertToAutomation");
             revertToAutomationV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.RevertToAutomation");
             unlockStateV2 = pi.GetIpcSubscriber<int, uint, int>("Glamourer.UnlockState");
-            revertLegacy = pi.GetIpcSubscriber<int, object?>("Glamourer.Revert");
 
             apiVersionsLegacy = pi.GetIpcSubscriber<int, (int, int)>("Glamourer.ApiVersions");
             getDesignListLegacy = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList");
@@ -697,11 +695,6 @@ public class GlamourerIpc
                 int ec = revertStateV2Uint.InvokeFunc(actorIndex, 0, 6U);
                 log.Information($"Glamourer RevertState (uint) for actor #{actorIndex} result: ec={ec}");
                 if (ec == 0) ok = true;
-            }
-            else if (revertLegacy != null)
-            {
-                revertLegacy.InvokeAction(actorIndex);
-                ok = true;
             }
         }
         catch (Exception ex)
