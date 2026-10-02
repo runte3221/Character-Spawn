@@ -406,37 +406,10 @@ public class GlamourerIpc
             }
         }
 
-        // A. Guid が特定できた場合 (通常の Glamourer デザイン)
+        // A. Guid が特定できた場合 (通常の Glamourer デザイン): AQuestReborn 完全準拠で ApplyDesign を直接呼び出す
+        // ※ ApplyState はアクター状態を上書きし Identifier 誤爆を引き起こすため絶対に呼ばない
         if (targetGuid != Guid.Empty)
         {
-            // A-1. まずデザインの JObject を取得して全パーツ強制適用(ForceAllApply)の上、ApplyState を実行
-            var targetDesignObj = GetDesign(targetGuid);
-            if (targetDesignObj != null)
-            {
-                ForceAllApply(targetDesignObj);
-                try
-                {
-                    string compressedBase64 = CompressToBase64(targetDesignObj);
-                    if (applyStateV2Ulong != null)
-                    {
-                        int res = applyStateV2Ulong.InvokeFunc(compressedBase64, actorIndex, 0, 7UL);
-                        log.Information($"Glamourer ApplyState (ForceAllApply compressed, Flags: 7UL) on actorIndex {actorIndex} ('{actorName}', Guid {targetGuid}) result: {res}");
-                        if (res == 0) return true;
-                    }
-                    else if (applyStateV2Uint != null)
-                    {
-                        int res = applyStateV2Uint.InvokeFunc(compressedBase64, actorIndex, 0, 7U);
-                        log.Information($"Glamourer ApplyState (ForceAllApply compressed, Flags: 7U) on actorIndex {actorIndex} ('{actorName}', Guid {targetGuid}) result: {res}");
-                        if (res == 0) return true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    log.Warning($"Glamourer ApplyState with compressed base64 failed for actorIndex {actorIndex} ('{actorName}'): {ex.Message}");
-                }
-            }
-
-            // A-2. ApplyDesign IPC 直接呼び出し (flags = 7: Once | Equipment | Customization)
             if (applyDesignV2Ulong != null)
             {
                 try

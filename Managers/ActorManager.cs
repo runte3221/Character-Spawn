@@ -267,24 +267,12 @@ public unsafe class ActorManager : IDisposable
             nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
             nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-            // クラス分類:
-            // 重要: Penumbra の IPC (SetCollectionForObject / AssignTemporaryCollection) およびリソース解決フックは、
-            // 内部で allowPlayerNpc: false で FromObject を呼ぶ。
-            // ObjectKind が BattleNpc だと CreateBNpcFromObject に進み、NameId 0 のアクターは必ず InvalidActor (ec=16 / ec=255) となり、
-            // Penumbra のコレクションがアクターに割り当てられずバニラになってしまう。
-            // 人型パペット (Glamourer / MCDF / PlayerClone / Humanoid) は ObjectKind.Pc に設定することで、
-            // Penumbra の CreatePlayerFromObject が走り、100% 確実にコレクション・MOD が解決される。
-            nativeChara->GameObject.ObjectKind = template.ModelCharaId > 0 ? ObjectKind.BattleNpc : ObjectKind.Pc;
-            nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
+            // AQR / Brio 完全準拠:
+            // ClientObjectManager.CreateBattleCharacter で作成された BattleCharacter の ObjectKind / BattleNpcSubKind / NameId は
+            // 絶対に弄らない（ObjectKind.Pc に書き換えるとゲームエンジンと Penumbra/Glamourer が自キャラと誤認して自キャラが変身する）
             nativeChara->GameObject.TargetableStatus = 0;
             nativeChara->GameObject.EventId = 0;
 
-            // Glamourer & Penumbra Identity のスタンプ (HDM The 0.8.44 Bug対策)
-            // OwnerId は触らない (デフォルト 0)。OwnerId != 0 だと Penumbra が存在しない親を探して ec=255 となり Glamourer も GetState null になる
-            // NameId == 0 かつ HomeWorld == プレイヤーのワールド かつ 有効な名前 の組み合わせで、
-            // Penumbra/Glamourer は独立した有効な Player Identifier として解決する
-            nativeChara->NameId = 0;
-            nativeChara->HomeWorld = meNative->HomeWorld;
             string puppetName = GetPuppetName(template);
             nativeChara->GameObject.SetName(puppetName);
 
@@ -912,11 +900,7 @@ public unsafe class ActorManager : IDisposable
             penumbraIpc.UnassignCollectionForActor(actorIndex);
         }
 
-        // 人型モデルの場合は ObjectKind.Pc を担保（Penumbra Identifier 解決の生命線）
-        if (template.ModelCharaId == 0)
-        {
-            chara->GameObject.ObjectKind = ObjectKind.Pc;
-        }
+
 
         // 1. MCDF の場合: AQR / Mare 準拠（内包 Mod ファイルのキャッシュ展開 + Penumbra Temporary Collection + Glamourer）
         if (template.SourceType == CharacterSourceType.Mcdf)
@@ -1005,6 +989,10 @@ public unsafe class ActorManager : IDisposable
         {
             bool penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
             logManager?.Info($"Penumbra SetCollection '{template.PenumbraCollectionName}' on Global#{actorIndex}: {penSuccess}");
+            if (penSuccess)
+            {
+                penumbraIpc.Redraw(actorIndex);
+            }
         }
 
         // 3. モンスター / 非人型アクターの場合 (HDM GuiseService 方式)

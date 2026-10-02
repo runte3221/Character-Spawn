@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.39] - 2026-10-03
+### Fixed
+- **AQuestReborn (AQR) バイナリ完全リバースエンジニアリング準拠によるパペットスポーン & 外見・コレクション適用の根本修復**:
+  - **自キャラ変身（外見入れ替わり現象）の根本原因解明と完全根絶**:
+    - **原因 1: ObjectKind / BattleNpcSubKind / NameId の改変による PC 誤爆**:
+      - パペットを `ObjectKind.Pc` かつ `NameId = 0` に書き換えていたため、Penumbra および Glamourer 内部の `ActorIdentifierFactory.FromObject` がパペットをプレイヤーキャラクター（PC）として解決しようとし、名前解決の不整合から自キャラ（LocalPlayer）の Identifier を返してしまっていた。
+      - AQR / Brio の仕様を 100% 遵守し、`ClientObjectManager.CreateBattleCharacter` で作成されたそのままの `BattleCharacter` の状態を維持（`ObjectKind` や `BattleNpcSubKind`、`NameId` の書き換えを完全撤廃）。
+    - **原因 2: Glamourer ApplyState による自キャラ State 上書きの完全根絶**:
+      - `GlamourerIpc.ApplyDesignToActor` において、`GetDesign` で JSON を取得して `ForceAllApply` 圧縮 Base64 を生成し `Glamourer.ApplyState` を呼び出していたが、`ApplyState` はアクターの Identifier に紐づくグローバル状態を書き換えるため、上記原因 1 と合わさって自キャラの State を上書きし、自キャラを Redraw させていた。
+      - AQR 完全準拠の `Glamourer.ApplyDesign(Guid targetGuid, int actorIndex, 0, 7UL)` 直接呼び出しに一本化し、`ApplyState` を完全排除。
+  - **Penumbra コレクション適用の安定化**:
+    - `SetCollectionForActor` 成功直後に AQR と同様に `RedrawObject` を即時実行し、MOD やテクスチャが適用された上で Glamourer デザインが確定するようにシーケンスを整理。
+- **Documentation**:
+  - `docs/fix_aqr_puppet_spawn_and_appearance/` に調査結果、リバースエンジニアリング解析ログ、根本原因、修正内容を記録。
+
 ## [0.1.38] - 2026-10-03
 ### Fixed
 - **Glamourer 1.7.1.3 最新仕様完全準拠によるパペットへの外見 100% 確実適用**:
