@@ -1,0 +1,78 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Download & Extract Dalamud
+      shell: pwsh
+      run: |
+        Invoke-WebRequest -Uri "https://goatcorp.github.io/dalamud-distrib/stg/latest.zip" -OutFile "dalamud.zip"
+        Expand-Archive -Path "dalamud.zip" -DestinationPath "$env:GITHUB_WORKSPACE/dalamud" -Force
+
+    - name: Restore NuGet Packages
+      shell: pwsh
+      run: |
+        dotnet restore CharacterSpawn.csproj /p:Platform="x64"
+      env:
+        DALAMUD_HOME: ${{ github.workspace }}/dalamud
+
+    - name: Build Plugin
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = "Continue"
+        dotnet build CharacterSpawn.csproj -c Release /p:Platform="x64" --no-restore 2>&1 | Tee-Object -FilePath "build.log"
+        if ($LASTEXITCODE -ne 0) {
+          Write-Error "Build failed! Full log output:"
+          Get-Content "build.log"
+          exit 1
+        }
+      env:
+        DALAMUD_HOME: ${{ github.workspace }}/dalamud
+
+    - name: Locate & Prepare Distribution Package
+      shell: pwsh
+      run: |
+        $dalamudZip = Get-ChildItem -Path "bin" -Filter "latest.zip" -Recurse | Select-Object -First 1
+        if ($dalamudZip) {
+          Write-Output "Found Dalamud generated package at: $($dalamudZip.FullName)"
+          Copy-Item -Path $dalamudZip.FullName -Destination "latest.zip" -Force
+        } else {
+          Write-Error "Dalamud generated latest.zip not found under bin/!"
+          Get-ChildItem -Path "bin" -Recurse
+          exit 1
+        }
+
+    - name: Create or Update GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: latest
+        name: "Character Spawn Latest Release"
+        body: ""
+        files: |
+          latest.zip
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

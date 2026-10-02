@@ -1,0 +1,31 @@
+# タスクリスト: Character Spawn プラグイン開発
+
+- [x] プロジェクト基盤の初期構築 <!-- id: 0 -->
+    - [x] `package.json`, `CHANGELOG.md`, `.gitignore`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `build.yml` の作成 <!-- id: 1 -->
+    - [x] プロジェクト設定およびビルドパイプラインの検証 <!-- id: 2 -->
+- [x] データモデルおよび設定（Configuration）の実装 <!-- id: 3 -->
+    - [x] キャラクターテンプレートモデル（外見ソース: Glamourer/Penumbra, MCDF, モンスター/NPC, クローン） <!-- id: 4 -->
+    - [x] スポーン配置データモデル（Transform, アニメーション, 表情, ループ, 視線追従, ネームプレート, ターゲット設定） <!-- id: 5 -->
+    - [x] シーンプリセットモデル（TerritoryType, AutoSpawn, スポーンキャラリスト） <!-- id: 6 -->
+- [x] IPC および外部連携モジュールの実装 <!-- id: 7 -->
+    - [x] Glamourer IPC クライアント <!-- id: 8 -->
+    - [x] Penumbra IPC クライアント <!-- id: 9 -->
+    - [x] MCDF (Mare Chara Data File) パーサー <!-- id: 10 -->
+    - [x] ゲーム内データ検索ヘルパー（Lumina: ENpc, BNpc, ActionTimeline, 表情等） <!-- id: 11 -->
+- [x] クライアントアクター生成・制御エンジンの実装 <!-- id: 12 -->
+    - [x] ローカルアクター（Client-side Actor）生成＆ライフサイクル管理 <!-- id: 13 -->
+    - [x] 座標更新・Transform・当たり判定無効化 <!-- id: 14 -->
+    - [x] アニメーション（ActionTimeline）再生＆シームレスループ制御 <!-- id: 15 -->
+    - [x] 表情（Face Expression）設定 <!-- id: 16 -->
+    - [x] 自キャラ視線追従（Head Tracking / LookAt） <!-- id: 17 -->
+    - [x] ネームプレート制御（カスタム表示名 / 非表示） <!-- id: 18 -->
+    - [x] ターゲット可否（Clickable / Non-targetable）制御 <!-- id: 19 -->
+- [x] UI および 3Dギズモの実装 <!-- id: 20 -->
+    - [x] 3Dマニピュレータ・ギズモ描画（XYZ移動・Yaw回転ドラッグ操作） <!-- id: 21 -->
+    - [x] タブ1: Character Library UI（キャラ作成・保存・一覧・編集） <!-- id: 22 -->
+    - [x] タブ2: Stage & Scene UI（マップ配置・Transform調整・アニメーション/表情・プリセット管理） <!-- id: 23 -->
+    - [x] ゾーン連動（マップ入場時Auto-Spawn・エリア移動時クリーンアップ） <!-- id: 24 -->
+- [x] ドキュメント更新・初回コミット＆プッシュ <!-- id: 25 -->
+    - [x] `walkthrough.md` の作成 <!-- id: 26 -->
+    - [x] `package.json` バージョン確認・`CHANGELOG.md` 追記 <!-- id: 27 -->
+    - [x] Git commit & push <!-- id: 28 -->

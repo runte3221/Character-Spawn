@@ -1,0 +1,11 @@
+{
+  "name": "character-spawn",
+  "version": "0.1.0",
+  "description": "Spawn and control custom characters, NPCs, and monsters locally in FFXIV",
+  "author": "runte3221",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/runte3221/Character-Spawn.git"
+  }
+}
