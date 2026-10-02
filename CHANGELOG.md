@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.14] - 2026-10-02
+### Fixed
+- **Penumbra InvalidIdentifier (ec=16) Resolution via OwnerId Initialization**:
+  - Through full CIL reverse engineering of `Penumbra.GameData.dll`'s `CreateBNpcFromObject`, discovered that Penumbra inspects `GameObject.OwnerId`. If `OwnerId` is not equal to `0xE0000000` (`GameObject.InvalidGameObjectId`), Penumbra attempts to look up the parent object (`objects.ById(ownerId)`). Because `CreateBattleCharacter` initializes `OwnerId` to `0`, the lookup failed and returned `InvalidIdentifier` (`ec=16`), causing all Penumbra collection assignments to be rejected.
+  - Explicitly set `nativeChara->GameObject.OwnerId = 0xE000_0000` alongside `NameId = 0`, `HomeWorld`, and `SetName(puppetName)`. This satisfies Penumbra's Player identifier validation branch, allowing `SetCollectionForObject` to return `ec=0` (Success) and apply collections flawlessly.
+- **MCDF Section Penumbra Collection Selector**:
+  - Added Penumbra Collection selection dropdown to the MCDF configuration section in `UI/CharacterLibraryTab.cs`.
+  - Characters created or imported from `.mcdf` files can now bind and persist dedicated Penumbra Collections alongside their extracted Glamourer design.
+
 ## [0.1.13] - 2026-10-02
 ### Fixed
 - **MCDF LZ4 Decompression Stream Support (AQR McdfCharaFileManager Architecture)**:

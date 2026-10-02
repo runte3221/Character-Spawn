@@ -659,42 +659,7 @@ public class CharacterLibraryTab
         ImGui.Spacing();
 
         // Penumbra Collection Combo
-        ImGui.TextUnformatted("Penumbra Collection:");
-        if (penumbraIpc.IsAvailable)
-        {
-            var collections = penumbraIpc.GetCollections();
-            string penumbraPreview = !string.IsNullOrEmpty(selectedPenumbraCollection) ? selectedPenumbraCollection : "Select a collection (Optional)...";
-
-            ImGui.SetNextItemWidth(-1);
-            if (ImGui.BeginCombo("##PenumbraCollCombo", penumbraPreview))
-            {
-                ImGui.InputTextWithHint("##PenSearch", "Search collections...", ref penumbraSearch, 64);
-                ImGui.Separator();
-
-                if (ImGui.Selectable("(None / Default)", string.IsNullOrEmpty(selectedPenumbraCollection)))
-                {
-                    selectedPenumbraCollection = string.Empty;
-                }
-
-                var sortedCollections = collections.Values.OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
-                foreach (var coll in sortedCollections)
-                {
-                    if (!string.IsNullOrWhiteSpace(penumbraSearch) && !coll.Contains(penumbraSearch, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    bool isSelected = selectedPenumbraCollection == coll;
-                    if (ImGui.Selectable(coll, isSelected))
-                    {
-                        selectedPenumbraCollection = coll;
-                    }
-                }
-                ImGui.EndCombo();
-            }
-        }
-        else
-        {
-            ImGui.TextDisabled("Penumbra IPC not detected.");
-        }
+        DrawPenumbraCollectionSelector();
     }
 
     private void DrawModalMcdfSection()
@@ -747,6 +712,53 @@ public class CharacterLibraryTab
             }
             ImGui.SameLine();
             ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), System.IO.Path.GetFileName(modalMcdfPath));
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        // MCDF でも Penumbra Collection を指定可能にする
+        DrawPenumbraCollectionSelector();
+    }
+
+    private void DrawPenumbraCollectionSelector()
+    {
+        ImGui.TextUnformatted("Penumbra Collection:");
+        if (penumbraIpc.IsAvailable)
+        {
+            var collections = penumbraIpc.GetCollections();
+            string penumbraPreview = !string.IsNullOrEmpty(selectedPenumbraCollection) ? selectedPenumbraCollection : "Select a collection (Optional)...";
+
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.BeginCombo("##PenumbraCollCombo", penumbraPreview))
+            {
+                ImGui.InputTextWithHint("##PenSearch", "Search collections...", ref penumbraSearch, 64);
+                ImGui.Separator();
+
+                if (ImGui.Selectable("(None / Default)", string.IsNullOrEmpty(selectedPenumbraCollection)))
+                {
+                    selectedPenumbraCollection = string.Empty;
+                }
+
+                var sortedCollections = collections.Values.OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
+                foreach (var coll in sortedCollections)
+                {
+                    if (!string.IsNullOrWhiteSpace(penumbraSearch) && !coll.Contains(penumbraSearch, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    bool isSelected = selectedPenumbraCollection == coll;
+                    if (ImGui.Selectable(coll, isSelected))
+                    {
+                        selectedPenumbraCollection = coll;
+                    }
+                }
+                ImGui.EndCombo();
+            }
+        }
+        else
+        {
+            ImGui.TextDisabled("Penumbra IPC not detected.");
         }
     }
 

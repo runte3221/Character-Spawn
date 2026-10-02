@@ -186,7 +186,10 @@ public unsafe class ActorManager : IDisposable
             nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
             nativeChara->GameObject.TargetableStatus &= ~ObjectTargetableFlags.IsTargetable;
 
-            // Glamourer Identity のスタンプ (The 0.8.44 Bug 対策: SE有効な一意の姓名とワールドを付与)
+            // Glamourer & Penumbra Identity のスタンプ (The 0.8.44 Bug & Penumbra ec=16 対策)
+            // Penumbra の ActorIdentifierFactory は OwnerId == 0xE000_0000 かつ NameId == 0 かつ Player名 を
+            // 有効な Player Identifier として解決する（OwnerId が 0 だと存在しない親を探して InvalidIdentifier 16 となる）
+            nativeChara->GameObject.OwnerId = 0xE000_0000;
             nativeChara->NameId = 0;
             nativeChara->HomeWorld = meNative->HomeWorld;
             string puppetName = NextPuppetName();

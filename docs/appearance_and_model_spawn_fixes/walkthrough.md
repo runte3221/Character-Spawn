@@ -1,43 +1,37 @@
-# 改修内容の確認 (Walkthrough) - v0.1.13
+# 改修内容の確認 (Walkthrough) - v0.1.14
 
 ## 概要
-本バージョンでは、A Quest Reborn (AQR) のリバースエンジニアリング、実機 MCDF ファイルのバイナリ解析、および Penumbra.Api.dll の CIL メタデータ解析に基づき、MCDF の解凍および Penumbra Collection の適用失敗に関する真の根本原因を特定し、完全修正を行いました。
+本バージョンでは、`Penumbra.GameData.dll` の内部処理を CIL 逆アセンブルによって詳細解析し、Penumbra の `SetCollectionForObject` が `InvalidIdentifier (ec=16)` で拒否されていた真の根本原因を特定・解消しました。また、MCDF 設定画面に Penumbra Collection 選択コンボボックスを追加し、MCDF 外見と Mod コレクションの同時適用を実現しました。
 
 ---
 
 ## 修正内容のハイライト
 
-### 1. MCDF 全体 LZ4 圧縮ストリームの解凍対応 (`Services/McdfParser.cs`)
-- **問題**: MCDF ファイルを選択・保存してスポーンさせても、外見が適用されず直前にスポーンしたアクター（Ruma等）や自キャラが表示されていた。
-- **原因**: 現代の MCDF ファイルはファイル全体が LZ4 圧縮されたバイナリデータ（AQR の `McdfCharaFileManager.cs` 準拠）。生ファイルのまま読もうとしていたため、JSON 途中の圧縮バイトで例外落ちし、GlamourerDesignString が空になっていた。
+### 1. Penumbra InvalidIdentifier (ec=16) の解明と OwnerId 設定 (`Managers/ActorManager.cs`)
+- **問題**: Penumbra Collection（`[Male-Chonk]` 等）を選択してスポーンさせても、`ec=16` で失敗しコレクションが反映されなかった。
+- **原因**: 
+  - `Penumbra.GameData.dll` の `CreateBNpcFromObject` の CIL コードを解析した結果、Penumbra はアクターの `OwnerId` を参照しており、`OwnerId != 0xE0000000` の場合は親オブジェクトの探索（`objects.ById(ownerId)`）を試みることが判明。
+  - `CreateBattleCharacter` で新規生成された BattleNpc の `OwnerId` は `0` で初期化されているため、親が見つからず直ちに `InvalidIdentifier` (16) で全リクエストが弾かれていた。
 - **対策**:
-  - `lz4net` を導入し、ファイル全体を `LZ4.LZ4Stream` で展開しながらパースするよう全面改修。
-  - 実ファイル（`testruma.mcdf`, `test.mcdf`）からそれぞれ 1104 文字、1144 文字の Base64 外見データを 100% 確実に抽出できることを実証・確認。
-  - MCDF の指定したキャラクター外見が確実に保存・適用されるようになりました。
+  - `ActorManager.SpawnCharacter` において、`nativeChara->GameObject.OwnerId = 0xE000_0000;` を明示的に設定。
+  - これにより親探索をバイパスし、`nameId == 0` かつ `puppetName`、`HomeWorld` から正規の Player 識別子が生成され、`SetCollectionForObject` が `ec=0` (Success) で完全に成功するようになりました。
 
-### 2. Penumbra V5 IPC 正確なシグネチャの完全一致 (`Services/PenumbraIpc.cs`)
-- **問題**: Penumbra Collection を指定してスポーンしても Mod 服や装飾が反映されず、バニラ装備のままになっていた。
-- **原因**: `Penumbra.Api.dll` の CIL を解析したところ、`Penumbra.SetCollectionForObject.V5` は
-  - 第2引数が `Guid` ではなく `Guid?` (`Nullable<Guid>`)
-  - 戻り値が `(int, Guid)` ではなく `(int, (Guid, string)?)`
-  を要求しており、型変換例外（`converting from ValueTuple 2 to System.Int32`）で全試行が落ちていた。
+### 2. MCDF セクションへの Penumbra Collection 選択 UI 追加 (`UI/CharacterLibraryTab.cs`)
+- **問題**: MCDF でスポーンさせると外見データ（Glamourer）は正常に反映されるが、Penumbra Collection を選ぶことができず反映されない。
+- **原因**: MCDF のモーダル設定画面に Penumbra Collection を選択する UI（コンボボックス）が存在しなかったため、テンプレート保存時にコレクション名が空文字になっていた。
 - **対策**:
-  - `ICallGateSubscriber<int, Guid?, bool, bool, (int, (Guid, string)?)>` の正確な型定義を実装。
-  - 戻り値のステータスコード 0（Success）を検証し、Penumbra コレクションのバインドが完全に成功するようになりました。
-
-### 3. Penumbra & Glamourer 二重 Redraw フロー (`Managers/ActorManager.cs`)
-- AQR の設計に準拠し、Penumbra Collection 設定後に 1回目の Redraw を実行し、Glamourer 外見適用後に 2回目の Redraw を実行する二重同期パイプラインを実装。Mod テクスチャやメッシュが確実にアクターに反映されます。
+  - `DrawPenumbraCollectionSelector()` を抽出し、MCDF セクション内にも Penumbra Collection 選択コンボボックス（検索付き）を配置。
+  - MCDF の外見と Penumbra Collection の双方を同時に保存・適用できるようになりました。
 
 ---
 
 ## 変更されたファイル一覧
-- `package.json` (0.1.13 に更新)
-- `CharacterSpawn.json` (0.1.13.0 に更新)
-- `CharacterSpawn.csproj` (0.1.13.0 に更新、`lz4net` パッケージ追加)
-- `repo.json` (0.1.13.0 に更新)
-- `CHANGELOG.md` (0.1.13 リリースノート追加)
-- `Services/McdfParser.cs` (LZ4Stream 解凍パース対応)
-- `Services/PenumbraIpc.cs` (Penumbra V5 正確なタプルシグネチャ対応)
-- `Managers/ActorManager.cs` (二重 Redraw パイプライン連携)
+- `package.json` (0.1.14 に更新)
+- `CharacterSpawn.json` (0.1.14.0 に更新)
+- `CharacterSpawn.csproj` (0.1.14.0 に更新)
+- `repo.json` (0.1.14.0 に更新)
+- `CHANGELOG.md` (0.1.14 リリースノート追加)
+- `Managers/ActorManager.cs` (OwnerId = 0xE0000000 明示初期化)
+- `UI/CharacterLibraryTab.cs` (MCDF セクションへの Penumbra Collection 選択 UI 追加)
 - `docs/appearance_and_model_spawn_fixes/` (task.md, implementation_plan.md, walkthrough.md 同期)
 
