@@ -14,6 +14,13 @@
 - [x] バージョン更新 (0.1.19 / 0.1.19.0)
   - `package.json`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json`
   - `CHANGELOG.md` 追記
+## v0.1.20 修正タスク
+- [x] 水平回転（Yaw）専用リング `RotateY` への切り替え（キャラクター向き変更の確実化）
+- [x] ギズモ操作中のクリック透過による「New NPC / Failed to get response.」ダイアログの防止（動的 NoInputs 制御 & TargetableStatus=0, EventId=0 徹底）
+- [x] メインウィンドウ上部左側の余計なギズモボタンの削除
+- [x] バージョン更新 (0.1.20 / 0.1.20.0)
+  - `package.json`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json`
+  - `CHANGELOG.md` 追記
 - [x] Git Commit & Push
 - [x] GitHub Actions ビルド待機 & XIVLauncher 全バージョンフォルダへの最新 DLL 配置
 - [x] 完了報告

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.20] - 2026-10-02
+### Fixed
+- **Horizontal Actor Rotation (Yaw Ring)**:
+  - Fixed character rotation not responding during ring manipulation. Switched operation from 4-ring `Rotate` (which prioritized screen-space camera roll) to `ImGuizmoOperation.RotateY` (horizontal planar yaw ring).
+  - Dragging the green horizontal rotation ring now immediately and smoothly turns the character's heading in 360 degrees.
+- **Eliminated "New NPC: Failed to get response." Popup**:
+  - Implemented dynamic input capture in `GizmoRenderer`: `ImGuiWindowFlags.NoInputs` is dynamically cleared while hovering or manipulating the gizmo (`IsOver() || IsUsing()`), consuming clicks and preventing game-world click-through.
+  - While not hovering over the gizmo, `NoInputs` remains active so players can freely rotate the game camera without hindrance.
+  - Enforced `TargetableStatus = 0` and `EventId = 0` on spawned actors to completely disable game NPC interaction events.
+- **Removed Duplicate Header Gizmo Buttons**:
+  - Cleaned up `MainWindow.Draw()` by removing the redundant gizmo toolbar buttons from the upper-left header above tabs, retaining only the clean in-context toolbar inside the character spawn details and stage scene tabs.
+
 ## [0.1.19] - 2026-10-02
 ### Fixed
 - **ImGuizmo 3D Rendering & Camera Projection**:

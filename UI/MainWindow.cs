@@ -46,12 +46,6 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        // Stagehand スタイル ギズモツールバー (Select / Translate / Rotate)
-        gizmoRenderer.DrawToolbar();
-        ImGui.SameLine();
-        ImGui.TextDisabled("Gizmo Mode");
-        ImGui.Spacing();
-
         if (ImGui.BeginTabBar("CharacterSpawnTabs"))
         {
             if (ImGui.BeginTabItem("Character"))

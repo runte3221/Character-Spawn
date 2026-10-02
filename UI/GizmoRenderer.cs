@@ -70,6 +70,8 @@ public unsafe class GizmoRenderer
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Rotate (Rotate along X, Y, Z rings)");
     }
 
+    private bool isHoveredOrUsing = false;
+
     public void Render(SpawnedActorData? selectedActor, Action<Vector3, float> onTransformChanged)
     {
         if (selectedActor == null || !selectedActor.IsSpawned)
@@ -99,7 +101,9 @@ public unsafe class GizmoRenderer
         projMatrix.M33 = -((far + near) / (far - near));
         viewMatrix.M44 = 1.0f;
 
-        // フルスクリーン透明オーバーレイウィンドウ (NoInputs を付与してカメラ回転等の通常操作を一切阻害しない)
+        // フルスクリーン透明オーバーレイウィンドウ
+        // ギズモにカーソルが乗っている/操作中の時だけ NoInputs を解除してゲーム側へのクリック透過(NPC会話暴発)を防ぎ、
+        // それ以外の時は NoInputs を有効にしてゲームのカメラ視点移動を自由に許可する
         ImGuiHelpers.ForceNextWindowMainViewport();
         ImGuiHelpers.SetNextWindowPosRelativeMainViewport(Vector2.Zero);
         ImGui.SetNextWindowSize(ImGui.GetIO().DisplaySize);
@@ -109,8 +113,12 @@ public unsafe class GizmoRenderer
                     ImGuiWindowFlags.NoFocusOnAppearing |
                     ImGuiWindowFlags.NoNav |
                     ImGuiWindowFlags.NoBackground |
-                    ImGuiWindowFlags.NoBringToFrontOnFocus |
-                    ImGuiWindowFlags.NoInputs;
+                    ImGuiWindowFlags.NoBringToFrontOnFocus;
+
+        if (!isHoveredOrUsing)
+        {
+            flags |= ImGuiWindowFlags.NoInputs;
+        }
 
         ImGui.PushStyleColor(ImGuiCol.WindowBg, 0);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0);
@@ -136,9 +144,9 @@ public unsafe class GizmoRenderer
             var matrix = Matrix4x4.Identity;
             ImGuizmo.RecomposeMatrixFromComponents(ref pos.X, ref rotVec.X, ref scaleVec.X, ref matrix.M11);
 
-            // 操作モード: Translate (軸矢印 + XY/XZ/YZ平面Quad) / Rotate (回転リング)
+            // 操作モード: Translate (軸矢印 + XY/XZ/YZ平面Quad) / RotateY (水平回転リング: キャラクターの向き変更に最適化)
             var op = configuration.CurrentGizmoMode == GizmoMode.Rotate
-                ? ImGuizmoOperation.Rotate
+                ? ImGuizmoOperation.RotateY
                 : ImGuizmoOperation.Translate;
 
             var mode = ImGuizmoMode.World;
@@ -155,6 +163,9 @@ public unsafe class GizmoRenderer
                 float newYawRad = newRotVec.Y * (MathF.PI / 180.0f);
                 onTransformChanged(newPos, newYawRad);
             }
+
+            // 次フレームの NoInputs 判定用にホバー・使用状態を記録
+            isHoveredOrUsing = ImGuizmo.IsOver() || ImGuizmo.IsUsing();
 
             ImGuizmo.SetID(-1);
             ImGui.End();

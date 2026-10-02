@@ -210,7 +210,8 @@ public unsafe class ActorManager : IDisposable
                 nativeChara->GameObject.ObjectKind = ObjectKind.Pc;
                 nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
             }
-            nativeChara->GameObject.TargetableStatus &= ~ObjectTargetableFlags.IsTargetable;
+            nativeChara->GameObject.TargetableStatus = 0;
+            nativeChara->GameObject.EventId = 0;
 
             // Glamourer & Penumbra Identity のスタンプ (The 0.8.44 Bug & Penumbra ec=16 対策)
             // Penumbra の ActorIdentifierFactory は OwnerId == 0xE000_0000 かつ NameId == 0 かつ Player名 を
