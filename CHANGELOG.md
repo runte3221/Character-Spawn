@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.11] - 2026-10-02
+### Fixed
+- **Two Index Spaces Trap Resolution (Glamourer/Penumbra Player Clone Fix)**:
+  - Resolved critical architectural flaw where internal `ClientObjectManager` slots (COM# 0, 1...) were passed to IPC endpoints instead of global `IObjectTable` indices (~200-244 reserved range). Passing COM# 0 caused Glamourer and Penumbra to target the local player character (index 0).
+  - Tracked and supplied `actor.ObjectIndex` (`GlobalIndex`) for all Glamourer and Penumbra IPC operations, preventing spawned characters from taking on the local player's appearance.
+- **Glamourer Identity Stamping (HDM The 0.8.44 Bug Fix)**:
+  - Stamped each spawned BattleNpc actor with a valid SE player name format (`Cs Aa`, `Cs Ab`...) via a unique serial generator, `NameId = 0`, and the local player's `HomeWorld`.
+  - Bypasses Glamourer's `ActorIdentifierFactory` invalid NPC ID rejection, allowing Glamourer state and design application to succeed reliably.
+- **Draw-When-Ready 2-Phase Queue (HDM / Brio Architecture)**:
+  - Implemented framework-driven `ReadyJob` queue. Phase 1 polls `IsReadyToDraw()` and enables draw; Phase 2 waits until `DrawObject != null && DrawObject->IsVisible` before applying Glamourer designs or Penumbra collections, ensuring Glamourer applies to a settled and registered actor body.
+- **Monster & NPC Non-Humanoid Rendering (HDM GuiseService & Brio Pattern)**:
+  - Fixed "gizmo only" / invisible models by seeding all actors with a double `CharacterSetup.CopyFromCharacter` from the local player before applying monster or NPC models, ensuring an active drawable skeleton exists rather than an uninitialized, invisible `SetupBNpc(0)`.
+  - Swapped `ModelContainer.ModelCharaId`, hid weapons, and triggered Penumbra `RedrawObject` / `DisableDraw` settlement, guaranteeing monster and mob 3D models render correctly.
+- **Template Data Persistence Guarantee**:
+  - Enhanced `SaveModalTemplate` to guarantee full persistence of Glamourer GUID/name, Penumbra collection name, MCDF file path & parsed Base64 design, and NPC/Monster IDs with extensive logging.
+  - Added clean state restoration in `OpenEditCharacterModal` and detailed attribute inspection in `Template Details`.
+  - Robust `DespawnCharacter` resolving live COM indexes via `GetIndexByObject` to avoid stale index deletion.
+
 ## [0.1.10] - 2026-10-02
 ### Fixed
 - **AQR-Conforming Monster & Non-Humanoid Spawning**: Adopted A Quest Reborn (AQR) architectural pattern for monster and non-humanoid NPC spawning. By setting `ModelContainer.ModelCharaId`, disabling weapons, and triggering Penumbra's `RedrawObject`, models (such as Ruin Runner, Antelope Doe, Gnat, Letter Moogle) now properly instantiate and render instead of showing only a gizmo.

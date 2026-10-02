@@ -337,12 +337,25 @@ public class CharacterLibraryTab
                     break;
                 case CharacterSourceType.Glamourer:
                     if (!string.IsNullOrWhiteSpace(selectedTemplate.GlamourerDesignString))
-                        ImGui.BulletText($"Glamourer Design: {selectedTemplate.GlamourerDesignString[..Math.Min(24, selectedTemplate.GlamourerDesignString.Length)]}...");
+                    {
+                        string displayDesign = selectedTemplate.GlamourerDesignString;
+                        if (Guid.TryParse(selectedTemplate.GlamourerDesignString, out var g))
+                        {
+                            var designs = glamourerIpc.GetDesigns();
+                            if (designs.TryGetValue(g, out var dName))
+                            {
+                                displayDesign = $"{dName} ({g})";
+                            }
+                        }
+                        ImGui.BulletText($"Glamourer Design: {displayDesign}");
+                    }
                     if (!string.IsNullOrWhiteSpace(selectedTemplate.PenumbraCollectionName))
                         ImGui.BulletText($"Penumbra Collection: {selectedTemplate.PenumbraCollectionName}");
                     break;
                 case CharacterSourceType.Mcdf:
                     ImGui.BulletText($"File: {System.IO.Path.GetFileName(selectedTemplate.McdfFilePath)}");
+                    if (!string.IsNullOrWhiteSpace(selectedTemplate.PenumbraCollectionName))
+                        ImGui.BulletText($"Penumbra Collection: {selectedTemplate.PenumbraCollectionName}");
                     break;
             }
 
@@ -417,7 +430,32 @@ public class CharacterLibraryTab
         selectedGlamourerDesignGuid = string.Empty;
         selectedGlamourerDesignName = string.Empty;
 
-        if (template.SourceType == CharacterSourceType.Monster && template.DataId > 0)
+        if (template.SourceType == CharacterSourceType.Glamourer && !string.IsNullOrWhiteSpace(template.GlamourerDesignString))
+        {
+            var designs = glamourerIpc.GetDesigns();
+            if (Guid.TryParse(template.GlamourerDesignString, out var parsedGuid))
+            {
+                selectedGlamourerDesignGuid = parsedGuid.ToString();
+                if (designs.TryGetValue(parsedGuid, out var name))
+                {
+                    selectedGlamourerDesignName = name;
+                }
+            }
+            else
+            {
+                var match = designs.FirstOrDefault(x => string.Equals(x.Value, template.GlamourerDesignString, StringComparison.OrdinalIgnoreCase));
+                if (!match.Equals(default(KeyValuePair<Guid, string>)))
+                {
+                    selectedGlamourerDesignGuid = match.Key.ToString();
+                    selectedGlamourerDesignName = match.Value;
+                }
+                else
+                {
+                    selectedGlamourerDesignName = template.GlamourerDesignString;
+                }
+            }
+        }
+        else if (template.SourceType == CharacterSourceType.Monster && template.DataId > 0)
         {
             modalSelectedMonster = new GameDataService.MonsterEntry(template.DataId, template.Name, template.ModelCharaId);
         }
@@ -604,7 +642,7 @@ public class CharacterLibraryTab
                 {
                     selectedGlamourerDesignGuid = kvp.Key.ToString();
                     selectedGlamourerDesignName = kvp.Value;
-                    customGlamourerString = kvp.Value;
+                    customGlamourerString = kvp.Key.ToString();
                     if (string.IsNullOrWhiteSpace(modalName) || modalName == "New Character")
                     {
                         modalName = kvp.Value;
@@ -775,11 +813,33 @@ public class CharacterLibraryTab
         target.PenumbraCollectionName = selectedPenumbraCollection;
         target.McdfFilePath = modalMcdfPath;
 
-        var design = customGlamourerString;
-        if (string.IsNullOrWhiteSpace(design) && modalSourceType == CharacterSourceType.PlayerClone && glamourerIpc.IsAvailable)
+        string design = customGlamourerString;
+        if (modalSourceType == CharacterSourceType.Glamourer)
+        {
+            if (string.IsNullOrWhiteSpace(design))
+            {
+                design = !string.IsNullOrWhiteSpace(selectedGlamourerDesignGuid) 
+                    ? selectedGlamourerDesignGuid 
+                    : selectedGlamourerDesignName;
+            }
+        }
+        else if (modalSourceType == CharacterSourceType.Mcdf)
+        {
+            target.ModelCharaId = 0;
+            if (string.IsNullOrWhiteSpace(design) && !string.IsNullOrWhiteSpace(modalMcdfPath))
+            {
+                var parsed = mcdfParser.ParseMcdf(modalMcdfPath);
+                if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
+                {
+                    design = parsed.GlamourerDesign;
+                }
+            }
+        }
+        else if (modalSourceType == CharacterSourceType.PlayerClone && string.IsNullOrWhiteSpace(design) && glamourerIpc.IsAvailable)
         {
             design = glamourerIpc.GetCustomization(0) ?? string.Empty;
         }
+
         target.GlamourerDesignString = design;
 
         if (modalSourceType == CharacterSourceType.Monster && modalSelectedMonster != null)
@@ -821,7 +881,7 @@ public class CharacterLibraryTab
         configuration.Save();
         selectedTemplate = target;
         editInlineName = target.Name;
-        logManager?.Info($"Saved character template '{target.Name}' (Source: {target.SourceType}, Model: {target.ModelCharaId}, Folder: {target.FolderPath}).");
+        logManager?.Info($"Saved character template '{target.Name}' (Source: {target.SourceType}, Model: {target.ModelCharaId}, DesignLen: {target.GlamourerDesignString?.Length ?? 0}, Penumbra: '{target.PenumbraCollectionName}', Mcdf: '{target.McdfFilePath}').");
     }
 
     private void DrawNewFolderPopup()

@@ -1,48 +1,52 @@
-# 修正内容の確認 (Walkthrough): 外見適用・モデルスポーン・UI修正 (v0.1.10)
+# 変更内容の確認 (Walkthrough) - v0.1.11.0
 
-## 実施した変更内容
-
-### 1. Glamourer & Penumbra 選択時の外見適用（自キャラ化解消）
-- **原因の特定**:
-  - A Quest Reborn (AQR) のバイナリおよび IL コードを解析した結果、Glamourer の `ApplyDesign` / `ApplyState` の第4引数フラグに `7`（`Customization | Equipment | Accessories` = 0x7）を渡していることが判明。これまでのコードでは `0` を渡していたため、外見適用処理がすべて無効化され自キャラのままになっていました。
-- **改修内容**:
-  - `GlamourerIpc.cs`: `ApplyDesign` / `ApplyState` / `ReapplyState` の呼び出しにおいて、`flags = 7` (0x7UL / 0x7U) を渡すように修正。
-  - 名前から GUID への自動検索・解決機能を追加し、UIで名前選択・GUID選択のどちらでも確実に適用できるように対応。
-  - `PenumbraIpc.cs`: コレクション設定の引数を `allowCreate = true, allowDelete = true` に更新。
-  - `ActorManager.cs`: アクターの生成スロット（`SlotIndex`）を確実に IPC に渡し、Penumbra コレクション設定 -> Glamourer デザイン適用 -> Penumbra `RedrawObject` の順序で実行。
-
-### 2. MCDF ファイル選択時の外見適用
-- MCDF ファイルから抽出した Base64 文字列を `flags = 7` を指定して Glamourer に渡し、Penumbra Redraw を連動させることで、自キャラ化することなく MCDF 内の外見がアクターに確実に反映されます。
-
-### 3. モンスター・非人型NPCの描画復旧（ギズモのみ表示の解消）
-- **原因の特定**:
-  - AQR の実装では、人型からのコピーは行わず、`chara->ModelContainer.ModelCharaId = template.ModelCharaId;` を設定して武器を隠蔽した後、**Penumbra の `RedrawObject`** を呼ぶことでゲームエンジン側がモンスターモデルを自動生成・ロードしていました。自前で `CopyFromCharacter` を呼んでいたことがモデル描画破損の原因でした。
-- **改修内容**:
-  - モンスター（ルーインランナー、アンテロープ・ドゥ、ナット等）および非人型NPC（レターモーグリ等）において、自前での再構築を廃止し、AQR 同様に `ModelCharaId` 設定 ＋ 武器隠蔽 ＋ Penumbra `RedrawObject` による確実な描画復旧を実装。
-
-### 4. NPC (ENpc) 人型モデルの武器問題解消
-- 人型NPC（ミューヌ、ル・スーシモ等）のテンプレート作成時、デフォルトで `WeaponVisible = false` に設定。自キャラからベースコピーした武器が表示されてしまう現象を防止。
-
-### 5. 武器表示 ON/OFF 機能の確実化
-- `ActorManager.SetWeaponVisibility` メソッドを新設。チェックボックス切り替え時に `HideWeapons` フラグを更新し、Penumbra `RedrawObject` を実行することで、OFF だけでなく ON の再描画も即座に反映されるようにしました。
-
-### 6. プルダウンのソート
-- `UI/CharacterLibraryTab.cs`: Glamourer Design および Penumbra Collection のドロップダウンコンボボックスで、五十音順・アルファベット順（`OrderBy(..., StringComparer.OrdinalIgnoreCase)`）にソートして表示。
-
-### 7. UI 横線突き抜けバグの解消 & 説明文の削除
-- 右ペイン全体を `ImGui.BeginChild("RightDetailPane", new Vector2(-1, -1), false)` で囲み、`ImGui.Separator()` が左カラムに突き抜ける問題を解決。
-- 不要な説明文枠 (`PreviewExplanationBox`) および開発用補足テキスト（`<= 武器表示ON/OFF`、`<= ギズモ表示ON/OFF`）を削除。
+## 変更の概要
+HDM (`Enceladeum/HDM`) および A Quest Reborn (AQR) のアーキテクチャ解析に基づき、スポーン時の「自キャラの見た目でスポーンしてしまう不具合」および「NPC・モンスター選択時にギズモしか表示されない不具合」を根本解決しました。また、テンプレート保存処理（`Save to Chara`）における全情報の完全保存と復元を保証しました。
 
 ---
 
-## 変更ファイル一覧
-- `Services/GlamourerIpc.cs`: `flags = 7` 指定、GUID/名前解決、オーバーロード対応
-- `Services/PenumbraIpc.cs`: `allowDelete = true`、RedrawObject 連携
-- `Models/CharacterModels.cs`: `SpawnedActorData.SlotIndex` プロパティの追加
-- `Managers/ActorManager.cs`: AQR準拠の非人型モデル初期化、外見適用フロー、`SetWeaponVisibility`
-- `UI/CharacterLibraryTab.cs`: 右ペインの `BeginChild` 化、不要説明文削除、プルダウンソート、NPC武器デフォルト非表示
-- `package.json`: バージョン更新 (0.1.10)
-- `CharacterSpawn.json`: バージョン更新 (0.1.10.0)
-- `CharacterSpawn.csproj`: バージョン更新 (0.1.10.0)
-- `repo.json`: バージョン更新 (0.1.10.0)
-- `CHANGELOG.md`: リリースノート追記
+## 主な変更点
+
+### 1. Two Index Spaces Trap の完全解決 (`ActorManager.cs`, `CharacterModels.cs`)
+- **問題**: `ClientObjectManager.CreateBattleCharacter()` が返す COM インデックス（0, 1...）を Glamourer や Penumbra に渡していたため、スロット 0 がプレイヤー自キャラ（ObjectTable[0]）と誤認され、自キャラの外見が上書きされていました。
+- **解決策**:
+  - `SpawnedActorData` に `GlobalIndex`（ushort）と `ComIndex`（ushort）を分離定義。
+  - `objectTable.CreateObjectReference((nint)nativeChara)` からグローバルな `ObjectIndex`（GPose/カットシーン予約枠 ~200-244）を解決し、Glamourer / Penumbra IPC に渡すように改修しました。
+
+### 2. Glamourer Identity スタンプ (`ActorManager.cs`)
+- **問題**: `CreateBattleCharacter` で作成された BattleNpc は、Glamourer の `ActorIdentifierFactory` によって無効（Invalid）と判定され、外見適用がサイレントに失敗して自キャラクローンが残る状態でした（HDM The 0.8.44 Bug）。
+- **解決策**:
+  - スポーン直後に `nativeChara->NameId = 0`、`nativeChara->HomeWorld = meNative->HomeWorld`、および一意な SE 有効姓名（`Cs Aa`, `Cs Ab`...）を `NextPuppetName()` で付与。
+  - Glamourer の Player Rescue ブランチを確実に通過させ、外見データが 100% 適用されるようにしました。
+
+### 3. Draw-When-Ready 2フェーズ待機キュー (`ActorManager.cs`)
+- **問題**: スポーン直後のフレームでは DrawObject が未生成のため、外見適用が反映されませんでした。
+- **解決策**:
+  - `ReadyJob` クラスを導入し、毎フレームの `UpdateFrame` で 2 フェーズポーリングを実施：
+    - **Phase 1**: `IsReadyToDraw()` を待機して `EnableDraw()` を実行。
+    - **Phase 2**: `DrawObject != null && DrawObject->IsVisible`（実際に描画オブジェクトが可視状態）になった瞬間に `ApplyExternalAppearance` を発火。
+
+### 4. モンスター・非人型 NPC の描画保証 (`ActorManager.cs`)
+- **問題**: 空の BattleNpc は描画骨格を持たず、不可視（ギズモのみ）となっていました。
+- **解決策**:
+  - HDM & Brio の黄金パターンに準拠し、モンスター・NPC を問わず、まず自キャラからダブルコピー（`WeaponHiding` ＋ `None`）を行って完全な drawable 状態を確立。
+  - その後、モンスターの場合は `ModelContainer.ModelCharaId = template.ModelCharaId` を書き込み、武器を非表示にして Redraw（Penumbra Redraw または DisableDraw/EnableDraw）を実行。確実にモンスター・モブモデルが表示されるようにしました。
+
+### 5. テンプレート情報の保存・復元・表示保証 (`CharacterLibraryTab.cs`)
+- **保存の保証**: `SaveModalTemplate` において、MCDF の場合はパース結果を確実に `target.GlamourerDesignString` に代入。Glamourer の場合も GUID またはデザイン名を確実に代入。
+- **復元の保証**: `OpenEditCharacterModal` で、保存されている GUID や名前から Glamourer のデザイン選択状態を正確に復元。
+- **詳細表示の強化**: 右ペインの `Template Details` に、保存されている全属性（SourceType, DataId, ModelCharaId, Glamourer Design名/GUID, Penumbra Collection, McdfFilePath）を明瞭に表示。
+- **詳細ログ**: 保存時およびスポーン時に、全パラメータの内容をログ（Logタブ）に出力。
+
+---
+
+## 修正箇所のファイル一覧
+1. `Models/CharacterModels.cs`: `GlobalIndex` と `ComIndex` の追加
+2. `Managers/ActorManager.cs`: HDM & AQR アーキテクチャへの全面改修
+3. `UI/CharacterLibraryTab.cs`: 保存・復元・詳細表示の強化
+4. `package.json`: バージョン更新 (`0.1.11`)
+5. `CharacterSpawn.json`: AssemblyVersion 更新 (`0.1.11.0`)
+6. `CharacterSpawn.csproj`: Version/AssemblyVersion/FileVersion 更新 (`0.1.11.0`)
+7. `repo.json`: AssemblyVersion 更新 (`0.1.11.0`)
+8. `CHANGELOG.md`: 0.1.11 変更内容追記
+9. `docs/appearance_and_model_spawn_fixes/`: `task.md`, `implementation_plan.md`, `walkthrough.md` 同期
