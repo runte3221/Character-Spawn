@@ -97,6 +97,7 @@ public class SpawnedActorData
     public string InstanceId { get; set; } = Guid.NewGuid().ToString();
     public string TemplateId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = "Character";
+    public string PuppetName { get; set; } = string.Empty;
 
     public TransformData Transform { get; set; } = new();
     public AnimationSettings Animation { get; set; } = new();

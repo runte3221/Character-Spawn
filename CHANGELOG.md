@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.35] - 2026-10-02
+### Fixed
+- **CustomizeData メモリ破壊バグの完全根絶 & 異種族・男性キャラロールバックの根本解決**:
+  - **根本原因の完全解明**:
+    1. `ExtractCustomizeBytes` のビットマスク処理において、複数ビットで構成される `EyeShape`（マスク `0x7F`）や `Mouth`（マスク `0x7F`）、`FacePaint`（マスク `0x7F`）等の形状番号が、`val != 0` の際に `|= 0x7F`（全ビット1 = 127）として書き込まれ、**完全に破損した26バイト** が生成されていた。
+    2. これを `Buffer.MemoryCopy` でネイティブ描画データ（`chara->DrawData.CustomizeData`）に直接上書きしていたため、FF14 の描画エンジン（`Human.SetupFromCustomize`）が不正データとして描画を拒否し、自キャラのベースライン（女性ミコッテ）へ強制ロールバックを引き起こしていた。
+    3. Glamourer の `ApplyState` は完璧に正常終了（Result 0）していたにもかかわらず、その直後にこのメモリ破壊が行われていたことが、不具合がループしていた決定打だった。
+  - **危険な独自メモリ上書きの全廃**:
+    - `ExtractCustomizeBytes` および `Buffer.MemoryCopy` を完全削除。
+    - Glamourer のステート適用（`ApplyState` / `ApplyDesign`）は種族・性別・装備・外見すべてを完璧に同期するため、外見適用を Glamourer に 100% 一任。
+  - **ForceAllApply の完全適用**:
+    - `Customize`, `Equipment` に加え、`Parameters`（肌色・髪色・目の色）および `Bonus`（メガネ等）の全スロットを強制的に `Apply = true` に設定。プリセット側で `Race: Apply = false` になっているデザインであっても、種族・性別・外見のすべてが確実に反映される。
+  - **スポーン時の冗長自己コピーの撤廃**:
+    - `SpawnCharacter` 内で呼び出されていた無意味かつ有害な自己コピー `nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);` を完全削除。
+  - **デスポーン時のステート解放強化**:
+    - `actor.DisplayName`（テンプレート名）だけでなく、実際の GameObject 名（`actor.PuppetName` = `"Csp Rrrkjeja"` 等）の両方で `RevertState` / `UnlockState` を行い、同一インデックス再利用時のステート混ざりを完全防止。
+  - **Penumbra Redraw の確実な実行**:
+    - Glamourer 適用完了後、`penumbraIpc.Redraw(actorIndex)` を確実に呼び出し、正常な 3D メッシュを確定描画。
+
 ## [0.1.34] - 2026-10-02
 ### Fixed
 - **Glamourer Base64ヘッダーバージョン（Byte 6）欠落による `Unknown Version 31` 例外の完全解消**:

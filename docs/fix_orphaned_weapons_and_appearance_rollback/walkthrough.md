@@ -23,8 +23,17 @@
 - Glamourer ネイティブ（`DesignConverter.cs`）が要求する先頭 1 バイトのデザインバージョン（`0x06`）を書き込むよう修正。
 - これにより、純粋な GZip バイト列の先頭マジックナンバー `0x1F`（=31）が原因で発生していた `System.Exception: Unknown Version 31`（結果コード 7: `CouldNotParse`）が解消され、`ApplyState` が確実に成功するようになりました。
 
-### 6. 二重 Redraw 競合による素体（女性ミコッテ）ロールバックの完全解消 (`Managers/ActorManager.cs`)
-- Glamourer は `ApplyState` / `ApplyDesign` 呼び出しの内部で自動的にアクターのネイティブリロード（Redraw）を実行します。
-- 直後に CharacterSpawn 側から追加で `penumbraIpc.Redraw(actorIndex)` を呼んでいたため、FF14 の描画パイプラインで二重リロードの競合が発生し、初期化途中の素体（自キャラ女性ミコッテ）にロールバックしていました。
-- `template.SourceType != CharacterSourceType.Glamourer` の場合のみ Penumbra Redraw を呼ぶよう修正し、Brio 同様の安定した描画シーケンスを確立しました。
+### 7. CustomizeData メモリ破壊の完全撤廃 & 安定 Redraw パイプラインの確立 (`Managers/ActorManager.cs`, `Services/GlamourerIpc.cs`)
+- **不具合ループの真因**:
+  - `ExtractCustomizeBytes` のビット演算バグにより、`EyeShape` や `Mouth` などの複数ビット値（マスク `0x7F`）が `0x7F` (127) に化け、生成された破損 26 バイトが `Buffer.MemoryCopy` で `&chara->DrawData.CustomizeData` に直接書き込まれていました。
+  - FF14 エンジンはこの不正データを検知すると、直ちにベースライン（女性ミコッテ）にロールバックするセーフガードを作動させていました。
+  - Glamourer の `ApplyState` は完璧に成功（Result 0）していたにもかかわらず、その直後にこのメモリ破壊が行われていたため、何度修正しても女性ミコッテに戻る現象がループしていました。
+- **根本改修**:
+  - `ExtractCustomizeBytes` および `Buffer.MemoryCopy` を完全削除。
+  - Glamourer に外見適用（種族・性別・装備・外見）を 100% 一任。
+  - `ForceAllApply` を `Parameters`（肌色・髪色等）と `Bonus`（メガネ等）にも拡張。
+  - スポーン時の無駄な自己コピー（`CopyFromCharacter(nativeChara, None)`）を削除。
+  - デスポーン時に GameObject 名（`PuppetName`）と表示名（`DisplayName`）の両方で Glamourer ステートをリセット。
+  - Glamourer 適用後に `Penumbra.Redraw` を呼ぶ正規の描画確定フローを確立。
+
 

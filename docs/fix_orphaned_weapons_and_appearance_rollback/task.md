@@ -15,11 +15,16 @@
    - `ApplyState` の Base64 ヘッダーにバージョン `0x06` がなかったため、Glamourer が `Unknown Version 31` 例外を起こして適用拒絶されていた。
    - Glamourer 適用直後に CharacterSpawn 側で余分な Penumbra Redraw を呼び出し、描画パイプラインの競合が発生して素体にロールバックしていた。
 
+6. **CustomizeData メモリ破壊バグによる強制自キャラフォールバックの発見と撲滅**:
+   - `ExtractCustomizeBytes` のビット演算バグにより破損した 26 バイトが `Buffer.MemoryCopy` でネイティブ描画データに書き込まれ、FF14 エンジンが不正データとして描画を拒否して自キャラにフォールバックしていた。
+   - `Buffer.MemoryCopy` と `ExtractCustomizeBytes` を完全削除し、Glamourer IPC に 100% 一任。
+   - `SpawnCharacter` の冗長自己コピーを削除し、デスポーン時のステート解放を `PuppetName` と `DisplayName` の両面で完全化。
+
 ## 完了基準
 - [x] デスポーン時に武器モデルがワールド上に取り残されないこと。
 - [x] 男性キャラ（ハイランダー等）や異種族・異性別のキャラクターをスポーンした際、自キャラの姿に巻き戻らず正しい外見で描画されること。
 - [x] スポーン ⇔ デスポーンを繰り返しても前回の外見情報が残留しないこと。
 - [x] ForceAllApply & GZip Base64 圧縮ステート注入により `Race: Apply = false` なデザインでも確実に強制変身させること。
 - [x] Glamourer Base64 ヘッダーにバージョン 6 バイトを付与し、`Unknown Version 31` を完全解消。
-- [x] Glamourer 適用時の二重 Redraw 競合を排除し、自キャラへのロールバックを完全防止。
-- [x] v0.1.34.0 のビルド＆プッシュ完了。
+- [x] CustomizeData メモリ破壊（`Buffer.MemoryCopy`）を全廃し、Glamourer への完全委譲とクリーンな Redraw を確立。
+- [x] v0.1.35.0 のビルド＆プッシュ完了。

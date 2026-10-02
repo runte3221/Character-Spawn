@@ -282,46 +282,39 @@ public class GlamourerIpc
                 }
             }
         }
-    }
 
-    public static byte[]? ExtractCustomizeBytes(JObject jObj)
-    {
-        if (jObj["Customize"] is not JObject cust) return null;
-        byte[] bytes = new byte[26];
-
-        foreach (var (key, byteIdx, mask) in CustomizeMap)
+        // 3. Parameters (肌色・髪色等) の全 Apply を true に
+        if (jObj["Parameters"] is JObject param)
         {
-            if (cust[key] is JObject slotObj && slotObj["Value"] != null)
+            foreach (var prop in param.Properties())
             {
-                try
+                if (prop.Value is JObject slotObj)
                 {
-                    int val = slotObj["Value"]!.Value<int>();
-                    if (mask == 0xFF)
-                    {
-                        bytes[byteIdx] = (byte)(val & 0xFF);
-                    }
-                    else
-                    {
-                        if (val != 0)
-                            bytes[byteIdx] |= mask;
-                        else
-                            bytes[byteIdx] &= (byte)~mask;
-                    }
+                    slotObj["Apply"] = true;
                 }
-                catch { }
             }
         }
 
-        return bytes;
+        // 4. Bonus (ファッションアクセサリー等) の全 Apply を true に
+        if (jObj["Bonus"] is JObject bonus)
+        {
+            foreach (var prop in bonus.Properties())
+            {
+                if (prop.Value is JObject slotObj)
+                {
+                    slotObj["Apply"] = true;
+                }
+            }
+        }
     }
 
     /// <summary>
     /// Guid、名前、または State 文字列（MCDF Base64 / JSON）を全スロット強制適用(ForceAllApply)し、
     /// GZip圧縮Base64を通じて Glamourer.ApplyState または ApplyDesign で確実にアクターを変身させる
     /// </summary>
-    public (bool Success, byte[]? CustomizeBytes) ApplyDesignToActorEx(string designString, int actorIndex)
+    public bool ApplyDesignToActor(string designString, int actorIndex)
     {
-        if (!IsAvailable || string.IsNullOrWhiteSpace(designString)) return (false, null);
+        if (!IsAvailable || string.IsNullOrWhiteSpace(designString)) return false;
 
         // 1. Guid 文字列かどうか判定、あるいは名前から Guid を解決
         Guid targetGuid = Guid.Empty;
@@ -346,14 +339,12 @@ public class GlamourerIpc
         // A. Guid がある場合: デザイン取得 -> ForceAllApply -> GZip圧縮Base64で ApplyState (Race: Apply=falseバグを完全解消)
         if (targetGuid != Guid.Empty)
         {
-            byte[]? customizeBytes = null;
             var targetDesignObj = GetDesign(targetGuid);
             if (targetDesignObj != null)
             {
                 ForceAllApply(targetDesignObj);
-                customizeBytes = ExtractCustomizeBytes(targetDesignObj);
 
-                // GZip圧縮Base64にエンコードして ApplyState に渡す
+                // GZip圧縮Base64(Version 6 header)にエンコードして ApplyState に渡す
                 try
                 {
                     string compressedBase64 = CompressToBase64(targetDesignObj);
@@ -361,13 +352,13 @@ public class GlamourerIpc
                     {
                         int res = applyStateV2Ulong.InvokeFunc(compressedBase64, actorIndex, 0, 7UL);
                         log.Information($"Glamourer ApplyState (ForceAllApply compressed, Flags: 7UL) for Guid {targetGuid} result: {res}");
-                        if (res == 0) return (true, customizeBytes);
+                        if (res == 0) return true;
                     }
                     else if (applyStateV2Uint != null)
                     {
                         int res = applyStateV2Uint.InvokeFunc(compressedBase64, actorIndex, 0, 7U);
                         log.Information($"Glamourer ApplyState (ForceAllApply compressed, Flags: 7U) for Guid {targetGuid} result: {res}");
-                        if (res == 0) return (true, customizeBytes);
+                        if (res == 0) return true;
                     }
                 }
                 catch (Exception ex)
@@ -383,7 +374,7 @@ public class GlamourerIpc
                 {
                     int res = applyDesignV2Ulong.InvokeFunc(targetGuid, actorIndex, 0, 7UL);
                     log.Information($"Glamourer ApplyDesign (Guid: {targetGuid}, Flags: 7UL) fallback result: {res}");
-                    if (res == 0) return (true, customizeBytes);
+                    if (res == 0) return true;
                 }
                 catch (Exception ex)
                 {
@@ -397,7 +388,7 @@ public class GlamourerIpc
                 {
                     int res = applyDesignV2Uint.InvokeFunc(targetGuid, actorIndex, 0, 7U);
                     log.Information($"Glamourer ApplyDesign (Guid: {targetGuid}, Flags: 7U) fallback result: {res}");
-                    if (res == 0) return (true, customizeBytes);
+                    if (res == 0) return true;
                 }
                 catch (Exception ex)
                 {
@@ -412,7 +403,7 @@ public class GlamourerIpc
                 {
                     applyByGuidLegacy.InvokeFunc(targetGuid, actorIndex);
                     log.Information($"Glamourer ApplyByGuid (Legacy) executed for Guid {targetGuid}.");
-                    return (true, customizeBytes);
+                    return true;
                 }
                 catch (Exception ex)
                 {
@@ -421,17 +412,15 @@ public class GlamourerIpc
             }
 
             // Guid の場合は Base64 デコード処理にはフォールスルーしない
-            return (false, customizeBytes);
+            return false;
         }
 
         // B. Guid ではない場合 (MCDF 等の Base64 / JSON デザイン文字列): Parse して ApplyState を実行
         JObject? parsedObj = ParseDesignString(designString);
-        byte[]? parsedCustBytes = null;
         string targetStateString = designString;
         if (parsedObj != null)
         {
             ForceAllApply(parsedObj);
-            parsedCustBytes = ExtractCustomizeBytes(parsedObj);
             try
             {
                 targetStateString = CompressToBase64(parsedObj);
@@ -445,7 +434,7 @@ public class GlamourerIpc
             {
                 int res = applyStateV2Ulong.InvokeFunc(targetStateString, actorIndex, 0, 7UL);
                 log.Information($"Glamourer ApplyState (ulong flags=7) result: {res}");
-                if (res == 0) return (true, parsedCustBytes);
+                if (res == 0) return true;
             }
             catch (Exception ex)
             {
@@ -459,19 +448,19 @@ public class GlamourerIpc
             {
                 int res = applyStateV2Uint.InvokeFunc(targetStateString, actorIndex, 0, 7U);
                 log.Information($"Glamourer ApplyState (uint flags=7) result: {res}");
-                if (res == 0) return (true, parsedCustBytes);
+                if (res == 0) return true;
             }
             catch (Exception ex)
             {
                 log.Warning($"Glamourer ApplyState V2 (uint) failed: {ex.Message}");
             }
         }
-        return (false, null);
+        return false;
     }
 
-    public bool ApplyDesignToActor(string designString, int actorIndex)
+    public (bool Success, byte[]? CustomizeBytes) ApplyDesignToActorEx(string designString, int actorIndex)
     {
-        return ApplyDesignToActorEx(designString, actorIndex).Success;
+        return (ApplyDesignToActor(designString, actorIndex), null);
     }
 
     public string? GetCustomization(int actorIndex)

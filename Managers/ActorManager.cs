@@ -260,7 +260,6 @@ public unsafe class ActorManager : IDisposable
 
             // 2. 自キャラからベースラインをコピーして drawable 骨格を確立
             nativeChara->CharacterSetup.CopyFromCharacter(meNative, CharacterCopyFlags.WeaponHiding);
-            nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
 
             // 3. ベースラインのリセット
             nativeChara->ModelContainer.ModelCharaId = 0;
@@ -317,6 +316,7 @@ public unsafe class ActorManager : IDisposable
             {
                 TemplateId = template.Id,
                 DisplayName = string.IsNullOrWhiteSpace(template.Name) ? puppetName : template.Name,
+                PuppetName = puppetName,
                 NativeAddress = (nint)nativeChara,
                 GlobalIndex = globalIdx,
                 ComIndex = comIdx,
@@ -466,11 +466,16 @@ public unsafe class ActorManager : IDisposable
                 penumbraIpc.UnassignCollectionForActor(actor.GlobalIndex);
             }
 
-            // Glamourer ステートのリセット & ロック解除 (インデックス + 名前の両方で解除)
+            // Glamourer ステートのリセット & ロック解除 (インデックス + GameObject名 + 表示名で完全解除)
             if (glamourerIpc != null && glamourerIpc.IsAvailable)
             {
-                glamourerIpc.UnlockState(actor.GlobalIndex, actor.DisplayName);
-                glamourerIpc.RevertState(actor.GlobalIndex, actor.DisplayName);
+                glamourerIpc.UnlockState(actor.GlobalIndex, actor.PuppetName);
+                glamourerIpc.RevertState(actor.GlobalIndex, actor.PuppetName);
+                if (!string.IsNullOrEmpty(actor.DisplayName) && actor.DisplayName != actor.PuppetName)
+                {
+                    glamourerIpc.UnlockState(actor.GlobalIndex, actor.DisplayName);
+                    glamourerIpc.RevertState(actor.GlobalIndex, actor.DisplayName);
+                }
             }
 
             // CustomizePlus 一時プロファイルの完全クリーンアップ
@@ -949,16 +954,8 @@ public unsafe class ActorManager : IDisposable
 
                         if (glamourerIpc.IsAvailable && !string.IsNullOrWhiteSpace(designString))
                         {
-                            var (glamSuccess, custBytes) = glamourerIpc.ApplyDesignToActorEx(designString, actorIndex);
+                            bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
                             logManager?.Info($"MCDF Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
-                            if (!glamSuccess && custBytes != null && custBytes.Length >= 26)
-                            {
-                                fixed (byte* pCust = custBytes)
-                                {
-                                    Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
-                                }
-                                logManager?.Info($"MCDF fallback: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
-                            }
                         }
 
                         // 武器の表示・非表示
@@ -1037,16 +1034,8 @@ public unsafe class ActorManager : IDisposable
 
             if (!string.IsNullOrWhiteSpace(designString))
             {
-                var (glamSuccess, custBytes) = glamourerIpc.ApplyDesignToActorEx(designString, actorIndex);
+                bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
                 logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
-                if (custBytes != null && custBytes.Length >= 26)
-                {
-                    fixed (byte* pCust = custBytes)
-                    {
-                        Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
-                    }
-                    logManager?.Info($"Glamourer: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
-                }
             }
             else if (template.SourceType == CharacterSourceType.PlayerClone)
             {
@@ -1074,8 +1063,8 @@ public unsafe class ActorManager : IDisposable
         chara->DrawData.HideWeapons(!template.WeaponVisible);
         chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-        // 6. Penumbra Redraw (Brio 準拠: Glamourer 適用時は Glamourer 自身が Redraw するため、二重呼び出しによる素体巻き戻しを回避)
-        if (template.SourceType != CharacterSourceType.Glamourer && penumbraIpc.IsAvailable)
+        // 6. Penumbra Redraw (Glamourer & Penumbra 適用後の確定再描画)
+        if (penumbraIpc.IsAvailable)
         {
             penumbraIpc.Redraw(actorIndex);
             logManager?.Info($"Triggered Penumbra Redraw for Global#{actorIndex}.");
