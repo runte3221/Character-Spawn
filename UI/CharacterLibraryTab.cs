@@ -234,14 +234,9 @@ public class CharacterLibraryTab
                 unsafe
                 {
                     var nativeChara = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actorManager.CurrentPreviewActor.NativeAddress;
-                    if (!weaponVis)
-                    {
-                        nativeChara->DrawData.HideWeapons();
-                    }
-                    else
-                    {
-                        nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, FFXIVClientStructs.FFXIV.Client.Game.Character.CharacterSetupContainer.CopyFlags.None);
-                    }
+                    nativeChara->DrawData.HideWeapons(!weaponVis);
+                    nativeChara->DrawData.IsWeaponHidden = !weaponVis;
+                    nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, FFXIVClientStructs.FFXIV.Client.Game.Character.CharacterSetupContainer.CopyFlags.None);
                 }
             }
         }

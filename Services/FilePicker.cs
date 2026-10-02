@@ -74,7 +74,7 @@ public static class FilePicker
                     callback(null);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 callback(null);
             }

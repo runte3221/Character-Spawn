@@ -142,7 +142,8 @@ public unsafe class ActorManager : IDisposable
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
 
                 // 武器は非表示に設定
-                nativeChara->DrawData.HideWeapons();
+                nativeChara->DrawData.HideWeapons(true);
+                nativeChara->DrawData.IsWeaponHidden = true;
 
                 // 自身のコンテナから再構築
                 nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
@@ -186,8 +187,14 @@ public unsafe class ActorManager : IDisposable
                 // 武器の表示・非表示制御
                 if (!template.WeaponVisible)
                 {
-                    nativeChara->DrawData.HideWeapons();
+                    nativeChara->DrawData.HideWeapons(true);
+                    nativeChara->DrawData.IsWeaponHidden = true;
                     logManager?.Info("Weapon hidden per template WeaponVisible=false setting.");
+                }
+                else
+                {
+                    nativeChara->DrawData.HideWeapons(false);
+                    nativeChara->DrawData.IsWeaponHidden = false;
                 }
 
                 nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
