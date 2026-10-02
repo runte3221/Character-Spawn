@@ -1,9 +1,10 @@
 using System.Numerics;
-using System.Runtime.InteropServices;
 using System.Text;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using CharacterCopyFlags = FFXIVClientStructs.FFXIV.Client.Game.Character.CharacterSetupContainer.CopyFlags;
+using ClientObjectManager = FFXIVClientStructs.FFXIV.Client.Game.Object.ClientObjectManager;
 using CharacterSpawn.Models;
 using CharacterSpawn.Services;
 
@@ -13,7 +14,6 @@ public unsafe class ActorManager : IDisposable
 {
     private readonly IClientState clientState;
     private readonly IObjectTable objectTable;
-    private readonly ISigScanner? sigScanner;
     private readonly IPluginLog log;
     private readonly TimelineManager timelineManager;
     private readonly HeadTrackingManager headTrackingManager;
@@ -21,27 +21,7 @@ public unsafe class ActorManager : IDisposable
     private readonly PenumbraIpc penumbraIpc;
 
     private readonly List<SpawnedActorData> activeActors = new();
-
-    // Native function delegates
-    [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
-    private delegate nint CreateBattleCharaDelegate(
-        nint characterManager,
-        byte* name,
-        byte* customizeData,
-        uint dataId,
-        byte unk1,
-        byte unk2,
-        byte unk3
-    );
-
-    [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
-    private delegate void DeleteBattleCharaDelegate(
-        nint characterManager,
-        nint chara
-    );
-
-    private CreateBattleCharaDelegate? createBattleChara;
-    private DeleteBattleCharaDelegate? deleteBattleChara;
+    private readonly List<ushort> createdIndexes = new();
 
     public IReadOnlyList<SpawnedActorData> ActiveActors => activeActors;
 
@@ -57,44 +37,20 @@ public unsafe class ActorManager : IDisposable
     {
         this.clientState = clientState;
         this.objectTable = objectTable;
-        this.sigScanner = sigScanner;
         this.log = log;
         this.timelineManager = timelineManager;
         this.headTrackingManager = headTrackingManager;
         this.glamourerIpc = glamourerIpc;
         this.penumbraIpc = penumbraIpc;
 
-        InitializeNativeDelegates();
+        this.clientState.TerritoryChanged += OnTerritoryChanged;
     }
 
-    private void InitializeNativeDelegates()
+    private void OnTerritoryChanged(uint territoryType)
     {
-        if (sigScanner == null) return;
-
-        try
-        {
-            // FFXIV CreateBattleChara signature
-            if (sigScanner.TryScanText("E8 ?? ?? ?? ?? 48 8B F8 48 85 C0 74 38 48 8B CB", out var createPtr))
-            {
-                createBattleChara = Marshal.GetDelegateForFunctionPointer<CreateBattleCharaDelegate>(createPtr);
-                log.Information($"Found CreateBattleChara at 0x{createPtr:X}");
-            }
-            else
-            {
-                log.Warning("Could not resolve CreateBattleChara signature via SigScanner.");
-            }
-
-            // FFXIV DeleteBattleChara signature
-            if (sigScanner.TryScanText("E8 ?? ?? ?? ?? 48 8B 5C 24 ?? 48 83 C4 20 5F C3 48 8B 0D", out var deletePtr))
-            {
-                deleteBattleChara = Marshal.GetDelegateForFunctionPointer<DeleteBattleCharaDelegate>(deletePtr);
-                log.Information($"Found DeleteBattleChara at 0x{deletePtr:X}");
-            }
-        }
-        catch (Exception ex)
-        {
-            log.Warning($"Native delegate resolution exception: {ex.Message}");
-        }
+        log.Information("Territory changed. Clearing spawned actors tracking.");
+        activeActors.Clear();
+        createdIndexes.Clear();
     }
 
     /// <summary>
@@ -104,57 +60,70 @@ public unsafe class ActorManager : IDisposable
     {
         try
         {
-            var charaManager = CharacterManager.Instance();
-            if (charaManager == null)
+            var com = ClientObjectManager.Instance();
+            if (com == null)
             {
-                log.Error("CharacterManager instance is null.");
+                log.Error("ClientObjectManager instance is null.");
                 return null;
             }
 
+            // 次のキャラクタースロットを作成
+            uint idCheck = com->CreateBattleCharacter((uint)(2 + createdIndexes.Count), 0);
+            if (idCheck == 0xFFFFFFFF)
+            {
+                log.Error("ClientObjectManager.CreateBattleCharacter returned 0xFFFFFFFF (failed to allocate).");
+                return null;
+            }
+
+            ushort newId = (ushort)idCheck;
+            createdIndexes.Add(newId);
+
+            var newObject = com->GetObjectByIndex(newId);
+            if (newObject == null)
+            {
+                log.Error($"Failed to retrieve spawned GameObject at index {newId}.");
+                return null;
+            }
+
+            var nativeChara = (Character*)newObject;
             var pos = spawnPosition ?? GetDefaultSpawnPosition();
             var rot = spawnRotation ?? 0.0f;
 
-            var actorName = string.IsNullOrWhiteSpace(template.Name) ? "Character" : template.Name;
-            var nameBytes = Encoding.UTF8.GetBytes(actorName + "\0");
-            var customBytes = template.CustomizeData ?? new byte[26];
-
-            nint nativeCharaAddr = 0;
-
-            if (createBattleChara != null)
+            // 1. 外見のベースコピー（自キャラが存在する場合はプレイヤーからコピー）
+            var localPlayer = objectTable.Length > 0 ? objectTable[0] : null;
+            if (localPlayer != null && localPlayer.Address != 0)
             {
-                fixed (byte* pName = nameBytes)
-                fixed (byte* pCustom = customBytes)
-                {
-                    nativeCharaAddr = createBattleChara(
-                        (nint)charaManager,
-                        pName,
-                        template.SourceType == CharacterSourceType.PlayerClone || template.SourceType == CharacterSourceType.Glamourer ? pCustom : (byte*)0,
-                        template.DataId,
-                        0,
-                        0,
-                        0
-                    );
-                }
+                var sourceNative = (Character*)localPlayer.Address;
+                nativeChara->CharacterSetup.CopyFromCharacter(sourceNative, CharacterCopyFlags.WeaponHiding);
+                nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
             }
 
-            if (nativeCharaAddr == 0)
+            // 2. モンスター／NPCモデルIDの適用
+            if (template.SourceType == CharacterSourceType.Monster && template.ModelCharaId > 0)
             {
-                log.Warning("CreateBattleChara was not available or returned null. Operating in staged mode.");
+                nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
             }
 
-            var nativeChara = (Character*)nativeCharaAddr;
-            if (nativeChara != null)
-            {
-                nativeChara->SetPosition(pos.X, pos.Y, pos.Z);
-                nativeChara->SetRotation(rot);
-            }
+            // 3. 位置・回転を設定
+            nativeChara->GameObject.DefaultPosition = pos;
+            nativeChara->GameObject.Position = pos;
+            nativeChara->GameObject.Rotation = rot;
+            nativeChara->GameObject.DefaultRotation = rot;
+
+            // 4. キャラクター名を設定（ゲーム内制限20文字）
+            var rawName = string.IsNullOrWhiteSpace(template.Name) ? "Character" : template.Name;
+            var cnpcName = rawName.Length > 20 ? rawName.Substring(0, 20) : rawName;
+            ((GameObject*)nativeChara)->SetName(cnpcName);
+
+            // 5. 描画を有効化
+            nativeChara->GameObject.EnableDraw();
 
             var spawned = new SpawnedActorData
             {
                 TemplateId = template.Id,
                 DisplayName = template.Name,
-                NativeAddress = nativeCharaAddr,
-                GameObjectId = nativeChara != null ? nativeChara->EntityId : 0,
+                NativeAddress = (nint)nativeChara,
+                GameObjectId = nativeChara->EntityId,
                 Transform = new TransformData
                 {
                     Position = pos,
@@ -169,14 +138,14 @@ public unsafe class ActorManager : IDisposable
                 IsTargetable = true
             };
 
-            // ターゲット可否フラグの適用
+            // ターゲット可否フラグ
             ApplyTargetable(spawned);
 
-            // Glamourer / Penumbra の適用
+            // 外部アピアランス（Glamourer / Penumbra）の適用
             ApplyExternalAppearance(spawned, template);
 
             activeActors.Add(spawned);
-            log.Information($"Spawned character '{spawned.DisplayName}' at {pos}");
+            log.Information($"Successfully spawned character '{spawned.DisplayName}' (ID:{newId}, Addr:0x{spawned.NativeAddress:X}) at {pos}");
 
             return spawned;
         }
@@ -200,8 +169,10 @@ public unsafe class ActorManager : IDisposable
         var chara = (Character*)actor.NativeAddress;
         if (chara == null) return;
 
-        chara->SetPosition(newPosition.X, newPosition.Y, newPosition.Z);
-        chara->SetRotation(newRotation);
+        chara->GameObject.Position = newPosition;
+        chara->GameObject.DefaultPosition = newPosition;
+        chara->GameObject.Rotation = newRotation;
+        chara->GameObject.DefaultRotation = newRotation;
     }
 
     /// <summary>
@@ -237,10 +208,16 @@ public unsafe class ActorManager : IDisposable
         {
             if (actor.NativeAddress != 0)
             {
-                var charaManager = CharacterManager.Instance();
-                if (charaManager != null && deleteBattleChara != null)
+                var com = ClientObjectManager.Instance();
+                if (com != null)
                 {
-                    deleteBattleChara((nint)charaManager, actor.NativeAddress);
+                    var idx = com->GetIndexByObject((GameObject*)actor.NativeAddress);
+                    if (idx != 0xFFFFFFFF)
+                    {
+                        createdIndexes.Remove((ushort)idx);
+                        com->DeleteObjectByIndex((ushort)idx, 0);
+                        log.Information($"Deleted actor at object index {idx}.");
+                    }
                 }
                 actor.NativeAddress = 0;
             }
@@ -266,6 +243,7 @@ public unsafe class ActorManager : IDisposable
             DespawnCharacter(actor);
         }
         activeActors.Clear();
+        createdIndexes.Clear();
     }
 
     /// <summary>
@@ -309,6 +287,7 @@ public unsafe class ActorManager : IDisposable
 
     public void Dispose()
     {
+        clientState.TerritoryChanged -= OnTerritoryChanged;
         DespawnAll();
     }
 }

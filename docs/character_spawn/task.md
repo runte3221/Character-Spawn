@@ -25,7 +25,9 @@
     - [x] タブ1: Character Library UI（キャラ作成・保存・一覧・編集） <!-- id: 22 -->
     - [x] タブ2: Stage & Scene UI（マップ配置・Transform調整・アニメーション/表情・プリセット管理） <!-- id: 23 -->
     - [x] ゾーン連動（マップ入場時Auto-Spawn・エリア移動時クリーンアップ） <!-- id: 24 -->
-- [x] ドキュメント更新・初回コミット＆プッシュ <!-- id: 25 -->
-    - [x] `walkthrough.md` の作成 <!-- id: 26 -->
-    - [x] `package.json` バージョン確認・`CHANGELOG.md` 追記 <!-- id: 27 -->
-    - [x] Git commit & push <!-- id: 28 -->
+- [x] v0.1.6 不具合修正（ボタン無反応およびキャラクタースポーン不可の解消） <!-- id: 29 -->
+    - [x] CharacterLibraryTab の UI テーブル化（Selectableのクリック領域競合を解消） <!-- id: 30 -->
+    - [x] ActorManager のアクター生成を `ClientObjectManager` (FFXIVClientStructs / Brio標準) に刷新 <!-- id: 31 -->
+    - [x] 削除処理を `ClientObjectManager.DeleteObjectByIndex` に対応 <!-- id: 32 -->
+    - [x] バージョン 0.1.6 への更新・ドキュメント同期・Git Push <!-- id: 33 -->
+

@@ -82,33 +82,43 @@ public class CharacterLibraryTab
             return;
         }
 
-        for (int i = 0; i < configuration.Templates.Count; i++)
+        if (ImGui.BeginTable("SavedTemplatesTable", 3, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp))
         {
-            var template = configuration.Templates[i];
-            ImGui.PushID($"Template_{template.Id}");
+            ImGui.TableSetupColumn("Character", ImGuiTableColumnFlags.WidthStretch);
+            ImGui.TableSetupColumn("Spawn", ImGuiTableColumnFlags.WidthFixed, 130f);
+            ImGui.TableSetupColumn("Delete", ImGuiTableColumnFlags.WidthFixed, 60f);
+            ImGui.TableHeadersRow();
 
-            bool isSelected = false;
-            if (ImGui.Selectable($"{template.Name} ({template.SourceType})", isSelected))
+            for (int i = 0; i < configuration.Templates.Count; i++)
             {
-                // Select to view or spawn
-            }
+                var template = configuration.Templates[i];
+                ImGui.PushID($"Template_{template.Id}");
 
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Spawn onto Map"))
-            {
-                onSpawnRequested(template);
-            }
+                ImGui.TableNextRow();
 
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Delete"))
-            {
-                configuration.Templates.RemoveAt(i);
-                configuration.Save();
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted($"{template.Name} ({template.SourceType})");
+
+                ImGui.TableNextColumn();
+                if (ImGui.Button("Spawn onto Map"))
+                {
+                    log.Information($"Spawn requested for template: {template.Name} ({template.Id})");
+                    onSpawnRequested(template);
+                }
+
+                ImGui.TableNextColumn();
+                if (ImGui.Button("Delete"))
+                {
+                    configuration.Templates.RemoveAt(i);
+                    configuration.Save();
+                    ImGui.PopID();
+                    break;
+                }
+
                 ImGui.PopID();
-                break;
             }
 
-            ImGui.PopID();
+            ImGui.EndTable();
         }
     }
 

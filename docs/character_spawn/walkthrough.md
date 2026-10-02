@@ -112,3 +112,15 @@ Character-Spawn/
 
 ## 起動コマンド
 - `/charaspawn` または `/cspawn` でメインウィンドウの開閉が可能です。
+
+---
+
+## [v0.1.6] 不具合修正と改善内容
+1. **「Spawn onto Map」および「Delete」ボタンが押せないUI問題の修正**:
+   - `CharacterLibraryTab.cs` の一覧表示を `ImGui.BeginTable` による3列テーブルレイアウトに刷新。
+   - `ImGui.Selectable` によるクリック領域の独占を解消し、ボタンが確実に反応するように修正しました。
+2. **キャラクターがマップ上にスポーンしない不具合の解消**:
+   - 旧方式のSigScannerによる関数呼び出し（7.xパッチでシグネチャ不整合となり失敗していた）を廃止。
+   - BrioおよびA Quest Rebornで実証されている標準構造体 `ClientObjectManager.Instance()->CreateBattleCharacter` / `DeleteObjectByIndex` を採用。
+   - キャラクター生成後、プレイヤー外見のコピー、モンスター/NPCモデルIDの適用、`GameObject.EnableDraw()` による確実な描画有効化を行うアーキテクチャに刷新しました。
+
