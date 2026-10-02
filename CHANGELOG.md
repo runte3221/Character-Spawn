@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.19] - 2026-10-02
+### Fixed
+- **ImGuizmo 3D Rendering & Camera Projection**:
+  - Resolved gizmo rendering failure by applying FFXIV reverse-Z clip projection matrix correction (`M43 = -(clip * near)`, `M33 = -((far + near) / (far - near))`, `view.M44 = 1.0f`) conforming to Stagehand and BDTH architecture.
+  - Recomposed transform matrix via `ImGuizmo.RecomposeMatrixFromComponents` with Euler degrees, properly positioning the 3D gizmo at the target actor's location.
+- **Camera Viewport Input Transparency**:
+  - Added `ImGuiWindowFlags.NoInputs` to the full-screen gizmo overlay window. This completely eliminates game-wide mouse input blocking, allowing unrestricted camera rotation (right-click drag) and character movement in the game world while preserving 3D gizmo hit-testing.
+- **Gizmo Toggle Unification**:
+  - Removed duplicate `Gizmo` ON/OFF checkboxes from `CharacterLibraryTab`, `StageSceneTab`, and `SettingsTab`.
+  - Unified gizmo state management entirely into the Stagehand-style mode toolbar:
+    - **Select (Mouse Pointer)**: Turns gizmo OFF / hides manipulator.
+    - **Translate (Cross Arrows)**: Turns gizmo ON in translation mode with XY/XZ/YZ quad plane handles.
+    - **Rotate (Sync Alt)**: Turns gizmo ON in rotation mode with 3-axis rings.
+
 ## [0.1.18] - 2026-10-02
 ### Added
 - **Stagehand-Compliant ImGuizmo 3D Gizmo System**:

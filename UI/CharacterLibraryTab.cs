@@ -315,17 +315,8 @@ public class CharacterLibraryTab
 
                 ImGui.Spacing();
 
-                bool showGizmo = configuration.ShowGizmo;
-                if (ImGui.Checkbox("Gizmo", ref showGizmo))
+                if (gizmoRenderer != null)
                 {
-                    configuration.ShowGizmo = showGizmo;
-                    configuration.Save();
-                }
-                if (configuration.ShowGizmo && gizmoRenderer != null)
-                {
-                    ImGui.SameLine();
-                    ImGui.Spacing();
-                    ImGui.SameLine();
                     gizmoRenderer.DrawToolbar();
                 }
             }

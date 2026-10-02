@@ -1,20 +1,19 @@
-# タスクリスト: ImGuizmo導入・平面移動Quad・移動/回転モード分離 (v0.1.18)
+# タスクリスト: ImGuizmo導入・平面移動Quad・移動/回転モード分離 (v0.1.18 - v0.1.19)
 
-## ステータス概要
-- [x] ドキュメント作成 (`task.md`, `implementation_plan.md`, `walkthrough.md`)
-- [x] Stagehand 準拠の `ImGuizmo` アーキテクチャ調査（`FFXIVClientStructs` カメラ行列 + `Dalamud.Bindings.ImGuizmo`）
-- [x] `Configuration.cs` にギズモモード設定（`GizmoMode`: Translate / Rotate）を追加
-- [x] `UI/GizmoRenderer.cs` の完全刷新
-  - `Dalamud.Bindings.ImGuizmo` の採用
-  - ゲーム内カメラ（`CameraManager.Instance()->CurrentCamera`）の View/Projection 行列連携
-  - フルスクリーン透明オーバーレイウィンドウによる確実なマウス入力キャプチャ
-  - 移動モード（各軸矢印 + XY/XZ/YZ 平面四角形ハンドル）
-  - 回転モード（3軸およびスクリーン空間回転リング）
-  - マトリクス分解（`Matrix4x4.Decompose`）によるリアルタイム位置・Yaw回転の更新
-- [x] UI に Stagehand スタイルのモード切り替えメニュー/ボタンを追加 (`MainWindow.cs` / `StageSceneTab.cs` / `CharacterLibraryTab.cs`)
-- [x] バージョン更新 (0.1.18 / 0.1.18.0)
+## v0.1.19 修正タスク
+- [x] ギズモが表示されない原因の特定と修正
+  - `Camera->ViewMatrix` および `RenderCamera->ProjectionMatrix` のリバースZ補正（Stagehand / BDTH 準拠）
+  - `ImGuizmo.RecomposeMatrixFromComponents` / `DecomposeMatrixToComponents` への移行
+- [x] ゲーム画面のカメラ視点移動ができなくなる問題の解消
+  - 全画面オーバーレイウィンドウに `ImGuiWindowFlags.NoInputs` を付与し、ゲームマウス入力を阻害しないよう修正
+- [x] ギズモON/OFFチェックボックスの廃止とセレクトボタンへの一本化
+  - `CharacterLibraryTab.cs` の Gizmo チェックボックスを廃止
+  - `StageSceneTab.cs` の Gizmo チェックボックスを廃止
+  - `MainWindow.cs` の Settings タブの Gizmo チェックボックスを廃止
+  - セレクトボタン（矢印）がギズモOFF、移動・回転ボタンがギズモONとして連動
+- [x] バージョン更新 (0.1.19 / 0.1.19.0)
   - `package.json`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json`
   - `CHANGELOG.md` 追記
-- [x] Git Commit & Push
-- [x] GitHub Actions ビルド待機 & XIVLauncher 全バージョンフォルダへの最新 DLL 配置
-- [x] 完了報告
+- [ ] Git Commit & Push
+- [ ] GitHub Actions ビルド待機 & XIVLauncher 全バージョンフォルダへの最新 DLL 配置
+- [ ] 完了報告

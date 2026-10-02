@@ -26,7 +26,15 @@ public class Configuration : IPluginConfiguration
     public List<ScenePreset> Scenes { get; set; } = new();
 
     // Settings
-    public bool ShowGizmo { get; set; } = true;
+    public bool ShowGizmo
+    {
+        get => CurrentGizmoMode != GizmoMode.Select;
+        set
+        {
+            if (!value) CurrentGizmoMode = GizmoMode.Select;
+            else if (CurrentGizmoMode == GizmoMode.Select) CurrentGizmoMode = GizmoMode.Translate;
+        }
+    }
     public GizmoMode CurrentGizmoMode { get; set; } = GizmoMode.Translate;
     public float GizmoScale { get; set; } = 1.0f;
     public bool AutoRestoreScenesOnZoneChange { get; set; } = true;

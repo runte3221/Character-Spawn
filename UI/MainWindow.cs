@@ -87,24 +87,14 @@ public class MainWindow : Window, IDisposable
         ImGui.TextUnformatted("Plugin Settings");
         ImGui.Separator();
 
-        bool showGizmo = configuration.ShowGizmo;
-        if (ImGui.Checkbox("Enable 3D Gizmo on Stage & Preview", ref showGizmo))
+        ImGui.TextUnformatted("Gizmo Mode:");
+        int modeInt = (int)configuration.CurrentGizmoMode;
+        if (ImGui.RadioButton("Select (Hide Gizmo)", ref modeInt, (int)GizmoMode.Select) ||
+            ImGui.RadioButton("Translate (Move Axis + Quad Planes)", ref modeInt, (int)GizmoMode.Translate) ||
+            ImGui.RadioButton("Rotate (Rings)", ref modeInt, (int)GizmoMode.Rotate))
         {
-            configuration.ShowGizmo = showGizmo;
+            configuration.CurrentGizmoMode = (GizmoMode)modeInt;
             configuration.Save();
-        }
-
-        if (configuration.ShowGizmo)
-        {
-            ImGui.TextUnformatted("Default Gizmo Mode:");
-            int modeInt = (int)configuration.CurrentGizmoMode;
-            if (ImGui.RadioButton("Select (Hide)", ref modeInt, (int)GizmoMode.Select) ||
-                ImGui.RadioButton("Translate (Move Axis + Quad Planes)", ref modeInt, (int)GizmoMode.Translate) ||
-                ImGui.RadioButton("Rotate (Rings)", ref modeInt, (int)GizmoMode.Rotate))
-            {
-                configuration.CurrentGizmoMode = (GizmoMode)modeInt;
-                configuration.Save();
-            }
         }
 
         bool autoRestore = configuration.AutoRestoreScenesOnZoneChange;

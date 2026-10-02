@@ -117,7 +117,7 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.Draw();
 
         // 3D Gizmo Overlay 描画 (Stagehand 準拠: 全画面オーバーレイで確実にマウス操作をキャプチャ)
-        if (Configuration.ShowGizmo)
+        if (Configuration.CurrentGizmoMode != GizmoMode.Select)
         {
             var targetActor = stageTab.SelectedActor;
             if (targetActor == null || !targetActor.IsSpawned)

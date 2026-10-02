@@ -189,21 +189,11 @@ public class StageSceneTab
 
         ImGui.TextUnformatted("Transform (Position & Rotation)");
 
-        bool showGizmo = configuration.ShowGizmo;
-        if (ImGui.Checkbox("Gizmo", ref showGizmo))
+        if (gizmoRenderer != null)
         {
-            configuration.ShowGizmo = showGizmo;
-            configuration.Save();
-        }
-        if (configuration.ShowGizmo && gizmoRenderer != null)
-        {
-            ImGui.SameLine();
-            ImGui.Spacing();
-            ImGui.SameLine();
             gizmoRenderer.DrawToolbar();
+            ImGui.Spacing();
         }
-
-        ImGui.Spacing();
 
         var pos = selectedActor.Transform.Position;
         var rot = selectedActor.Transform.Rotation;

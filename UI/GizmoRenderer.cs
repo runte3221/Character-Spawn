@@ -72,14 +72,14 @@ public unsafe class GizmoRenderer
 
     public void Render(SpawnedActorData? selectedActor, Action<Vector3, float> onTransformChanged)
     {
-        if (selectedActor == null || !selectedActor.IsSpawned || !configuration.ShowGizmo)
+        if (selectedActor == null || !selectedActor.IsSpawned)
             return;
 
         // Select モードの場合はギズモ非表示
         if (configuration.CurrentGizmoMode == GizmoMode.Select)
             return;
 
-        // FFXIV ゲームカメラの取得 (Stagehand 準拠)
+        // FFXIV ゲームカメラの取得 (Stagehand / BDTH 準拠)
         var cameraManager = CameraManager.Instance();
         if (cameraManager == null || cameraManager->CurrentCamera == null || cameraManager->CurrentCamera->RenderCamera == null)
             return;
@@ -87,10 +87,19 @@ public unsafe class GizmoRenderer
         var camera = cameraManager->CurrentCamera;
         var renderCamera = camera->RenderCamera;
 
-        Matrix4x4 viewMatrix = renderCamera->ViewMatrix;
-        Matrix4x4 projMatrix = renderCamera->ProjectionMatrix;
+        var viewMatrix = camera->ViewMatrix;
+        var projMatrix = renderCamera->ProjectionMatrix;
 
-        // フルスクリーン透明オーバーレイウィンドウ
+        // FFXIV リバースZ深度プロジェクションの ImGuizmo 補正 (Stagehand & BDTH 準拠)
+        var far = renderCamera->FarPlane;
+        var near = renderCamera->NearPlane;
+        var clip = far / (far - near);
+
+        projMatrix.M43 = -(clip * near);
+        projMatrix.M33 = -((far + near) / (far - near));
+        viewMatrix.M44 = 1.0f;
+
+        // フルスクリーン透明オーバーレイウィンドウ (NoInputs を付与してカメラ回転等の通常操作を一切阻害しない)
         ImGuiHelpers.ForceNextWindowMainViewport();
         ImGuiHelpers.SetNextWindowPosRelativeMainViewport(Vector2.Zero);
         ImGui.SetNextWindowSize(ImGui.GetIO().DisplaySize);
@@ -100,28 +109,32 @@ public unsafe class GizmoRenderer
                     ImGuiWindowFlags.NoFocusOnAppearing |
                     ImGuiWindowFlags.NoNav |
                     ImGuiWindowFlags.NoBackground |
-                    ImGuiWindowFlags.NoBringToFrontOnFocus;
+                    ImGuiWindowFlags.NoBringToFrontOnFocus |
+                    ImGuiWindowFlags.NoInputs;
 
         ImGui.PushStyleColor(ImGuiCol.WindowBg, 0);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0);
 
         if (ImGui.Begin("##CharacterSpawnGizmoOverlay", flags))
         {
-            ImGuizmo.SetDrawlist();
-            ImGuizmo.SetOrthographic(renderCamera->IsOrtho);
-            var vp = ImGui.GetWindowViewport();
-            ImGuizmo.SetRect(vp.Pos.X, vp.Pos.Y, vp.Size.X, vp.Size.Y);
             ImGuizmo.BeginFrame();
 
-            // ターゲットアクターの Transform 行列を構築
+            ImGuizmo.SetDrawlist();
+            ImGuizmo.Enable(true);
+            ImGuizmo.SetID((int)ImGui.GetID("CharacterSpawnGizmo"));
+            ImGuizmo.SetOrthographic(false);
+
+            var vp = ImGui.GetWindowViewport();
+            ImGuizmo.SetRect(vp.Pos.X, vp.Pos.Y, vp.Size.X, vp.Size.Y);
+
+            // ターゲットアクターの Transform 行列を構築 (オイラー角 Degree で Recompose)
             var pos = selectedActor.Transform.Position;
-            float yaw = selectedActor.Transform.Rotation;
-            var rotQuat = Quaternion.CreateFromAxisAngle(Vector3.UnitY, yaw);
+            float yawDeg = selectedActor.Transform.Rotation * (180.0f / MathF.PI);
+            var rotVec = new Vector3(0, yawDeg, 0);
             var scaleVec = Vector3.One * (selectedActor.Transform.Scale > 0 ? selectedActor.Transform.Scale : 1.0f);
 
-            var matrix = Matrix4x4.CreateScale(scaleVec) *
-                         Matrix4x4.CreateFromQuaternion(rotQuat) *
-                         Matrix4x4.CreateTranslation(pos);
+            var matrix = Matrix4x4.Identity;
+            ImGuizmo.RecomposeMatrixFromComponents(ref pos.X, ref rotVec.X, ref scaleVec.X, ref matrix.M11);
 
             // 操作モード: Translate (軸矢印 + XY/XZ/YZ平面Quad) / Rotate (回転リング)
             var op = configuration.CurrentGizmoMode == GizmoMode.Rotate
@@ -133,17 +146,17 @@ public unsafe class GizmoRenderer
             // ImGuizmo によるマニピュレート
             if (ImGuizmo.Manipulate(ref viewMatrix.M11, ref projMatrix.M11, op, mode, ref matrix.M11))
             {
-                if (Matrix4x4.Decompose(matrix, out var newScale, out var newRot, out var newPos))
-                {
-                    // Quaternion から Yaw（Y軸まわりの回転角度）を計算
-                    float newYaw = MathF.Atan2(
-                        2.0f * (newRot.Y * newRot.W + newRot.X * newRot.Z),
-                        1.0f - 2.0f * (newRot.Y * newRot.Y + newRot.Z * newRot.Z));
+                var newPos = Vector3.Zero;
+                var newRotVec = Vector3.Zero;
+                var newScale = Vector3.One;
 
-                    onTransformChanged(newPos, newYaw);
-                }
+                ImGuizmo.DecomposeMatrixToComponents(ref matrix.M11, ref newPos.X, ref newRotVec.X, ref newScale.X);
+
+                float newYawRad = newRotVec.Y * (MathF.PI / 180.0f);
+                onTransformChanged(newPos, newYawRad);
             }
 
+            ImGuizmo.SetID(-1);
             ImGui.End();
         }
 
