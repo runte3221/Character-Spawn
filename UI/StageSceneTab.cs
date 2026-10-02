@@ -16,6 +16,7 @@ public class StageSceneTab
     private readonly IClientState clientState;
     private readonly IObjectTable objectTable;
     private readonly IPluginLog log;
+    private readonly GizmoRenderer? gizmoRenderer;
 
     private SpawnedActorData? selectedActor;
     private string animSearchQuery = string.Empty;
@@ -30,7 +31,8 @@ public class StageSceneTab
         GameDataService gameDataService,
         IClientState clientState,
         IObjectTable objectTable,
-        IPluginLog log)
+        IPluginLog log,
+        GizmoRenderer? gizmoRenderer = null)
     {
         this.configuration = configuration;
         this.actorManager = actorManager;
@@ -38,6 +40,7 @@ public class StageSceneTab
         this.clientState = clientState;
         this.objectTable = objectTable;
         this.log = log;
+        this.gizmoRenderer = gizmoRenderer;
     }
 
     public void SelectActor(SpawnedActorData? actor)
@@ -185,6 +188,22 @@ public class StageSceneTab
         if (selectedActor == null) return;
 
         ImGui.TextUnformatted("Transform (Position & Rotation)");
+
+        bool showGizmo = configuration.ShowGizmo;
+        if (ImGui.Checkbox("Gizmo", ref showGizmo))
+        {
+            configuration.ShowGizmo = showGizmo;
+            configuration.Save();
+        }
+        if (configuration.ShowGizmo && gizmoRenderer != null)
+        {
+            ImGui.SameLine();
+            ImGui.Spacing();
+            ImGui.SameLine();
+            gizmoRenderer.DrawToolbar();
+        }
+
+        ImGui.Spacing();
 
         var pos = selectedActor.Transform.Position;
         var rot = selectedActor.Transform.Rotation;

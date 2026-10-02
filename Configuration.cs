@@ -4,6 +4,13 @@ using CharacterSpawn.Models;
 
 namespace CharacterSpawn;
 
+public enum GizmoMode
+{
+    Select = 0,
+    Translate = 1,
+    Rotate = 2
+}
+
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
@@ -20,6 +27,7 @@ public class Configuration : IPluginConfiguration
 
     // Settings
     public bool ShowGizmo { get; set; } = true;
+    public GizmoMode CurrentGizmoMode { get; set; } = GizmoMode.Translate;
     public float GizmoScale { get; set; } = 1.0f;
     public bool AutoRestoreScenesOnZoneChange { get; set; } = true;
     public float GizmoSnapDistance { get; set; } = 0.1f;

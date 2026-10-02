@@ -66,6 +66,7 @@ public class CharacterLibraryTab
     private string newFolderName = string.Empty;
 
     private readonly CustomizePlusIpc? customizePlusIpc;
+    private readonly GizmoRenderer? gizmoRenderer;
 
     public CharacterLibraryTab(
         Configuration configuration,
@@ -78,7 +79,8 @@ public class CharacterLibraryTab
         ITargetManager targetManager,
         IPluginLog log,
         LogManager? logManager = null,
-        CustomizePlusIpc? customizePlusIpc = null)
+        CustomizePlusIpc? customizePlusIpc = null,
+        GizmoRenderer? gizmoRenderer = null)
     {
         this.configuration = configuration;
         this.gameDataService = gameDataService;
@@ -91,6 +93,7 @@ public class CharacterLibraryTab
         this.log = log;
         this.logManager = logManager;
         this.customizePlusIpc = customizePlusIpc;
+        this.gizmoRenderer = gizmoRenderer;
     }
 
     public void Draw()
@@ -317,6 +320,13 @@ public class CharacterLibraryTab
                 {
                     configuration.ShowGizmo = showGizmo;
                     configuration.Save();
+                }
+                if (configuration.ShowGizmo && gizmoRenderer != null)
+                {
+                    ImGui.SameLine();
+                    ImGui.Spacing();
+                    ImGui.SameLine();
+                    gizmoRenderer.DrawToolbar();
                 }
             }
 

@@ -1,0 +1,13 @@
+# 修正内容の確認 (Walkthrough): ImGuizmo 導入・平面移動・移動/回転分離 (v0.1.18)
+
+## 実施した変更
+1. **`Dalamud.Bindings.ImGuizmo` の全面導入**:
+   - `UI/GizmoRenderer.cs` を業界標準の 3D ギズモライブラリ `ImGuizmo` を用いた設計に刷新。
+   - `CameraManager` から View / Projection 行列を取得し、完全な 3D レイキャストによるクリック・ドラッグ操作を実現。
+2. **XY, XZ, YZ 平面移動（四角形 Quad）ハンドルの提供**:
+   - 移動モード時に赤・緑・青の半透明四角形が表示され、2軸平面上での自由なドラッグ移動が可能に。
+3. **移動（Translate）と回転（Rotate）のモード分離**:
+   - Stagehand スタイルのモード切替（Translate / Rotate）を追加。
+   - 移動時は軸矢印と平面 Quad、回転時は専用の回転リングを表示。
+4. **バージョン更新**:
+   - `v0.1.18` / `0.1.18.0` に更新。

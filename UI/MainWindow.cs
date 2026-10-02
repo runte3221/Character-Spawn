@@ -46,6 +46,12 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
+        // Stagehand スタイル ギズモツールバー (Select / Translate / Rotate)
+        gizmoRenderer.DrawToolbar();
+        ImGui.SameLine();
+        ImGui.TextDisabled("Gizmo Mode");
+        ImGui.Spacing();
+
         if (ImGui.BeginTabBar("CharacterSpawnTabs"))
         {
             if (ImGui.BeginTabItem("Character"))
@@ -74,23 +80,6 @@ public class MainWindow : Window, IDisposable
 
             ImGui.EndTabBar();
         }
-
-        // Render 3D Gizmo
-        // 1. StageSceneTab で選択中のアクター
-        // 2. または CharacterTab でプレビュー中のアクター
-        var targetActor = stageTab.SelectedActor;
-        if (targetActor == null || !targetActor.IsSpawned)
-        {
-            targetActor = actorManager.CurrentPreviewActor;
-        }
-
-        if (targetActor != null && targetActor.IsSpawned && configuration.ShowGizmo)
-        {
-            gizmoRenderer.Render(targetActor, (newPos, newRot) =>
-            {
-                actorManager.UpdateActorTransform(targetActor, newPos, newRot);
-            });
-        }
     }
 
     private void DrawSettingsTab()
@@ -105,11 +94,17 @@ public class MainWindow : Window, IDisposable
             configuration.Save();
         }
 
-        float gizmoScale = configuration.GizmoScale;
-        if (ImGui.SliderFloat("Gizmo Size Scale", ref gizmoScale, 0.5f, 2.5f))
+        if (configuration.ShowGizmo)
         {
-            configuration.GizmoScale = gizmoScale;
-            configuration.Save();
+            ImGui.TextUnformatted("Default Gizmo Mode:");
+            int modeInt = (int)configuration.CurrentGizmoMode;
+            if (ImGui.RadioButton("Select (Hide)", ref modeInt, (int)GizmoMode.Select) ||
+                ImGui.RadioButton("Translate (Move Axis + Quad Planes)", ref modeInt, (int)GizmoMode.Translate) ||
+                ImGui.RadioButton("Rotate (Rings)", ref modeInt, (int)GizmoMode.Rotate))
+            {
+                configuration.CurrentGizmoMode = (GizmoMode)modeInt;
+                configuration.Save();
+            }
         }
 
         bool autoRestore = configuration.AutoRestoreScenesOnZoneChange;

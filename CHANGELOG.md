@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.18] - 2026-10-02
+### Added
+- **Stagehand-Compliant ImGuizmo 3D Gizmo System**:
+  - Replaced the custom 2D screen-projected gizmo with native `Dalamud.Bindings.ImGuizmo` architecture identical to Stagehand.
+  - Extracted game camera matrices (`ViewMatrix`, `ProjectionMatrix`) directly from `FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CameraManager.Instance()->CurrentCamera->RenderCamera`.
+  - Moved gizmo rendering to a full-screen transparent overlay window in `Plugin.DrawUI`, completely eliminating mouse focus loss and click-through issues when dragging handles in the 3D game world.
+  - Implemented Stagehand-style mode toolbar (Select / Translate / Rotate) across `MainWindow`, `CharacterLibraryTab`, and `StageSceneTab`:
+    - **Select Mode (`FontAwesomeIcon.MousePointer`)**: Hides the gizmo for normal scene interaction.
+    - **Translate Mode (`FontAwesomeIcon.ArrowsUpDownLeftRight`)**: Renders primary X, Y, Z axis arrows alongside red, green, and blue **XY, XZ, YZ quad planes** for multi-axis simultaneous drag-manipulation.
+    - **Rotate Mode (`FontAwesomeIcon.SyncAlt`)**: Separates rotation from translation, rendering dedicated 3-axis rotation rings for intuitive yaw/pitch/roll adjustments.
+  - Real-time transform synchronization via `Matrix4x4.Decompose` updating actor position and yaw in both library preview and active stage actors.
+
 ## [0.1.17] - 2026-10-02
 ### Added
 - **Customize+ (C+) Profile Integration**:

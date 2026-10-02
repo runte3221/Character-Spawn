@@ -75,8 +75,8 @@ public sealed class Plugin : IDalamudPlugin
         // UI
         gizmoRenderer = new GizmoRenderer(GameGui, Configuration);
         logTab = new LogTab(logManager);
-        libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, actorManager, ObjectTable, TargetManager, Log, logManager, customizePlusIpc);
-        stageTab = new StageSceneTab(Configuration, actorManager, gameDataService, ClientState, ObjectTable, Log);
+        libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, actorManager, ObjectTable, TargetManager, Log, logManager, customizePlusIpc, gizmoRenderer);
+        stageTab = new StageSceneTab(Configuration, actorManager, gameDataService, ClientState, ObjectTable, Log, gizmoRenderer);
         mainWindow = new MainWindow(Configuration, libraryTab, stageTab, logTab, gizmoRenderer, actorManager, Log);
 
         WindowSystem.AddWindow(mainWindow);
@@ -115,6 +115,24 @@ public sealed class Plugin : IDalamudPlugin
     private void DrawUI()
     {
         WindowSystem.Draw();
+
+        // 3D Gizmo Overlay 描画 (Stagehand 準拠: 全画面オーバーレイで確実にマウス操作をキャプチャ)
+        if (Configuration.ShowGizmo)
+        {
+            var targetActor = stageTab.SelectedActor;
+            if (targetActor == null || !targetActor.IsSpawned)
+            {
+                targetActor = actorManager.CurrentPreviewActor;
+            }
+
+            if (targetActor != null && targetActor.IsSpawned)
+            {
+                gizmoRenderer.Render(targetActor, (newPos, newRot) =>
+                {
+                    actorManager.UpdateActorTransform(targetActor, newPos, newRot);
+                });
+            }
+        }
     }
 
     private void OnFrameworkUpdate(IFramework framework)
