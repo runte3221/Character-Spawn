@@ -185,15 +185,15 @@ public unsafe class ActorManager : IDisposable
             nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
             nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-            // クラス分類: 人型は Player (Penumbra IPC/Glamourer での Player 認識を保証), モンスターモデルは BattleNpc
+            // クラス分類: 人型は Pc (= Player 1, Penumbra IPC/Glamourer での Player 認識を保証), モンスターモデルは BattleNpc
             if (template.ModelCharaId > 0)
             {
                 nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc;
-                nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Enemy;
+                nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.None;
             }
             else
             {
-                nativeChara->GameObject.ObjectKind = ObjectKind.Player;
+                nativeChara->GameObject.ObjectKind = ObjectKind.Pc;
                 nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
             }
             nativeChara->GameObject.TargetableStatus &= ~ObjectTargetableFlags.IsTargetable;
