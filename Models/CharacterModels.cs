@@ -101,6 +101,9 @@ public class SpawnedActorData
     public nint NativeAddress { get; set; } = 0;
 
     [JsonIgnore]
+    public ushort SlotIndex { get; set; } = 0;
+
+    [JsonIgnore]
     public uint GameObjectId { get; set; } = 0;
 
     [JsonIgnore]

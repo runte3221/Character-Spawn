@@ -136,17 +136,13 @@ public unsafe class ActorManager : IDisposable
             if (isMonsterOrNonHumanoid)
             {
                 // ========== 非人型アクター（モンスター、モーグリ等の固有モデル） ==========
-                // 人型の自キャラから CopyFromCharacter を行うとスケルトンやリソースコンテナが破損するため、
-                // 人型コピーは絶対に行わず、ModelContainer に ModelCharaId を設定して自身の再構築を行う
+                // AQuestReborn 方式: 自前での人型コピーや再構築は行わず、ModelCharaId を設定し武器を隠す
                 logManager?.Info($"Setting Non-humanoid ModelCharaId: {template.ModelCharaId}");
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
 
                 // 武器は非表示に設定
                 nativeChara->DrawData.HideWeapons(true);
                 nativeChara->DrawData.IsWeaponHidden = true;
-
-                // 自身のコンテナから再構築
-                nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
             }
             else
             {
@@ -219,6 +215,7 @@ public unsafe class ActorManager : IDisposable
                 TemplateId = template.Id,
                 DisplayName = template.Name,
                 NativeAddress = (nint)nativeChara,
+                SlotIndex = newId,
                 GameObjectId = nativeChara->EntityId,
                 Transform = new TransformData
                 {
@@ -389,70 +386,99 @@ public unsafe class ActorManager : IDisposable
         if (spawned.NativeAddress == 0) return;
 
         var chara = (Character*)spawned.NativeAddress;
-        var actorIndex = chara->ObjectIndex;
+        int actorIndex = spawned.SlotIndex > 0 ? (int)spawned.SlotIndex : (int)chara->ObjectIndex;
 
-        // Penumbraコレクションの適用
+        // 1. Penumbraコレクションの適用 (AQuestReborn順序: コレクションを先に設定)
         if (penumbraIpc.IsAvailable)
         {
             if (!string.IsNullOrWhiteSpace(template.PenumbraCollectionName))
             {
                 bool penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
-                logManager?.Info($"Penumbra SetCollection '{template.PenumbraCollectionName}' result: {penSuccess}");
+                logManager?.Info($"Penumbra SetCollection '{template.PenumbraCollectionName}' on slot {actorIndex}: {penSuccess}");
             }
         }
 
-        // Glamourerの適用
-        if (glamourerIpc.IsAvailable)
+        // 2. モンスター / 非人型アクターの場合
+        if (template.ModelCharaId > 0)
         {
-            string? designString = template.GlamourerDesignString;
-
-            // MCDF の場合：デザイン文字列が空なら MCDF ファイルから再パースを試みる
-            if (template.SourceType == CharacterSourceType.Mcdf && string.IsNullOrWhiteSpace(designString) && !string.IsNullOrWhiteSpace(template.McdfFilePath) && mcdfParser != null)
-            {
-                var parsed = mcdfParser.ParseMcdf(template.McdfFilePath);
-                if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
-                {
-                    designString = parsed.GlamourerDesign;
-                    logManager?.Info("Loaded Glamourer design string from MCDF file on spawn.");
-                }
-            }
-
-            if (!string.IsNullOrWhiteSpace(designString))
-            {
-                bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
-                logManager?.Info($"Glamourer ApplyDesign result: {glamSuccess}");
-            }
-            else if (template.SourceType == CharacterSourceType.PlayerClone)
-            {
-                var playerDesign = glamourerIpc.GetCustomization(0);
-                if (!string.IsNullOrWhiteSpace(playerDesign))
-                {
-                    glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex);
-                    logManager?.Info("Applied player customization clone via Glamourer.");
-                }
-                else
-                {
-                    glamourerIpc.ReapplyState(actorIndex);
-                }
-            }
-            else if (template.SourceType != CharacterSourceType.Monster && template.ModelCharaId == 0)
-            {
-                glamourerIpc.ReapplyState(actorIndex);
-            }
+            chara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
+            chara->DrawData.HideWeapons(true);
+            chara->DrawData.IsWeaponHidden = true;
+            logManager?.Info($"Applied ModelCharaId {template.ModelCharaId} to actor slot {actorIndex}.");
         }
         else
         {
-            if (template.SourceType == CharacterSourceType.Glamourer || template.SourceType == CharacterSourceType.Mcdf)
+            // 3. 人型アクターの外見（Glamourer / MCDF / PlayerClone）の適用
+            if (glamourerIpc.IsAvailable)
             {
-                logManager?.Warning("Glamourer IPC not detected. Could not apply external appearance design.");
+                string? designString = template.GlamourerDesignString;
+
+                // MCDF の場合：デザイン文字列が空なら MCDF ファイルから再パースを試みる
+                if (template.SourceType == CharacterSourceType.Mcdf && string.IsNullOrWhiteSpace(designString) && !string.IsNullOrWhiteSpace(template.McdfFilePath) && mcdfParser != null)
+                {
+                    var parsed = mcdfParser.ParseMcdf(template.McdfFilePath);
+                    if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
+                    {
+                        designString = parsed.GlamourerDesign;
+                        template.GlamourerDesignString = designString;
+                        logManager?.Info("Loaded Glamourer design string from MCDF file on spawn.");
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(designString))
+                {
+                    bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
+                    logManager?.Info($"Glamourer ApplyDesign result on slot {actorIndex}: {glamSuccess}");
+                }
+                else if (template.SourceType == CharacterSourceType.PlayerClone)
+                {
+                    var playerDesign = glamourerIpc.GetCustomization(0);
+                    if (!string.IsNullOrWhiteSpace(playerDesign))
+                    {
+                        glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex);
+                        logManager?.Info("Applied player customization clone via Glamourer.");
+                    }
+                    else
+                    {
+                        glamourerIpc.ReapplyState(actorIndex);
+                    }
+                }
+            }
+            else
+            {
+                if (template.SourceType == CharacterSourceType.Glamourer || template.SourceType == CharacterSourceType.Mcdf)
+                {
+                    logManager?.Warning("Glamourer IPC not detected. Could not apply external appearance design.");
+                }
             }
         }
 
-        // Penumbra RedrawObject
+        // 4. Penumbra RedrawObject (AQuestReborn方式: 最後に必ず Redraw)
+        if (penumbraIpc.IsAvailable)
+        {
+            penumbraIpc.Redraw(actorIndex);
+            logManager?.Info($"Triggered Penumbra Redraw for slot {actorIndex}.");
+        }
+    }
+
+    /// <summary>
+    /// プレビュー中アクターの武器表示状態を切り替えて即座に再描画する
+    /// </summary>
+    public void SetWeaponVisibility(SpawnedActorData actor, bool visible)
+    {
+        if (actor.NativeAddress == 0) return;
+        var nativeChara = (Character*)actor.NativeAddress;
+        int actorIndex = actor.SlotIndex > 0 ? (int)actor.SlotIndex : (int)nativeChara->ObjectIndex;
+
+        nativeChara->DrawData.HideWeapons(!visible);
+        nativeChara->DrawData.IsWeaponHidden = !visible;
+        nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
+
         if (penumbraIpc.IsAvailable)
         {
             penumbraIpc.Redraw(actorIndex);
         }
+        logManager?.Info($"Updated weapon visibility for '{actor.DisplayName}' (Visible: {visible}, Slot: {actorIndex}).");
     }
 
     private Vector3 GetDefaultSpawnPosition()

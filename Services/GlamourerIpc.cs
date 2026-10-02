@@ -12,13 +12,18 @@ public class GlamourerIpc
     // V2 IPC Subscribers
     private readonly ICallGateSubscriber<(int, int)>? apiVersionV2;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getDesignListV2;
-    private readonly ICallGateSubscriber<string, int, uint, uint, object?>? applyStateV2;
-    private readonly ICallGateSubscriber<int, uint, uint, object?>? reapplyStateV2;
+    private readonly ICallGateSubscriber<Guid, int, uint, ulong, int>? applyDesignV2Ulong;
+    private readonly ICallGateSubscriber<Guid, int, uint, uint, int>? applyDesignV2Uint;
+    private readonly ICallGateSubscriber<string, int, uint, ulong, int>? applyStateV2Ulong;
+    private readonly ICallGateSubscriber<string, int, uint, uint, int>? applyStateV2Uint;
+    private readonly ICallGateSubscriber<int, uint, ulong, int>? reapplyStateV2Ulong;
+    private readonly ICallGateSubscriber<int, uint, uint, int>? reapplyStateV2Uint;
     private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
 
     // Fallback Subscribers
     private readonly ICallGateSubscriber<int, (int, int)>? apiVersionsLegacy;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getDesignListLegacy;
+    private readonly ICallGateSubscriber<Guid, int, object?>? applyByGuidLegacy;
     private readonly ICallGateSubscriber<string, int, object?>? applyByStringLegacy;
 
     private bool isAvailable = false;
@@ -45,12 +50,17 @@ public class GlamourerIpc
         {
             apiVersionV2 = pi.GetIpcSubscriber<(int, int)>("Glamourer.ApiVersion.V2");
             getDesignListV2 = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList.V2");
-            applyStateV2 = pi.GetIpcSubscriber<string, int, uint, uint, object?>("Glamourer.ApplyState");
-            reapplyStateV2 = pi.GetIpcSubscriber<int, uint, uint, object?>("Glamourer.ReapplyState");
+            applyDesignV2Ulong = pi.GetIpcSubscriber<Guid, int, uint, ulong, int>("Glamourer.ApplyDesign");
+            applyDesignV2Uint = pi.GetIpcSubscriber<Guid, int, uint, uint, int>("Glamourer.ApplyDesign");
+            applyStateV2Ulong = pi.GetIpcSubscriber<string, int, uint, ulong, int>("Glamourer.ApplyState");
+            applyStateV2Uint = pi.GetIpcSubscriber<string, int, uint, uint, int>("Glamourer.ApplyState");
+            reapplyStateV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.ReapplyState");
+            reapplyStateV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.ReapplyState");
             getCustomizationFromActor = pi.GetIpcSubscriber<int, string?>("Glamourer.GetCustomizationFromActor");
 
             apiVersionsLegacy = pi.GetIpcSubscriber<int, (int, int)>("Glamourer.ApiVersions");
             getDesignListLegacy = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList");
+            applyByGuidLegacy = pi.GetIpcSubscriber<Guid, int, object?>("Glamourer.ApplyByGuid");
             applyByStringLegacy = pi.GetIpcSubscriber<string, int, object?>("Glamourer.ApplyByString");
 
             CheckAvailability();
@@ -135,35 +145,124 @@ public class GlamourerIpc
         return new();
     }
 
+    /// <summary>
+    /// Guid または State 文字列（MCDF / Base64 / JSON）を適切な API でアクターに適用する
+    /// <summary>
+    /// Guid、名前、または State 文字列（MCDF Base64 / JSON）を適切な API (flags = 7: 全適用) でアクターに適用する
+    /// </summary>
     public bool ApplyDesignToActor(string designString, int actorIndex)
     {
-        if (!IsAvailable) return false;
+        if (!IsAvailable || string.IsNullOrWhiteSpace(designString)) return false;
 
-        // 1. Try ApplyState (V2)
-        if (applyStateV2 != null)
+        // 1. Guid 文字列かどうか判定、あるいは名前から Guid を解決
+        Guid targetGuid = Guid.Empty;
+        if (Guid.TryParse(designString, out var parsedGuid))
         {
-            try
+            targetGuid = parsedGuid;
+        }
+        else if (!designString.StartsWith("{") && !designString.StartsWith("[") && designString.Length < 100)
+        {
+            // 名前からデザインリストを検索 (AQuestReborn スタイル)
+            var designs = GetDesigns();
+            foreach (var kvp in designs)
             {
-                applyStateV2.InvokeAction(designString, actorIndex, 0, 0);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                log.Debug($"Glamourer ApplyState failed, trying fallback: {ex.Message}");
+                if (string.Equals(kvp.Value, designString, StringComparison.OrdinalIgnoreCase))
+                {
+                    targetGuid = kvp.Key;
+                    break;
+                }
             }
         }
 
-        // 2. Try Legacy ApplyByString
+        if (targetGuid != Guid.Empty)
+        {
+            // ApplyDesign V2 (ulong flags = 7)
+            if (applyDesignV2Ulong != null)
+            {
+                try
+                {
+                    int res = applyDesignV2Ulong.InvokeFunc(targetGuid, actorIndex, 0, 7UL);
+                    log.Information($"Glamourer ApplyDesign(Guid: {targetGuid}, Flags: 7UL) result: {res}");
+                    if (res == 0) return true;
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyDesign V2 (ulong) failed: {ex.Message}");
+                }
+            }
+
+            // ApplyDesign V2 (uint flags = 7)
+            if (applyDesignV2Uint != null)
+            {
+                try
+                {
+                    int res = applyDesignV2Uint.InvokeFunc(targetGuid, actorIndex, 0, 7U);
+                    log.Information($"Glamourer ApplyDesign(Guid: {targetGuid}, Flags: 7U) result: {res}");
+                    if (res == 0) return true;
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyDesign V2 (uint) failed: {ex.Message}");
+                }
+            }
+
+            // Legacy ApplyByGuid
+            if (applyByGuidLegacy != null)
+            {
+                try
+                {
+                    applyByGuidLegacy.InvokeAction(targetGuid, actorIndex);
+                    log.Information($"Glamourer ApplyByGuid Legacy executed for actor {actorIndex}.");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyByGuid Legacy failed: {ex.Message}");
+                }
+            }
+        }
+
+        // 2. State 文字列（Base64 / MCDF / JSON）(flags = 7)
+        if (applyStateV2Ulong != null)
+        {
+            try
+            {
+                int res = applyStateV2Ulong.InvokeFunc(designString, actorIndex, 0, 7UL);
+                log.Information($"Glamourer ApplyState (ulong flags=7) result: {res}");
+                if (res == 0) return true;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Glamourer ApplyState V2 (ulong) failed: {ex.Message}");
+            }
+        }
+
+        if (applyStateV2Uint != null)
+        {
+            try
+            {
+                int res = applyStateV2Uint.InvokeFunc(designString, actorIndex, 0, 7U);
+                log.Information($"Glamourer ApplyState (uint flags=7) result: {res}");
+                if (res == 0) return true;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Glamourer ApplyState V2 (uint) failed: {ex.Message}");
+            }
+        }
+
+        // Legacy ApplyByString
         if (applyByStringLegacy != null)
         {
             try
             {
                 applyByStringLegacy.InvokeAction(designString, actorIndex);
+                log.Information($"Glamourer ApplyByString Legacy executed for actor {actorIndex}.");
                 return true;
             }
             catch (Exception ex)
             {
-                log.Warning($"Glamourer ApplyByString fallback failed: {ex.Message}");
+                log.Warning($"Glamourer ApplyByString Legacy failed: {ex.Message}");
             }
         }
 
@@ -189,16 +288,29 @@ public class GlamourerIpc
     {
         if (!IsAvailable) return false;
 
-        if (reapplyStateV2 != null)
+        if (reapplyStateV2Ulong != null)
         {
             try
             {
-                reapplyStateV2.InvokeAction(actorIndex, 0, 0);
-                return true;
+                int res = reapplyStateV2Ulong.InvokeFunc(actorIndex, 0, 7UL);
+                return res == 0;
             }
             catch (Exception ex)
             {
-                log.Debug($"Glamourer ReapplyState failed: {ex.Message}");
+                log.Debug($"Glamourer ReapplyState (ulong) failed: {ex.Message}");
+            }
+        }
+
+        if (reapplyStateV2Uint != null)
+        {
+            try
+            {
+                int res = reapplyStateV2Uint.InvokeFunc(actorIndex, 0, 7U);
+                return res == 0;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer ReapplyState (uint) failed: {ex.Message}");
             }
         }
 

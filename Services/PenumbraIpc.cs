@@ -12,13 +12,14 @@ public class PenumbraIpc
     // V5 IPC Subscribers
     private readonly ICallGateSubscriber<(int, int)>? apiVersionV5;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getCollectionsV5;
-    private readonly ICallGateSubscriber<string, int, int, object?>? setCollectionForObjectV5;
+    private readonly ICallGateSubscriber<int, Guid, bool, bool, int>? setCollectionForObjectV5Guid;
     private readonly ICallGateSubscriber<int, int, object?>? redrawObjectV5;
 
     // Fallback Subscribers
     private readonly ICallGateSubscriber<(int, int)>? apiVersionLegacy;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getCollectionsLegacy;
-    private readonly ICallGateSubscriber<string, int, int>? setCollectionForObjectLegacy;
+    private readonly ICallGateSubscriber<int, string, bool, bool, int>? setCollectionForObjectLegacyString;
+    private readonly ICallGateSubscriber<string, int, int>? setCollectionForObjectOldLegacy;
     private readonly ICallGateSubscriber<int, int, object?>? redrawObjectLegacy;
 
     private bool isAvailable = false;
@@ -45,12 +46,13 @@ public class PenumbraIpc
         {
             apiVersionV5 = pi.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion.V5");
             getCollectionsV5 = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections.V5");
-            setCollectionForObjectV5 = pi.GetIpcSubscriber<string, int, int, object?>("Penumbra.SetCollectionForObject.V5");
+            setCollectionForObjectV5Guid = pi.GetIpcSubscriber<int, Guid, bool, bool, int>("Penumbra.SetCollectionForObject.V5");
             redrawObjectV5 = pi.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject.V5");
 
             apiVersionLegacy = pi.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion");
             getCollectionsLegacy = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections");
-            setCollectionForObjectLegacy = pi.GetIpcSubscriber<string, int, int>("Penumbra.SetCollectionForObject");
+            setCollectionForObjectLegacyString = pi.GetIpcSubscriber<int, string, bool, bool, int>("Penumbra.SetCollectionForObject");
+            setCollectionForObjectOldLegacy = pi.GetIpcSubscriber<string, int, int>("Penumbra.SetCollectionForObject");
             redrawObjectLegacy = pi.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject");
 
             CheckAvailability();
@@ -135,35 +137,71 @@ public class PenumbraIpc
         return new();
     }
 
-    public bool SetCollectionForActor(string collectionName, int actorIndex)
+    public bool SetCollectionForActor(string collectionIdentifier, int actorIndex)
     {
-        if (!IsAvailable) return false;
+        if (!IsAvailable || string.IsNullOrWhiteSpace(collectionIdentifier)) return false;
 
-        // 1. Try V5
-        if (setCollectionForObjectV5 != null)
+        // 1. Guid 指定または名前から Guid への解決
+        Guid collGuid = Guid.Empty;
+        if (Guid.TryParse(collectionIdentifier, out var parsedGuid))
         {
-            try
+            collGuid = parsedGuid;
+        }
+        else
+        {
+            // 名前からコレクション一覧を引いて Guid を検索
+            var colls = GetCollections();
+            foreach (var kvp in colls)
             {
-                setCollectionForObjectV5.InvokeAction(collectionName, actorIndex, 0);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                log.Debug($"Penumbra V5 SetCollectionForObject failed: {ex.Message}");
+                if (string.Equals(kvp.Value, collectionIdentifier, StringComparison.OrdinalIgnoreCase))
+                {
+                    collGuid = kvp.Key;
+                    break;
+                }
             }
         }
 
-        // 2. Try Legacy
-        if (setCollectionForObjectLegacy != null)
+        // V5 (Guid 引数)
+        if (collGuid != Guid.Empty && setCollectionForObjectV5Guid != null)
         {
             try
             {
-                var result = setCollectionForObjectLegacy.InvokeFunc(collectionName, actorIndex);
+                int res = setCollectionForObjectV5Guid.InvokeFunc(actorIndex, collGuid, true, true);
+                log.Information($"Penumbra SetCollectionForObject.V5(Index:{actorIndex}, Guid:{collGuid}) result: {res}");
+                return res == 0;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Penumbra SetCollectionForObject V5 failed: {ex.Message}");
+            }
+        }
+
+        // Legacy (string 引数: actorIndex, collectionName, allowCreate, allowDelete)
+        if (setCollectionForObjectLegacyString != null)
+        {
+            try
+            {
+                int res = setCollectionForObjectLegacyString.InvokeFunc(actorIndex, collectionIdentifier, true, true);
+                log.Information($"Penumbra SetCollectionForObject Legacy(Index:{actorIndex}, Name:{collectionIdentifier}) result: {res}");
+                return res == 0;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Penumbra SetCollectionForObject Legacy failed: {ex.Message}");
+            }
+        }
+
+        // Old Legacy (collectionName, actorIndex)
+        if (setCollectionForObjectOldLegacy != null)
+        {
+            try
+            {
+                var result = setCollectionForObjectOldLegacy.InvokeFunc(collectionIdentifier, actorIndex);
                 return result == 0;
             }
             catch (Exception ex)
             {
-                log.Warning($"Penumbra SetCollectionForObject fallback failed: {ex.Message}");
+                log.Warning($"Penumbra SetCollectionForObject Old Legacy failed: {ex.Message}");
             }
         }
 

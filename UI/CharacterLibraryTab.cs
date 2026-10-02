@@ -204,160 +204,149 @@ public class CharacterLibraryTab
 
     private void DrawRightPane()
     {
-        if (selectedTemplate == null)
+        if (ImGui.BeginChild("RightDetailPane", new Vector2(-1, -1), false))
         {
-            ImGui.TextDisabled("Select a character from the list, or click [New Chara] to create one.");
-            return;
-        }
-
-        // Chara Name
-        ImGui.TextUnformatted("Chara Name");
-        ImGui.SetNextItemWidth(-1);
-        if (ImGui.InputText("##InlineCharaName", ref editInlineName, 64))
-        {
-            selectedTemplate.Name = editInlineName;
-            configuration.Save();
-        }
-
-        ImGui.Spacing();
-
-        // [x] Weapon Visible
-        bool weaponVis = selectedTemplate.WeaponVisible;
-        if (ImGui.Checkbox("Weapon Visible", ref weaponVis))
-        {
-            selectedTemplate.WeaponVisible = weaponVis;
-            configuration.Save();
-
-            // もしプレビュー中なら武器非表示をリアルタイム反映
-            if (actorManager.CurrentPreviewActor != null && actorManager.CurrentPreviewActor.NativeAddress != 0)
+            if (selectedTemplate == null)
             {
-                unsafe
-                {
-                    var nativeChara = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)actorManager.CurrentPreviewActor.NativeAddress;
-                    nativeChara->DrawData.HideWeapons(!weaponVis);
-                    nativeChara->DrawData.IsWeaponHidden = !weaponVis;
-                    nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, FFXIVClientStructs.FFXIV.Client.Game.Character.CharacterSetupContainer.CopyFlags.None);
-                }
-            }
-        }
-        ImGui.SameLine();
-        ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1.0f), "  <= 武器表示ON/OFF");
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        // プレビュー状態の判定
-        bool isPreviewingCurrent = actorManager.CurrentPreviewActor != null &&
-                                  actorManager.CurrentPreviewActor.TemplateId == selectedTemplate.Id &&
-                                  actorManager.CurrentPreviewActor.IsSpawned;
-
-        // Action buttons: [Spawn / Despawn] [edit] [delete]
-        if (isPreviewingCurrent)
-        {
-            // 赤色 Despawn ボタン
-            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.85f, 0.15f, 0.15f, 1.0f));
-            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(1.0f, 0.25f, 0.25f, 1.0f));
-            ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.7f, 0.1f, 0.1f, 1.0f));
-
-            if (ImGui.Button("Despawn", new Vector2(90, 26)))
-            {
-                actorManager.DespawnPreviewCharacter();
+                ImGui.TextDisabled("Select a character from the list, or click [New Chara] to create one.");
+                ImGui.EndChild();
+                return;
             }
 
-            ImGui.PopStyleColor(3);
-        }
-        else
-        {
-            // 通常 Spawn ボタン
-            if (ImGui.Button("Spawn", new Vector2(90, 26)))
+            // Chara Name
+            ImGui.TextUnformatted("Chara Name");
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.InputText("##InlineCharaName", ref editInlineName, 64))
             {
-                logManager?.Info($"Preview Spawn requested for template: {selectedTemplate.Name}");
-                actorManager.SpawnPreviewCharacter(selectedTemplate);
-            }
-        }
-
-        ImGui.SameLine();
-
-        if (ImGui.Button("edit", new Vector2(70, 26)))
-        {
-            OpenEditCharacterModal(selectedTemplate);
-        }
-
-        ImGui.SameLine();
-
-        if (ImGui.Button("delete", new Vector2(70, 26)))
-        {
-            if (isPreviewingCurrent)
-            {
-                actorManager.DespawnPreviewCharacter();
-            }
-            configuration.Templates.Remove(selectedTemplate);
-            configuration.Save();
-            selectedTemplate = null;
-            return;
-        }
-
-        ImGui.Spacing();
-
-        // スポーン状態に応じた表示（画像3, 4準拠）
-        if (isPreviewingCurrent)
-        {
-            ImGui.TextColored(new Vector4(0.2f, 0.9f, 0.3f, 1.0f), $"{selectedTemplate.Name} Spawning...");
-
-            ImGui.Spacing();
-
-            bool showGizmo = configuration.ShowGizmo;
-            if (ImGui.Checkbox("Gizmo", ref showGizmo))
-            {
-                configuration.ShowGizmo = showGizmo;
+                selectedTemplate.Name = editInlineName;
                 configuration.Save();
             }
-            ImGui.SameLine();
-            ImGui.TextColored(new Vector4(0.6f, 0.6f, 0.6f, 1.0f), "  <= ギズモ表示ON/OFF");
-        }
-        else
-        {
-            // プレビュー機能の説明文（画像3準拠）
+
             ImGui.Spacing();
-            ImGui.BeginChild("PreviewExplanationBox", new Vector2(-1, 140), true);
-            ImGui.TextWrapped("現在のMAP上に仮置きして見た目などの情報がきちんと反映してるか確認をできるようにするだけの機能（プレビュー機能）\n\nSpawnを実行後、ボタンが Despawn に切り替わる。\nDespawnを実行するとスポーンしていたものが消える");
+
+            // [x] Weapon Visible
+            bool weaponVis = selectedTemplate.WeaponVisible;
+            if (ImGui.Checkbox("Weapon Visible", ref weaponVis))
+            {
+                selectedTemplate.WeaponVisible = weaponVis;
+                configuration.Save();
+
+                // プレビュー中なら武器表示を即時反映（RedrawObject連携）
+                if (actorManager.CurrentPreviewActor != null && actorManager.CurrentPreviewActor.NativeAddress != 0)
+                {
+                    actorManager.SetWeaponVisibility(actorManager.CurrentPreviewActor, weaponVis);
+                }
+            }
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            // プレビュー状態の判定
+            bool isPreviewingCurrent = actorManager.CurrentPreviewActor != null &&
+                                      actorManager.CurrentPreviewActor.TemplateId == selectedTemplate.Id &&
+                                      actorManager.CurrentPreviewActor.IsSpawned;
+
+            // Action buttons: [Spawn / Despawn] [edit] [delete]
+            if (isPreviewingCurrent)
+            {
+                // 赤色 Despawn ボタン
+                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.85f, 0.15f, 0.15f, 1.0f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(1.0f, 0.25f, 0.25f, 1.0f));
+                ImGui.PushStyleColor(ImGuiCol.ButtonActive, new Vector4(0.7f, 0.1f, 0.1f, 1.0f));
+
+                if (ImGui.Button("Despawn", new Vector2(90, 26)))
+                {
+                    actorManager.DespawnPreviewCharacter();
+                }
+
+                ImGui.PopStyleColor(3);
+            }
+            else
+            {
+                // 通常 Spawn ボタン
+                if (ImGui.Button("Spawn", new Vector2(90, 26)))
+                {
+                    logManager?.Info($"Preview Spawn requested for template: {selectedTemplate.Name}");
+                    actorManager.SpawnPreviewCharacter(selectedTemplate);
+                }
+            }
+
+            ImGui.SameLine();
+
+            if (ImGui.Button("edit", new Vector2(70, 26)))
+            {
+                OpenEditCharacterModal(selectedTemplate);
+            }
+
+            ImGui.SameLine();
+
+            if (ImGui.Button("delete", new Vector2(70, 26)))
+            {
+                if (isPreviewingCurrent)
+                {
+                    actorManager.DespawnPreviewCharacter();
+                }
+                configuration.Templates.Remove(selectedTemplate);
+                configuration.Save();
+                selectedTemplate = null;
+                ImGui.EndChild();
+                return;
+            }
+
+            ImGui.Spacing();
+
+            // スポーン状態に応じた表示
+            if (isPreviewingCurrent)
+            {
+                ImGui.TextColored(new Vector4(0.2f, 0.9f, 0.3f, 1.0f), $"{selectedTemplate.Name} Spawning...");
+
+                ImGui.Spacing();
+
+                bool showGizmo = configuration.ShowGizmo;
+                if (ImGui.Checkbox("Gizmo", ref showGizmo))
+                {
+                    configuration.ShowGizmo = showGizmo;
+                    configuration.Save();
+                }
+            }
+
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            // テンプレート詳細情報
+            ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1.0f), "Template Details:");
+            ImGui.BulletText($"Source Type: {selectedTemplate.SourceType}");
+            if (!string.IsNullOrWhiteSpace(selectedTemplate.FolderPath))
+                ImGui.BulletText($"Folder: {selectedTemplate.FolderPath}");
+
+            switch (selectedTemplate.SourceType)
+            {
+                case CharacterSourceType.Monster:
+                    ImGui.BulletText($"Monster ID: {selectedTemplate.DataId}");
+                    ImGui.BulletText($"Model ID: {selectedTemplate.ModelCharaId}");
+                    break;
+                case CharacterSourceType.Npc:
+                    ImGui.BulletText($"ENpc ID: {selectedTemplate.DataId}");
+                    ImGui.BulletText($"Model ID: {selectedTemplate.ModelCharaId}");
+                    if (selectedTemplate.CustomizeData != null)
+                        ImGui.BulletText("Customize Data: Included");
+                    if (selectedTemplate.NpcEquipmentModelIds != null)
+                        ImGui.BulletText("Equipment Data: Included");
+                    break;
+                case CharacterSourceType.Glamourer:
+                    if (!string.IsNullOrWhiteSpace(selectedTemplate.GlamourerDesignString))
+                        ImGui.BulletText($"Glamourer Design: {selectedTemplate.GlamourerDesignString[..Math.Min(24, selectedTemplate.GlamourerDesignString.Length)]}...");
+                    if (!string.IsNullOrWhiteSpace(selectedTemplate.PenumbraCollectionName))
+                        ImGui.BulletText($"Penumbra Collection: {selectedTemplate.PenumbraCollectionName}");
+                    break;
+                case CharacterSourceType.Mcdf:
+                    ImGui.BulletText($"File: {System.IO.Path.GetFileName(selectedTemplate.McdfFilePath)}");
+                    break;
+            }
+
             ImGui.EndChild();
-        }
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.Spacing();
-
-        // テンプレート詳細情報
-        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1.0f), "Template Details:");
-        ImGui.BulletText($"Source Type: {selectedTemplate.SourceType}");
-        if (!string.IsNullOrWhiteSpace(selectedTemplate.FolderPath))
-            ImGui.BulletText($"Folder: {selectedTemplate.FolderPath}");
-
-        switch (selectedTemplate.SourceType)
-        {
-            case CharacterSourceType.Monster:
-                ImGui.BulletText($"Monster ID: {selectedTemplate.DataId}");
-                ImGui.BulletText($"Model ID: {selectedTemplate.ModelCharaId}");
-                break;
-            case CharacterSourceType.Npc:
-                ImGui.BulletText($"ENpc ID: {selectedTemplate.DataId}");
-                ImGui.BulletText($"Model ID: {selectedTemplate.ModelCharaId}");
-                if (selectedTemplate.CustomizeData != null)
-                    ImGui.BulletText("Customize Data: Included");
-                if (selectedTemplate.NpcEquipmentModelIds != null)
-                    ImGui.BulletText("Equipment Data: Included");
-                break;
-            case CharacterSourceType.Glamourer:
-                if (!string.IsNullOrWhiteSpace(selectedTemplate.GlamourerDesignString))
-                    ImGui.BulletText($"Glamourer Design: {selectedTemplate.GlamourerDesignString[..Math.Min(24, selectedTemplate.GlamourerDesignString.Length)]}...");
-                if (!string.IsNullOrWhiteSpace(selectedTemplate.PenumbraCollectionName))
-                    ImGui.BulletText($"Penumbra Collection: {selectedTemplate.PenumbraCollectionName}");
-                break;
-            case CharacterSourceType.Mcdf:
-                ImGui.BulletText($"File: {System.IO.Path.GetFileName(selectedTemplate.McdfFilePath)}");
-                break;
         }
     }
 
@@ -604,7 +593,8 @@ public class CharacterLibraryTab
             ImGui.InputTextWithHint("##GlamSearch", "Search designs...", ref glamourerSearch, 64);
             ImGui.Separator();
 
-            foreach (var kvp in designs)
+            var sortedDesigns = designs.OrderBy(x => x.Value, StringComparer.OrdinalIgnoreCase);
+            foreach (var kvp in sortedDesigns)
             {
                 if (!string.IsNullOrWhiteSpace(glamourerSearch) && !kvp.Value.Contains(glamourerSearch, StringComparison.OrdinalIgnoreCase))
                     continue;
@@ -614,7 +604,7 @@ public class CharacterLibraryTab
                 {
                     selectedGlamourerDesignGuid = kvp.Key.ToString();
                     selectedGlamourerDesignName = kvp.Value;
-                    customGlamourerString = kvp.Key.ToString();
+                    customGlamourerString = kvp.Value;
                     if (string.IsNullOrWhiteSpace(modalName) || modalName == "New Character")
                     {
                         modalName = kvp.Value;
@@ -648,7 +638,8 @@ public class CharacterLibraryTab
                     selectedPenumbraCollection = string.Empty;
                 }
 
-                foreach (var coll in collections.Values)
+                var sortedCollections = collections.Values.OrderBy(x => x, StringComparer.OrdinalIgnoreCase);
+                foreach (var coll in sortedCollections)
                 {
                     if (!string.IsNullOrWhiteSpace(penumbraSearch) && !coll.Contains(penumbraSearch, StringComparison.OrdinalIgnoreCase))
                         continue;
@@ -810,10 +801,7 @@ public class CharacterLibraryTab
                 target.CustomizeData = cachedNpcAppearance.CustomizeData;
                 target.NpcEquipmentModelIds = cachedNpcAppearance.EquipmentModelIds;
             }
-            if (target.ModelCharaId > 0)
-            {
-                target.WeaponVisible = false; // 非人型NPC（モーグリ等）は武器非表示
-            }
+            target.WeaponVisible = false; // NPCはデフォルトで武器非表示（自キャラの武器が表示されるのを防ぐ）
         }
         else if (modalSourceType == CharacterSourceType.Mcdf)
         {
