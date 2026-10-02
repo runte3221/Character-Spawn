@@ -951,13 +951,13 @@ public unsafe class ActorManager : IDisposable
                         {
                             var (glamSuccess, custBytes) = glamourerIpc.ApplyDesignToActorEx(designString, actorIndex);
                             logManager?.Info($"MCDF Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
-                            if (custBytes != null && custBytes.Length >= 26)
+                            if (!glamSuccess && custBytes != null && custBytes.Length >= 26)
                             {
                                 fixed (byte* pCust = custBytes)
                                 {
                                     Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
                                 }
-                                logManager?.Info($"MCDF: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
+                                logManager?.Info($"MCDF fallback: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
                             }
                         }
 
@@ -1039,13 +1039,13 @@ public unsafe class ActorManager : IDisposable
             {
                 var (glamSuccess, custBytes) = glamourerIpc.ApplyDesignToActorEx(designString, actorIndex);
                 logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
-                if (custBytes != null && custBytes.Length >= 26)
+                if (!glamSuccess && custBytes != null && custBytes.Length >= 26)
                 {
                     fixed (byte* pCust = custBytes)
                     {
                         Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
                     }
-                    logManager?.Info($"Glamourer: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
+                    logManager?.Info($"Glamourer fallback: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
                 }
             }
             else if (template.SourceType == CharacterSourceType.PlayerClone)

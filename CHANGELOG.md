@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.33] - 2026-10-02
+### Fixed
+- **`Race: Apply = False` デザインにおける種族不一致ロールバックの完全解消 (GZip Base64 State Injection)**:
+  - **根本原因の特定**: `Chonk`（`Kimo-1-Default`）などの一部の Glamourer デザインプリセットでは、ファイル内で `Race: { Value: 1, Apply: false }` と定義されている。これを `ApplyDesign(Guid)` でそのまま渡すと、Glamourer は指定通り Race（ミコッテ女性）を維持したまま Clan（ハイランダー）と Gender（男性）のみを適用しようとし、「ミコッテのハイランダー男性」という無効な組み合わせ（Race/Clan 不一致）が発生。FF14描画エンジンがエラーを起こして素体（自キャラ女性ミコッテ）にフォールバックしていた。
+  - **ForceAllApply & GZip Base64 圧縮ステート注入**:
+    - デザインファイル（JObject）から `ForceAllApply` を実行し、`Race`, `Clan`, `Gender`, 全装備スロットの `Apply` を強制的に `true` に書き換え。
+    - Glamourer のネイティブステート仕様に準拠し、書き換えた JObject を UTF-8 JSON -> `GZipStream` 圧縮 -> Base64 文字列（`H4sI...`）にエンコード。
+    - エンコードした圧縮 Base64 を `Glamourer.ApplyState(compressedBase64, actorIndex, 0, 7UL)` に渡すことで、Glamourer に `Race` も含めた全スロットを 100% 確実に強制適用させ、男性ハイランダーへと完璧に変身させる。
+- **CustomizeData メモリコピーの競合防止**:
+  - `Buffer.MemoryCopy` が Glamourer 成功後にも実行されてネイティブメモリを上書きするリスクを排除し、Glamourer IPC 失敗時のフォールバックに限定。
+
 ## [0.1.32] - 2026-10-02
 ### Fixed
 - **Orphaned Weapon残存バグの完全根絶 (Fixing Detached Weapons Remaining on Ground After Despawn)**:
