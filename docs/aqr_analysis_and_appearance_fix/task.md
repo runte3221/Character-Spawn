@@ -1,35 +1,39 @@
-# タスクリスト: AQR仕様解析および外見適用正常化
+# タスクリスト: AQR/HDM完全分離と独立パイプライン構築
 
-## 1. 調査・解析フェーズ（完了）
-- [x] AQuestReborn（AQR）のバイナリ（`AQuestReborn.dll` / `Brio.dll`）および逆コンパイルコードの徹底調査
-  - [x] スポーン処理のフロー解明 (`CheckForCustomNpcCreationLoad` -> `ActorSpawnService.CreateCharacter` -> `CloneCharacter`)
-  - [x] Penumbra コレクション適用処理のフロー解明 (`SetCollectionForObject` 引数: Guid, 直後の `RedrawObject`)
-  - [x] Glamourer デザイン適用処理のフロー解明 (`ApplyDesign` / `ApplyState`, 引数, タイミング)
-  - [x] MCDF 外見データ読み込み処理のフロー解明 (`McdfCharaFileManager.ApplyMcdfCharaFile`)
-- [x] 現在の Character-Spawn プラグインと AQR の仕様差分の全洗い出し
-  - [x] メモリ改変（`ObjectKind`, `BattleNpcSubKind`, `OwnerId`）が引き起こす Identifier 誤認の特定
-  - [x] 遅延ポーリング（`ReadyJob`）によるレースコンディションの特定
-  - [x] Penumbra IPC のコレクション名（string）渡しによる適用失敗の特定
-  - [x] MCDF データの不要な再加工処理の特定
+## 1. 調査・解析・設計フェーズ（完了）
+- [x] 本ツールの最終目標（①ローカルキャラ作成、②ステージシーン作成）の再定義と確認
+- [x] AQR 仕様（Glamourer, Penumbra, Customize+, MCDF）の完全解析
+- [x] HDM 仕様（NPC: HumanGuise, Monster: GuiseService）の完全解析
+- [x] AQR と HDM の競合ポイント（DisableDraw, 待機ポーリング, Penumbra Redraw, メモリ書き換え）の徹底洗い出し
+- [x] 4つの完全独立パイプラインのアーキテクチャ設計
+- [x] 公式ドキュメントの作成・更新 (`task.md`, `implementation_plan.md`, `walkthrough.md`)
 
-## 2. 実装計画・設計フェーズ（完了）
-- [x] 解析結果と検討内容をまとめたドキュメントの作成 (`task.md`, `implementation_plan.md`, `walkthrough.md`)
-- [x] 修正方針の確定と設計
-
-## 3. 実装・修正フェーズ（次のステップ）
-- [ ] スポーン処理の改修 (`ActorManager.cs`)
+## 2. 実装フェーズ（次のステップ）
+- [ ] **共通基盤の純化 (`ActorManager.cs`)**
   - [ ] 不要なメモリ改変（`ObjectKind`, `BattleNpcSubKind`, `OwnerId`, `NameId` 等）の全削除
-  - [ ] キャラクター命名規則の AQR 準拠 (`template.Name.Split(' ')[0] + " Cnpc"`)
-- [ ] 外見適用アーキテクチャの改修 (`ActorManager.cs`, `GlamourerIpc.cs`, `PenumbraIpc.cs`)
-  - [ ] スポーン完了直後の同一フレーム・同一コンテキストでの直列適用（遅延待機ループの撤廃）
-  - [ ] Penumbra コレクション設定の Guid 渡し化および直後の RedrawObject 実行
-  - [ ] Glamourer デザイン適用の AQR 完全準拠呼び出し
-- [ ] MCDF 適用処理の純化 (`ActorManager.cs`, `McdfParser.cs`)
-  - [ ] MCDF 内包の Base64 データをそのまま `ApplyState` に渡すフローへの統一
-- [ ] 自キャラ（Index 0）保護ガードの強化
+  - [ ] キャラクター命名規則の統一 (`"{Name} Cnpc"`, 最大20文字)
+  - [ ] 自キャラ（Index 0 / LocalPlayer）への誤爆防止物理ガードの徹底
+- [ ] **パイプライン A & B: AQR 系統の実装 (`ActorManager.cs`, `PenumbraIpc.cs`, `GlamourerIpc.cs`)**
+  - [ ] スポーン直後の同一コンテキスト・即時直列実行化（`readyJobs` の待機をスキップ）
+  - [ ] `PenumbraIpc`: コレクション名から Guid を特定し、Guid 渡しで `SetCollectionForObject` を実行 ＆ 直後 `RedrawObject`
+  - [ ] 通常 Glamourer: 公式 `ApplyDesign(Guid, objectIndex, 0, 7UL)` の即時呼び出し
+  - [ ] MCDF: 内包 Base64 データを無加工で `ApplyState` に渡し、直後 `RedrawObject` を実行
+- [ ] **パイプライン C & D: HDM 系統の分離実装 (`ActorManager.cs`, `GlamourerIpc.cs`)**
+  - [ ] パイプライン C (人型NPC): HDM HumanGuise 方式（Customize/Equip 注入、Parameters/Materials の Strip、コールドスポーン時の RevertToGameBase スキップ）
+  - [ ] パイプライン D (Monster/MOB): HDM GuiseService 方式（ModelCharaId/Scale 設定、ネイティブ 2フェーズ描画待機、★Glamourer/Penumbra Redraw は一切呼ばない）
+- [ ] **② シーン作成・演出機能の透過的連動確認**
+  - [ ] 全パイプライン（A/B/C/D）のアクターに対するギズモ移動・配置記録
+  - [ ] アニメーション（エモート、表情、ループ）、視線追従の適用確認
+  - [ ] ネームプレートの表示・非表示・カスタム名の連動確認
 
-## 4. 検証・リリースフェーズ
-- [ ] ビルド検証（ビルドエラーのないこと）
-- [ ] バージョン更新（`tools/bump-version.ps1` による 0.1.42.0 への一括同期）
+## 3. 検証・リリースフェーズ
+- [ ] ビルド検証（C# コンパイルエラーなし）
+- [ ] バージョン更新（`tools/bump-version.ps1 0.1.42.0` による一括同期）
 - [ ] Git コミット・プッシュ
-- [ ] ゲーム内動作確認（自キャラ変身の根絶、スポーンアクターへの外見・Penumbra正常反映確認）
+- [ ] ゲーム内実機検証:
+  - [ ] 自キャラ（奥の Ruma Meow）が一切変身しないことの確認
+  - [ ] AQR系（Kimo 等）が初回スポーンから正常外見＆Penumbra で表示されること
+  - [ ] MCDFアクターが正常に展開・表示されること
+  - [ ] NPC（ENpc）が正常に表示されること
+  - [ ] モンスターが正常に表示され、消滅や自キャラ化が起きないこと
+  - [ ] シーン保存・複数スポーンで各アクターが正しく配置されること

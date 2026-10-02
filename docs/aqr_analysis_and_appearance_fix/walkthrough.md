@@ -1,66 +1,66 @@
-# ウォークスルー: AQR仕様解析および外見適用正常化
+# ウォークスルー: AQR/HDM完全分離と独立パイプライン構築
 
-## 1. 解析の経緯と目的
-キャラクター生成時に発生していた以下の2つの不具合：
-1. **自キャラとスポーンキャラの入れ替わり**:
-   自キャラ（LocalPlayer, Index 0）がスポーン対象（例: おじさん）に変身し、スポーンした側（Index 200）が自キャラの姿（ネコミミ）のまま残る。
-2. **Penumbra コレクションが反映されない**:
-   Glamourer の外見だけが反映され、MOD テクスチャ等の Penumbra コレクションが適用されない。
+## 1. 検討の経緯とツールの最終目標
 
-これらを根本解決するため、過去バージョン（0.1.23）および AQuestReborn（AQR）のバイナリ（`AQuestReborn.dll` / `Brio.dll`）をリバースエンジニアリング（ILコード・シンボル解析）し、完全な仕様を解明しました。
+本ツールは単なるキャラクター表示ツールにとどまらず、**「通常ワールド（非GPose）において、自キャラの動作を一切妨害せず、完全に独立したローカルキャラクター（PC/NPC/モンスター）を配置し、アニメーション・視線・表情・サウンドを伴うステージ演出（シーン）を構築する」** ことを最終目標としています。
 
----
-
-## 2. AQR のリバースエンジニアリングで判明した事実
-
-### (1) スポーンとメモリ状態
-- AQR は内部で `Brio.Game.Actor.ActorSpawnService.CreateCharacter` を使用。
-- ゲーム内部の `ClientObjectManager.CreateBattleCharacter` でスロットを確保後、自キャラから素体をコピー。
-- **重要**: `ObjectKind`, `BattleNpcSubKind`, `OwnerId`, `HomeWorld` などのメモリフィールドは一切改変せず、素のゲームエンジンの状態を維持。
-
-### (2) Penumbra コレクション適用
-- `PenumbraAndGlamourerIpcWrapper.Instance.SetCollectionForObject` を呼び出す。
-- 引数にはコレクション名文字列ではなく、**`Guid collectionId`** を渡す。
-- 呼び出し直後に **`RedrawObject(character.ObjectIndex, RedrawType.Redraw)`** を実行。
-
-### (3) Glamourer デザイン適用
-- 通常デザイン（Guid）:
-  `PenumbraAndGlamourerIpcWrapper.Instance.ApplyDesign.Invoke(designGuid, character.ObjectIndex, 0, 7UL)`
-- MCDF デザイン（Base64）:
-  `_glamourerApplyAll.Invoke(glamourerData, character.ObjectIndex, 0, ApplyFlag.Customization | ApplyFlag.Equipment)`
-- **重要**: スポーン直後に同一フレーム・同一スレッドで直列実行されており、遅延キューによる待ち時間は存在しない。
+### 参照基盤の役割分担
+* **AQR (AQuestReborn)**:
+  - Glamourer ＆ Penumbra ＆ Customize+ によるオリジナルPC/パペット
+  - MCDF（ModPack外見データ）の読み込みと適用
+* **HDM (Housing Decorator / Doll Master)**:
+  - NPC (人型 ENpc) の外見適用 (HumanGuise)
+  - Monster / MOB (非人型モデル) のネイティブ描画切り替え (GuiseService)
+* **AQR ＆ HDM**:
+  - 配置記録、アニメーション、視線追従、ネームプレート、サウンドによるシーン構築
 
 ---
 
-## 3. なぜ当プラグインで自キャラが変身していたのか？（メカニズム解明）
+## 2. 徹底分析：AQR 修正案と HDM 側の競合リスク
 
-```
-[当プラグインの旧処理]
-1. スポーン時に ObjectKind = BattleNpc, BattleNpcSubKind = Player, OwnerId = 0xE000_0000 を強制代入
-2. ランダム名 "Csp Rdtbsarx" を代入
-3. ReadyJob に入れて何十フレームも描画準備を待機（非同期遅延）
-4. 数フレーム後、ApplyAppearanceDirect で ApplyDesign(designGuid, 200, 0, 7UL) を呼び出し
-   ↓
-[Glamourer 内部の動作]
-1. helpers.FindState(200) が呼ばれる
-2. actors.GetIdentifier(objects.Objects[200]) を実行
-3. メモリの改変や遅延により、パペットの ActorIdentifier が正常なプレイヤー型として解決されない
-4. または OwnerId の判定で LocalPlayer（Index 0）側のアクター情報に引き寄せられる
-5. 結果として LocalPlayer（Ruma Meow）の State が返され、LocalPlayer にデザインが適用されて変身！
-   パペット（Index 200）は自キャラの素体をコピーされたまま変化なし。
-```
+これまでの実装では、AQR の処理（MCDF/Glamourer）と HDM の処理（NPC/モンスター）が単一のメソッドに混ざり合っていたため、以下の致命的な競合が発生していました：
+
+1. **描画停止 (`DisableDraw`) の衝突**:
+   HDM ではモンスター切り替えに必須だが、AQR系では DrawObject の構築完了を阻害し、Glamourer が ObjectIndex 200 の認識に失敗して LocalPlayer（Index 0）に変身を誤爆させる原因になっていた。
+2. **待機ポーリングの衝突**:
+   HDM ではネイティブ描画完了待ちが必要だが、AQR系では即時適用すべきところを遅延させたためレースコンディションが発生した。
+3. **Penumbra Redraw の衝突**:
+   AQR系には必須だが、モンスターアクターに対して呼ぶと DrawObject が破棄されて非人型モデルが消滅してしまう。
+4. **メモリ改変の衝突**:
+   `ObjectKind = BattleNpc` や `OwnerId = 0xE000_0000` を強制設定したため、全パイプラインでアクター識別エンジンが混乱した。
 
 ---
 
-## 4. 今後の修正方針と検証手順
+## 3. 採用する独立アーキテクチャ（4系統完全分離）
 
-1. **修正の適用**:
-   - `ActorManager.cs`: メモリ改変の全撤廃、名前ルールの統一、スポーン直後の即時直列適用
-   - `PenumbraIpc.cs`: `SetCollectionForObject` の Guid 渡し化、直後 Redraw
-   - `GlamourerIpc.cs` / `McdfParser.cs`: MCDF Base64 データの無加工直接適用
-2. **ビルドとバージョン同期**:
-   - `tools/bump-version.ps1 0.1.42.0` を実行し、全 JSON・プロジェクトのバージョンを完全同期
-3. **ゲーム内検証**:
-   - スポーン実行時、奥の自キャラ（LocalPlayer）の見た目・ネームプレートが一切変わらないこと
-   - 手前のパペットに指定した Glamourer デザインと Penumbra コレクションが初回から完全に反映されること
-   - デスポーン・再スポーンを行っても外見・コレクションが正しく維持されること
+混同を永久に避けるため、キャラクターの `SourceType` に応じた **4つの完全独立パイプライン** を構築します：
+
+1. **Pipeline A (AQR - Glamourer/Penumbra/Customize+)**:
+   - 素の BattleCharacter 生成
+   - スポーン直後にその場で Penumbra（Guid指定）＋ RedrawObject ＋ Glamourer（Guid指定）を直列即時実行。
+   - `readyJobs` による遅延待機は一切スキップ。
+2. **Pipeline B (AQR - MCDF)**:
+   - 素の BattleCharacter 生成
+   - MCDF を展開し、一時コレクションを割り当て、内包 Base64 データを無加工で `ApplyState` に渡す。直後に `RedrawObject`。
+   - 遅延待機なしで即座に完了。
+3. **Pipeline C (HDM - 人型 NPC)**:
+   - 素の BattleCharacter 生成
+   - HDM HumanGuise 方式により、26バイト CustomizeData と 10スロット EquipmentModelIds を JObject に注入。
+   - 自キャラの肌色・パラメータ（Parameters/Materials）は Strip し、コールドスポーン時の RevertToGameBase はスキップして適用。
+4. **Pipeline D (HDM - Monster / MOB)**:
+   - 素の BattleCharacter 生成
+   - `ModelCharaId` と `Scale` を設定し、武器非表示、ネイティブ 2フェーズ描画（DisableDraw -> IsReadyToDraw -> EnableDraw）。
+   - **Glamourer や Penumbra Redraw は一切呼ばない**。
+
+---
+
+## 4. 今後の検証・確認手順
+
+1. **ローカルキャラクター単体検証**:
+   - AQR系（Kimo 等）: スポーン時、自キャラが変身せず、パペットのみに外見と Penumbra コレクションが初回から適用されること。
+   - MCDF系: 内包 Mod と Glamourer が正常に反映されること。
+   - NPC系: エレゼン、ララフェル等の人型 NPC が肌色汚染なく表示されること。
+   - モンスター系: ナマズオや大型モンスターが正常に実体化し、消滅しないこと。
+2. **シーン作成（複数配置）検証**:
+   - 異なるパイプライン（例: AQR系キャラ ＋ NPC ＋ モンスター）を同時にステージ上にスポーンさせ、互いに干渉しないこと。
+   - ギズモによる座標移動、アニメーション変更、視線追従、ネームプレートが全パイプラインで等しく動作すること。
