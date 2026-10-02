@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.25] - 2026-10-02
+### Fixed
+- **Penumbra Collection & Mod Redirection for Humanoid Actors (`ec=16` InvalidActor Resolution)**:
+  - Discovered through deep IL disassembly of `Penumbra.dll`'s `CollectionApi.SetCollectionForObject` and `AssociatedIdentifier` that Penumbra's internal identifier resolution calls `ActorIdentifierFactory.FromObject` with `allowPlayerNpc: false`.
+  - When `nativeChara->GameObject.ObjectKind` was `BattleNpc`, Penumbra strictly branched into `CreateBNpcFromObject`. Because spawned puppets have `NameId = 0`, this consistently produced `ActorIdentifier.Invalid`, resulting in `ec=16 (InvalidActor)` and causing Penumbra to fail collection assignment and mod redirection (leaving actors in a vanilla state).
+  - Explicitly classified all humanoid puppets (Glamourer designs, MCDF bundles, and player clones) as `ObjectKind.Player`. This directs Penumbra into `CreatePlayerFromObject`, which verifies the player name and home world, resolving a valid Player Identifier and enabling 100% successful Penumbra collection assignment (`ec=0`) and instant mod rendering upon `Redraw`.
+  - Maintained `ObjectKind.BattleNpc` for non-humanoid monsters (`ModelCharaId > 0`) during Phase 2 transition to ensure native monster model rendering remains undisturbed.
+
 ## [0.1.24] - 2026-10-02
 ### Fixed
 - **AQR Independent Spawn & MCDF Temporary Collection Application**:

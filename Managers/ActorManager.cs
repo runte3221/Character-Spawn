@@ -250,8 +250,14 @@ public unsafe class ActorManager : IDisposable
             nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
             nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-            // クラス分類: HDM 準拠 (BattleNpc + Player: Glamourer / Penumbra の Player 救援ブランチに乗せる)
-            nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc;
+            // クラス分類:
+            // 重要: Penumbra の IPC (SetCollectionForObject / AssignTemporaryCollection) およびリソース解決フックは、
+            // 内部で allowPlayerNpc: false で FromObject を呼ぶ。
+            // ObjectKind が BattleNpc だと CreateBNpcFromObject に進み、NameId 0 のアクターは必ず InvalidActor (ec=16 / ec=255) となり、
+            // Penumbra のコレクションがアクターに割り当てられずバニラになってしまう。
+            // 人型パペット (Glamourer / MCDF / PlayerClone / Humanoid) は ObjectKind.Player に設定することで、
+            // Penumbra の CreatePlayerFromObject が走り、100% 確実にコレクション・MOD が解決される。
+            nativeChara->GameObject.ObjectKind = template.ModelCharaId > 0 ? ObjectKind.BattleNpc : ObjectKind.Player;
             nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
             nativeChara->GameObject.TargetableStatus = 0;
             nativeChara->GameObject.EventId = 0;
@@ -509,6 +515,7 @@ public unsafe class ActorManager : IDisposable
                 // A. モンスター / 非人型モデル (ModelCharaId > 0) の場合: HDM GuiseService.cs 準拠
                 if (job.Template.ModelCharaId > 0)
                 {
+                    chara->GameObject.ObjectKind = ObjectKind.BattleNpc;
                     chara->ModelContainer.ModelCharaId = (int)job.Template.ModelCharaId;
                     chara->GameObject.Scale = job.Template.Scale > 0 ? job.Template.Scale : 1.0f;
                     chara->DrawData.HideWeapons(true);
@@ -703,6 +710,12 @@ public unsafe class ActorManager : IDisposable
         int actorIndex = (int)globalIndex;
 
         logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId})...");
+
+        // 人型モデルの場合は ObjectKind.Player を担保（Penumbra Identifier 解決の生命線）
+        if (template.ModelCharaId == 0)
+        {
+            chara->GameObject.ObjectKind = ObjectKind.Player;
+        }
 
         // 1. MCDF の場合: AQR / Mare 準拠（内包 Mod ファイルのキャッシュ展開 + Penumbra Temporary Collection + Glamourer）
         if (template.SourceType == CharacterSourceType.Mcdf)

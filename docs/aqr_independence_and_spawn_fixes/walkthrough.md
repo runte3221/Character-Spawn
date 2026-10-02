@@ -1,31 +1,22 @@
 # 修正内容の確認 (Walkthrough): AQR 依存脱却 & スポーン不具合修正
 
 ## 1. 修正概要
-本修正では、AQuestReborn (AQR) をオフにした環境で発生していた MCDF の Penumbra コレクション未反映（`ec=255`）問題、人型 NPC の自キャラ化問題、モンスターモデルの不一致（ルーインランナー）、および Demihuman NPC（レターモーグリ）の透明化問題を根本的に修正しました。
+本修正（v0.1.25）では、Penumbra の通常コレクション（'OC-RUMA' 等）および MCDF を適用した際に、ゲーム内で MOD が反映されずバニラの状態になっていた問題（`ec=16: InvalidActor`）の根本原因を Penumbra の IL 逆アセンブルによって特定し、完全修正を行いました。
 
 ## 2. 実施した修正点
 
 ### 1) `ActorManager.cs`
-- **OwnerId の適正化**: `nativeChara->GameObject.OwnerId = 0xE000_0000;` を削除し、デフォルトの `0` を維持。これにより Penumbra および Glamourer が正しい独立アクター（Player Identifier）として認識できるようになりました。
-- **外見適用のタイミング一本化**: スポーン直後のフライング呼び出しを削除し、Phase 2（DrawObject が可視化した瞬間）の完了時のみ実行するように変更。
-- **パペット名命名規則の改定**: Penumbra の名前バリデーションに適合する `Csp {hi}{lo}` フォーマットを採用。
-- **MCDF 一時コレクション登録順序**: `AddTemporaryMod`（Mod ファイル・マニピュレーション登録）を実行してから `AssignTemporaryCollection`（アクターへのアサイン）を行うよう最適化。
-- **モンスターモデルIDの上書き防止**: 既に ModelCharaId が設定されている場合は、不要な再解決・上書きを行わないガードを追加。
-
-### 2) `GameDataService.cs`
-- **Demihuman 装備フォールバックの追加**: `NpcEquip.RowId == 0` の場合でも、`baseRow.ModelHead` 等のインライン装備フィールドを抽出し、Demihuman の装備スロットへ確実に供給。
-- **モンスターキャッシュの主キー一意化**: キャッシュの `Id` を `BaseId` に固定し、名前IDの衝突による誤ったモデルID解決を防止。
+- **ObjectKind を Player に変更**:
+  - Penumbra の `SetCollectionForObject` および `AssignTemporaryCollection` は、内部で `allowPlayerNpc: false` でアクター識別を行うため、`ObjectKind.BattleNpc` だと必ず `CreateBNpc` 経由で `ActorIdentifier.Invalid`（`ec=16` / `ec=255`）となり、コレクションの割り当てが拒否されていました。
+  - 人型アクター（Glamourer / MCDF / PlayerClone / 人型NPC）の `ObjectKind` を **`ObjectKind.Player`** に設定することで、Penumbra が正当な Player Identifier（名前 `Csp {hi}{lo}` + ワールド）として認識し、コレクションが確実に割り当てられて MOD がゲーム内で描画されるようになりました。
+  - モンスター（`ModelCharaId > 0`）については、Phase 2 のモンスター遷移時に `ObjectKind.BattleNpc` に切り替えることで、ネイティブモンスターモデルの描画を保証。
 
 ## 3. テスト・検証項目
-1. **MCDF のロード**:
+1. **通常コレクション（Penumbra 指定）のスポーン**:
+   - Ruma などのキャラクターテンプレートで Penumbra コレクション（`OC-RUMA` 等）を指定してスポーン。
+   - `Penumbra SetCollectionForObject` が `ec=0` で成功し、服やテクスチャの MOD が正常にゲーム内に反映されることを確認。
+2. **MCDF のロード**:
    - AQR を無効化した状態で MCDF キャラクターをスポーン。
-   - Penumbra の Temporary Collection が正しく割り当てられ、テクスチャやモデルの Mod が正常に反映されることを確認。
-2. **人型 NPC のスポーン**:
-   - ゴントラン、ミューヌなどをスポーン。
-   - 自キャラの姿にならず、本人の顔・髪型・NPC 装備でスポーンすることを確認。
-3. **モンスターのスポーン**:
-   - ルーインランナーをスポーン。
-   - 別のモブ（ラプター等）にならず、正しいルーインランナーのモデルでスポーンすることを確認。
-4. **Demihuman NPC のスポーン**:
-   - レターモーグリをスポーン。
-   - ギズモのみ（透明）にならず、モーグリの姿で正しく描画されることを確認。
+   - Penumbra の Temporary Collection が正常に割り当てられ、Mod が反映されることを確認。
+3. **人型 NPC / Demihuman / モンスター**:
+   - 各種族が意図通りの外見・モデルで描画されることを確認。

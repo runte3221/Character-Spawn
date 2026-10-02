@@ -6,6 +6,10 @@
   - [x] スポーン直後フライング呼び出しの排除と、Phase 2 描画完了時への外見適用一本化
   - [x] パペット名の FFXIV / Penumbra 命名規則準拠化（`Csp {hi}{lo}`）
   - [x] 一時コレクションへの Mod 登録先行化（`AddTemporaryMod` -> `AssignTemporaryCollection`）
+- [x] 通常コレクション（Penumbra 指定）が反映されずバニラになる（`ec=16`）問題の究明と修正
+  - [x] Penumbra `SetCollectionForObject` が `allowPlayerNpc: false` でアクター識別を行っている仕様の特定
+  - [x] `ObjectKind.BattleNpc` だと `CreateBNpc` 経由で必ず `InvalidActor (16)` になる問題の特定
+  - [x] 人型パペットの `ObjectKind` を `ObjectKind.Player` に設定し、Penumbra の `CreatePlayerFromObject` を確実に経由させてコレクション割当を成功させる修正
 - [x] 人型 NPC（ミューヌ、ゴントラン等）が自キャラになる問題の修正
   - [x] Glamourer `GetState` が null となり 120 フレームでタイムアウトしていた原因（`OwnerId` 汚染）の解消
   - [x] HDM `HumanGuise.cs` 準拠の非同期ポーリングによる本人の容姿・装備の確実な同期
@@ -16,6 +20,6 @@
 - [x] Demihuman NPC（レターモーグリ等）が透明になりギズモのみ表示される問題の修正
   - [x] `NpcEquip.RowId == 0` 時のインライン装備フォールバックの実装
   - [x] `IsHatHidden = false` の維持
-- [x] バージョン更新 (0.1.24 / 0.1.24.0) と CHANGELOG 追記
+- [x] バージョン更新 (0.1.25 / 0.1.25.0) と CHANGELOG 追記
 - [x] GitHub へのプッシュと GitHub Actions ビルド監視
 - [x] XIVLauncher の `installedPlugins\CharacterSpawn` へのバイナリ配置
