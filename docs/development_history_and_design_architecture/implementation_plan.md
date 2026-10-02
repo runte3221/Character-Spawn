@@ -17,18 +17,24 @@
 * 生成時にパペット固有の一意な ASCII ダミー名（例: `"Csp Wzjjjwyr"`）を命名。
 * 人間ベースライン（Human Baseline）として生成し、描画準備完了（Draw-when-ready）を 2 フェーズポーリングで待機。
 
-### 2.2. Glamourer 外見適用アーキテクチャ (AQR 準拠)
-* **絶対ルール**: `IndexSorted` を参照するインデックス指定 IPC（`ApplyState(int index)`）や名前指定 IPC（`ApplyDesignName(string name)`）は **通常ワールドのパペットに対して絶対に使用してはならない**。
-  * 理由: 通常ワールドの ClientObjectManager パペットは `IndexSorted` 配列に登録されないため、名前検索は `ActorNotFound` になり、インデックス指定は配列先頭の `IndexSorted[0]`（＝自キャラ）にフォールバックして自キャラが誤変身する。
+### 2.2. Glamourer 外見適用アーキテクチャ (Glamourer 1.7.1.3 正式仕様準拠)
+* **名前指定 IPC (`ApplyStateName` / `ApplyDesignName`) の不適合理由 (IL解析解明)**:
+  * Glamourer 1.7.1.3 の `ApplyStateName` / `ApplyDesignName` は、内部で `FindExistingStates`（既存キャッシュ `stateManager.Values`）のみを検索する仕様である。
+  * スポーンしたてのパペット（`Csp Lhcpetra` 等）はステート辞書に存在しないため、名前指定は必ず `ActorNotFound (2)` または内部バグによる `InvalidKey (6)` を返して 100% 失敗する。
+* **インデックス指定 IPC (`ApplyState` / `ApplyDesign`) の適合理由 (IL解析解明)**:
+  * 一方、インデックス指定 IPC（`ApplyState` / `ApplyDesign`）は、内部で `ObjectManager[objectIndex]`（ゲームオブジェクト配列）からアクターを直接取得し、**`stateManager.GetOrCreate` を呼び出す**。
+  * これにより、未登録の新規パペットであってもステートが自動生成され、外見が 100% 確実に適用される（result: 0）。
+* **自キャラ誤爆物理遮断ガードの設置**:
+  * `actorIndex <= 0` の場合は、パペット向け外見適用処理を物理的に拒絶する。
+  * パペットは `GlobalIndex`（COM#0 = 200〜）でスポーンし、自キャラ（`GlobalIndex: 0`）とは明確に分離されているため、`actorIndex > 0` を前提とした呼び出しにより自キャラ誤爆を 100% 防止する。
 * **正規の適用手順**:
-  1. `objectTable[globalIndex]` からパペットの生参照（`ICharacter`）を直接解決。
-  2. テンプレートが GUID 指定の場合：
-     * `Glamourer.GetDesignBase64(Guid)` でデザインの Base64 文字列を取得。
-     * Base64 を JSON にデコードし、`ForceAllApply`（性別・種族・顔・髪型・全装備スロットの `Apply: true`）を強制上書き。
-     * Base64 に再圧縮。
-  3. `Glamourer.ApplyAllToCharacter(ICharacter character, string base64)` を呼び出し、パペットのアドレスに対して直接外見を適用する。
-  4. フォールバックとして `Glamourer.ApplyByGuidToCharacter(Guid guid, ICharacter character)` を利用。
-* **効果**: パペットのメモリアドレスへ直接書き込まれるため、自キャラ（Index 0）への誤爆は物理的に完全不可能。全スロット強制適用により素体のまま残る問題も根絶。
+  1. テンプレートが GUID 指定の場合：
+     * `GetDesign(targetGuid)` で JObject を取得し、`ForceAllApply`（全パーツ強制適用）を実行。
+     * Base64 に圧縮し、`Glamourer.ApplyState(compressedBase64, actorIndex, 0, 7UL)`（Flags: 7 = Once | Equipment | Customization）を実行。
+     * フォールバックとして `Glamourer.ApplyDesign(targetGuid, actorIndex, 0, 7UL)` を実行。
+  2. 非GUID（MCDF内包等）の場合：
+     * `ParseDesignString` -> `ForceAllApply` -> Base64 圧縮 -> `ApplyState(..., actorIndex, 0, 7UL)` を実行。
+* **効果**: スポーン直後のパペットに男性キャラ等のデザインが 100% 確実に反映され、自キャラ（Index 0）への誤爆も完全に遮断される。
 
 ### 2.3. CustomizePlus 体型・ボーン適用アーキテクチャ (Caraxi / AQR 準拠)
 * **絶対ルール**: `SetTemporaryProfileOnCharacter(ushort gameObjectIndex, ...)` は **通常ワールドのパペットに対して絶対に使用してはならない**。

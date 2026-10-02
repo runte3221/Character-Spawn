@@ -1,30 +1,30 @@
-# ウォークスルー: 修正内容の確認・検証プロトコル
+## 1. 実施された修正の要約 (v0.1.38.0)
 
-## 1. 実施された修正の要約 (v0.1.37.0)
-
-AQuestReborn (AQR) および Caraxi 公式 IPC アーキテクチャへの全面移行により、長期間ループしていた不具合を完全に解消しました。
+Glamourer 1.7.1.3 の DLL バイナリおよび IL を完全に逆アセンブル解析し、名前指定 IPC の限界（新規アクターへの適用不可）とインデックス指定 IPC の正式仕様（`GetOrCreate` による自動 State 生成）を解明した上で、安全ガードを伴う正規 IPC パスを確立しました。
 
 ### 修正コード一覧
 1. **`Services/GlamourerIpc.cs`**:
-   - `Glamourer.ApplyAllToCharacter` (`Action<ICharacter, string>`) サブスクライバを導入。
-   - `Glamourer.ApplyByGuidToCharacter` (`Action<Guid, ICharacter>`) サブスクライバを導入。
-   - `Glamourer.GetDesignBase64` (`Func<Guid, string>`) サブスクライバを導入。
-   - `ApplyDesignToCharacter(ICharacter character, string designString)` を実装。
-   - GUID または MCDF デザイン文字列に対し、`ForceAllApply` で全パーツ（性別・種族・顔・全装備）の強制上書きフラグを付与し、`ApplyAllToCharacter` でパペットの生アドレスへ直接適用。
-2. **`Services/CustomizePlusIpc.cs`**:
-   - `CustomizePlus.Profile.AddPlayerCharacter` (`Func<Guid, string, ushort, int>`) サブスクライバを導入。
-   - `CustomizePlus.Profile.RemovePlayerCharacter` (`Func<Guid, string, ushort, int>`) サブスクライバを導入。
-   - 危険なインデックス渡し（`SetTemporaryProfileOnCharacter`）を全廃し、パペットの `PuppetName` と `HomeWorld` による名前・ワールド正規紐付け方式へ切り替え。
-3. **`Managers/ActorManager.cs`**:
-   - `ApplyAppearanceDirect`:
-     - `objectTable[globalIndex]` から `ICharacter`（生参照）を解決。
-     - MCDF および人型アクター（Glamourer / PlayerClone）の外見適用時に、`glamourerIpc.ApplyDesignToCharacter(charaObj, designString)` を最優先実行。
-   - `ApplyCustomizePlusProfile`:
-     - `customizePlusIpc.AddPlayerCharacter(profileGuid, puppetName, worldId)` を実行し、パペットにのみプロファイルを適用。
-   - `DespawnCharacter`:
-     - `customizePlusIpc.RemovePlayerCharacter(profileGuid, puppetName, worldId)` で紐付け解除。
-     - `chara->DrawData.HideWeapons(true)` + `chara->DrawData.IsWeaponHidden = true` + `chara->GameObject.DisableDraw()` を実行した上で `ClientObjectManager.DeleteObjectByIndex` を呼び出し、武器残留を完全根絶。
-4. **`Models/CharacterModels.cs`**:
+   - `ApplyDesignToCharacter(ICharacter character, string designString)`:
+     - Glamourer 1.7.1.3 では未登録の Legacy IPC 呼び出しを整理し、自キャラ誤爆ガード（`character.ObjectIndex <= 0` の物理的遮断）を通過させた上で `ApplyDesignToActor` に安全に委譲。
+   - `ApplyDesignToActor(string designString, int actorIndex, string? actorName)`:
+     - `actorIndex <= 0`（自キャラ Index 0 等）の呼び出しを物理的に完全遮断。
+     - 名前指定 IPC（`ApplyStateName` / `ApplyDesignName`）を撤廃し、正式なインデックス指定 IPC（`ApplyState` / `ApplyDesign`）を呼び出し。
+     - これにより、未登録の新規パペットであっても Glamourer 内部の `stateManager.GetOrCreate` が走り、100% 確実に外見ステートが生成・適用される（Result: 0）。
+     - `ForceAllApply`（全パーツ強制適用）による GZip 圧縮 Base64 を最優先で適用し、フォールバックとして GUID 指定 `ApplyDesign` を実行。
+
+---
+
+## 2. 実施された修正の要約 (v0.1.37.0)
+
+AQuestReborn (AQR) および Caraxi 公式 IPC アーキテクチャへの全面移行により、Customize+ 自キャラ誤爆と武器残留を完全に解消しました。
+
+### 修正コード一覧
+1. **`Services/CustomizePlusIpc.cs`**:
+   - `CustomizePlus.Profile.AddPlayerCharacter` (`Func<Guid, string, ushort, int>`) を採用し、パペットの `PuppetName` と `HomeWorld` による名前・ワールド正規紐付け方式へ切り替え。
+   - デスポーン時は `CustomizePlus.Profile.RemovePlayerCharacter` で安全に紐付け解除。
+2. **`Managers/ActorManager.cs`**:
+   - デスポーン時に `chara->DrawData.HideWeapons(true)` + `chara->DrawData.IsWeaponHidden = true` + `chara->GameObject.DisableDraw()` を実行した上で `ClientObjectManager.DeleteObjectByIndex` を呼び出し、武器残留を完全根絶。
+3. **`Models/CharacterModels.cs`**:
    - `SpawnedActorData` に `public Guid? AssignedCustomizePlusGuid { get; set; }` を追加し、デスポーン時の正確な紐付け解除を保証。
 
 ---

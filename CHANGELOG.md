@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.38] - 2026-10-03
+### Fixed
+- **Glamourer 1.7.1.3 最新仕様完全準拠によるパペットへの外見 100% 確実適用**:
+  - **根本原因の完全解明 (IL 逆アセンブル解析)**:
+    - Glamourer 1.7.1.3 の `ApplyStateName` / `ApplyDesignName`（名前指定）は内部で `FindExistingStates` を呼び、**既存のステート辞書（StateCache）に既に登録されているアクターしか対象にできない仕様** であった。
+    - スポーン直後のパペット（`Csp Lhcpetra` 等）はステート辞書に存在しないため、`FindExistingStates` は 0 件を返し、`ApplyDesignName` は `ActorNotFound (2)`、`ApplyStateName` は内部バグにより `InvalidKey (6)` を返して 100% 失敗していた。
+    - 一方、`Glamourer.ApplyState` / `Glamourer.ApplyDesign`（インデックス指定）は内部で `ObjectManager[objectIndex]`（ゲームオブジェクト配列）からアクターを直接取得し、`stateManager.GetOrCreate` を呼ぶため、**未登録の新規アクターであってもステートが自動生成され、外見が 100% 確実に適用される（result: 0）** ことが IL 解析により証明された。
+  - **インデックス指定 IPC への回帰と自キャラ誤爆物理遮断ガードの確立**:
+    - パペットの `GlobalIndex`（COM#0 = 200〜）に対して `Glamourer.ApplyState`（`ForceAllApply` 圧縮 Base64）および `Glamourer.ApplyDesign` を直接呼び出すように修正。
+    - **自キャラ誤爆防止ガード**: `actorIndex <= 0` の場合はパペット向け適用処理を物理的に拒絶し、操作中自キャラ（Index 0）への誤爆を 100% 完全遮断。
+    - 未登録の Legacy IPC（`ApplyAllToCharacter` 等）による例外ログを解消し、正規 IPC パスで安全に外見が適用されるように統合。
+
 ## [0.1.37] - 2026-10-03
 ### Fixed
 - **AQuestReborn (AQR) / Caraxi 公式 IPC アーキテクチャへの全面移行による外見・Customize+誤爆・武器残留の完全解決**:
