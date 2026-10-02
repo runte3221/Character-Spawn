@@ -181,13 +181,13 @@ public class GlamourerIpc
 
         if (targetGuid != Guid.Empty)
         {
-            // ApplyDesign V2 (ulong flags = 7)
+            // ApplyDesign V2 (ulong flags = 6: Equipment | Customization, no Once)
             if (applyDesignV2Ulong != null)
             {
                 try
                 {
-                    int res = applyDesignV2Ulong.InvokeFunc(targetGuid, actorIndex, 0, 7UL);
-                    log.Information($"Glamourer ApplyDesign(Guid: {targetGuid}, Flags: 7UL) result: {res}");
+                    int res = applyDesignV2Ulong.InvokeFunc(targetGuid, actorIndex, 0, 6UL);
+                    log.Information($"Glamourer ApplyDesign(Guid: {targetGuid}, Flags: 6UL) result: {res}");
                     if (res == 0) return true;
                 }
                 catch (Exception ex)
@@ -196,13 +196,13 @@ public class GlamourerIpc
                 }
             }
 
-            // ApplyDesign V2 (uint flags = 7)
+            // ApplyDesign V2 (uint flags = 6)
             if (applyDesignV2Uint != null)
             {
                 try
                 {
-                    int res = applyDesignV2Uint.InvokeFunc(targetGuid, actorIndex, 0, 7U);
-                    log.Information($"Glamourer ApplyDesign(Guid: {targetGuid}, Flags: 7U) result: {res}");
+                    int res = applyDesignV2Uint.InvokeFunc(targetGuid, actorIndex, 0, 6U);
+                    log.Information($"Glamourer ApplyDesign(Guid: {targetGuid}, Flags: 6U) result: {res}");
                     if (res == 0) return true;
                 }
                 catch (Exception ex)
@@ -227,13 +227,13 @@ public class GlamourerIpc
             }
         }
 
-        // 2. State 文字列（Base64 / MCDF / JSON）(flags = 7)
+        // 2. State 文字列（Base64 / MCDF / JSON）(flags = 6: Equipment | Customization, no Once)
         if (applyStateV2Ulong != null)
         {
             try
             {
-                int res = applyStateV2Ulong.InvokeFunc(designString, actorIndex, 0, 7UL);
-                log.Information($"Glamourer ApplyState (ulong flags=7) result: {res}");
+                int res = applyStateV2Ulong.InvokeFunc(designString, actorIndex, 0, 6UL);
+                log.Information($"Glamourer ApplyState (ulong flags=6) result: {res}");
                 if (res == 0) return true;
             }
             catch (Exception ex)
@@ -246,8 +246,8 @@ public class GlamourerIpc
         {
             try
             {
-                int res = applyStateV2Uint.InvokeFunc(designString, actorIndex, 0, 7U);
-                log.Information($"Glamourer ApplyState (uint flags=7) result: {res}");
+                int res = applyStateV2Uint.InvokeFunc(designString, actorIndex, 0, 6U);
+                log.Information($"Glamourer ApplyState (uint flags=6) result: {res}");
                 if (res == 0) return true;
             }
             catch (Exception ex)
@@ -297,7 +297,7 @@ public class GlamourerIpc
         {
             try
             {
-                int res = reapplyStateV2Ulong.InvokeFunc(actorIndex, 0, 7UL);
+                int res = reapplyStateV2Ulong.InvokeFunc(actorIndex, 0, 6UL);
                 return res == 0;
             }
             catch (Exception ex)
@@ -310,7 +310,7 @@ public class GlamourerIpc
         {
             try
             {
-                int res = reapplyStateV2Uint.InvokeFunc(actorIndex, 0, 7U);
+                int res = reapplyStateV2Uint.InvokeFunc(actorIndex, 0, 6U);
                 return res == 0;
             }
             catch (Exception ex)

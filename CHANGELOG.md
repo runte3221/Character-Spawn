@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.27] - 2026-10-02
+### Fixed
+- **Persistent Glamourer Design & State Synchronization Across Redraws (Fixing Spawning as Player Character)**:
+  - Discovered via reverse engineering of `Glamourer.Api.dll` and `HDM.dll` IL that `ApplyFlagEx.DesignDefault = 7UL` contains `ApplyFlag.Once = 1`. When applied with `Once`, Glamourer only temporarily overwrites the actor's in-memory draw model without persisting to the actor's internal Glamourer state. Consequently, subsequent Penumbra / engine redraws caused actors to immediately revert back to the base puppet appearance (the user's own player character).
+  - Adopted HDM's proven standard: changed apply flags from `7UL` / `7U` to `6UL` / `6U` (`ApplyFlag.Equipment | ApplyFlag.Customization` without `Once`). This ensures Glamourer updates the persistent actor state, preserving designs (`Chonk`, custom MCDF characters) flawlessly through redraws.
+  - Eliminated redundant intermediate `Redraw` invocation directly after `Penumbra.SetCollectionForActor`, consolidating redraw logic to the finalization phase.
+- **MCDF Embedded CustomizePlus Profile Deserialization (`unexpected character 'e'`)**:
+  - Identified that `CustomizePlusData` embedded in Mare Synchronos MCDF archives is Base64-encoded JSON. Passing raw Base64 strings to CustomizePlus IPC caused JSON deserialization failure.
+  - Added automatic Base64-detection and decoding before forwarding to CustomizePlus IPC `SetTemporaryProfile`, ensuring embedded body scales and bone transforms apply correctly.
+
 ## [0.1.26] - 2026-10-02
 ### Fixed
 - **Actor Lifecycle Safety & Crash Prevention on Despawn/Respawn (HDM Compliance)**:

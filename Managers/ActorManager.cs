@@ -920,10 +920,6 @@ public unsafe class ActorManager : IDisposable
         {
             bool penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
             logManager?.Info($"Penumbra SetCollection '{template.PenumbraCollectionName}' on Global#{actorIndex}: {penSuccess}");
-            if (penSuccess && template.ModelCharaId == 0)
-            {
-                penumbraIpc.Redraw(actorIndex);
-            }
         }
 
         // 3. モンスター / 非人型アクターの場合 (HDM GuiseService 方式)
@@ -1042,7 +1038,21 @@ public unsafe class ActorManager : IDisposable
             // 2. MCDF に内包された CustomizePlus データ
             else if (!string.IsNullOrWhiteSpace(fallbackMcdfCPlusData))
             {
-                assignedGuid = customizePlusIpc.SetTemporaryProfile((ushort)actorIndex, fallbackMcdfCPlusData);
+                string cPlusJson = fallbackMcdfCPlusData.Trim();
+                if (!cPlusJson.StartsWith("{") && !cPlusJson.StartsWith("["))
+                {
+                    try
+                    {
+                        var bytes = Convert.FromBase64String(cPlusJson);
+                        cPlusJson = Encoding.UTF8.GetString(bytes);
+                    }
+                    catch (Exception ex)
+                    {
+                        logManager?.Warning($"Failed to base64-decode MCDF CustomizePlus data: {ex.Message}");
+                    }
+                }
+
+                assignedGuid = customizePlusIpc.SetTemporaryProfile((ushort)actorIndex, cPlusJson);
                 if (assignedGuid.HasValue)
                 {
                     logManager?.Info($"CustomizePlus: Applied embedded MCDF profile ({assignedGuid.Value}) to Global#{actorIndex}.");
