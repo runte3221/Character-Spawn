@@ -1,7 +1,6 @@
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
-using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using CharacterSpawn.Models;
 
 namespace CharacterSpawn.Managers;
@@ -26,6 +25,7 @@ public unsafe class HeadTrackingManager
         if (localPlayer == null) return;
 
         var targetPos = localPlayer.Position;
+        var targetEntityId = localPlayer.EntityId;
 
         foreach (var actor in actors)
         {
@@ -37,11 +37,16 @@ public unsafe class HeadTrackingManager
 
             try
             {
-                // キャラクターの頭部・視線IKターゲットをプレイヤー位置に更新
-                var ffxivTarget = new FFXIVClientStructs.FFXIV.Common.Math.Vector3(targetPos.X, targetPos.Y + 1.6f, targetPos.Z);
-                
-                // Set head tracking target position
-                chara->LookAtPosition(ffxivTarget);
+                // ターゲットIDを自キャラにセットすることで視線追従を促す
+                chara->SetTargetId(targetEntityId);
+
+                // アクターからプレイヤーへの方位角を算出して向きを補正
+                var diff = targetPos - actor.Transform.Position;
+                if (diff.LengthSquared() > 0.01f)
+                {
+                    float angle = (float)Math.Atan2(diff.X, diff.Z);
+                    chara->SetRotation(angle);
+                }
             }
             catch
             {

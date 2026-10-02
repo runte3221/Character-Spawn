@@ -1,4 +1,6 @@
 using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
@@ -10,6 +12,7 @@ namespace CharacterSpawn.Managers;
 public unsafe class ActorManager : IDisposable
 {
     private readonly IClientState clientState;
+    private readonly IGameInteropProvider? interopProvider;
     private readonly IPluginLog log;
     private readonly TimelineManager timelineManager;
     private readonly HeadTrackingManager headTrackingManager;
@@ -18,10 +21,32 @@ public unsafe class ActorManager : IDisposable
 
     private readonly List<SpawnedActorData> activeActors = new();
 
+    // Native function delegates
+    [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
+    private delegate nint CreateBattleCharaDelegate(
+        nint characterManager,
+        byte* name,
+        byte* customizeData,
+        uint dataId,
+        byte unk1,
+        byte unk2,
+        byte unk3
+    );
+
+    [UnmanagedFunctionPointer(CallingConvention.ThisCall)]
+    private delegate void DeleteBattleCharaDelegate(
+        nint characterManager,
+        nint chara
+    );
+
+    private CreateBattleCharaDelegate? createBattleChara;
+    private DeleteBattleCharaDelegate? deleteBattleChara;
+
     public IReadOnlyList<SpawnedActorData> ActiveActors => activeActors;
 
     public ActorManager(
         IClientState clientState,
+        IGameInteropProvider? interopProvider,
         IPluginLog log,
         TimelineManager timelineManager,
         HeadTrackingManager headTrackingManager,
@@ -29,11 +54,44 @@ public unsafe class ActorManager : IDisposable
         PenumbraIpc penumbraIpc)
     {
         this.clientState = clientState;
+        this.interopProvider = interopProvider;
         this.log = log;
         this.timelineManager = timelineManager;
         this.headTrackingManager = headTrackingManager;
         this.glamourerIpc = glamourerIpc;
         this.penumbraIpc = penumbraIpc;
+
+        InitializeNativeDelegates();
+    }
+
+    private void InitializeNativeDelegates()
+    {
+        if (interopProvider == null) return;
+
+        try
+        {
+            // FFXIV CreateBattleChara signature
+            if (interopProvider.TryScanSig("E8 ?? ?? ?? ?? 48 8B F8 48 85 C0 74 38 48 8B CB", out var createPtr))
+            {
+                createBattleChara = Marshal.GetDelegateForFunctionPointer<CreateBattleCharaDelegate>(createPtr);
+                log.Information($"Found CreateBattleChara at 0x{createPtr:X}");
+            }
+            else
+            {
+                log.Warning("Could not resolve CreateBattleChara signature via SigScanner.");
+            }
+
+            // FFXIV DeleteBattleChara signature
+            if (interopProvider.TryScanSig("E8 ?? ?? ?? ?? 48 8B 5C 24 ?? 48 83 C4 20 5F C3 48 8B 0D", out var deletePtr))
+            {
+                deleteBattleChara = Marshal.GetDelegateForFunctionPointer<DeleteBattleCharaDelegate>(deletePtr);
+                log.Information($"Found DeleteBattleChara at 0x{deletePtr:X}");
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Native delegate resolution exception: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -53,72 +111,47 @@ public unsafe class ActorManager : IDisposable
             var pos = spawnPosition ?? GetDefaultSpawnPosition();
             var rot = spawnRotation ?? 0.0f;
 
-            // ネイティブアクターの生成
             var actorName = string.IsNullOrWhiteSpace(template.Name) ? "Character" : template.Name;
-            var nameBytes = System.Text.Encoding.UTF8.GetBytes(actorName + "\0");
+            var nameBytes = Encoding.UTF8.GetBytes(actorName + "\0");
             var customBytes = template.CustomizeData ?? new byte[26];
 
-            Character* nativeChara = null;
+            nint nativeCharaAddr = 0;
 
-            fixed (byte* pName = nameBytes)
+            if (createBattleChara != null)
             {
-                if (template.SourceType == CharacterSourceType.Monster)
+                fixed (byte* pName = nameBytes)
+                fixed (byte* pCustom = customBytes)
                 {
-                    // モンスター/BNpc生成
-                    nativeChara = (Character*)charaManager->CreateBattleChara(
+                    nativeCharaAddr = createBattleChara(
+                        (nint)charaManager,
                         pName,
-                        (byte*)0,
+                        template.SourceType == CharacterSourceType.PlayerClone || template.SourceType == CharacterSourceType.Glamourer ? pCustom : (byte*)0,
                         template.DataId,
                         0,
                         0,
                         0
                     );
                 }
-                else if (template.SourceType == CharacterSourceType.Npc)
-                {
-                    // NPC/ENpc生成
-                    nativeChara = (Character*)charaManager->CreateBattleChara(
-                        pName,
-                        (byte*)0,
-                        template.DataId,
-                        0,
-                        0,
-                        0
-                    );
-                }
-                else
-                {
-                    // プレイヤー互換/カスタムキャラクター生成
-                    fixed (byte* pCustom = customBytes)
-                    {
-                        nativeChara = (Character*)charaManager->CreateBattleChara(
-                            pName,
-                            pCustom,
-                            0,
-                            0,
-                            0,
-                            0
-                        );
-                    }
-                }
             }
 
-            if (nativeChara == null)
+            if (nativeCharaAddr == 0)
             {
-                log.Error("Failed to create native character instance.");
-                return null;
+                log.Warning("CreateBattleChara was not available or returned null. Operating in staged mode.");
             }
 
-            // 位置と向きを設定
-            nativeChara->SetPosition(pos.X, pos.Y, pos.Z);
-            nativeChara->SetRotation(rot);
+            var nativeChara = (Character*)nativeCharaAddr;
+            if (nativeChara != null)
+            {
+                nativeChara->SetPosition(pos.X, pos.Y, pos.Z);
+                nativeChara->SetRotation(rot);
+            }
 
             var spawned = new SpawnedActorData
             {
                 TemplateId = template.Id,
                 DisplayName = template.Name,
-                NativeAddress = (nint)nativeChara,
-                GameObjectId = nativeChara->EntityId,
+                NativeAddress = nativeCharaAddr,
+                GameObjectId = nativeChara != null ? nativeChara->EntityId : 0,
                 Transform = new TransformData
                 {
                     Position = pos,
@@ -189,16 +222,7 @@ public unsafe class ActorManager : IDisposable
         var obj = (GameObject*)actor.NativeAddress;
         if (obj == null) return;
 
-        if (!actor.IsTargetable)
-        {
-            // ターゲット不可に設定
-            obj->TargetableStatus = 0;
-        }
-        else
-        {
-            // ターゲット可能に設定
-            obj->TargetableStatus = 1;
-        }
+        obj->TargetableStatus = (byte)(actor.IsTargetable ? 1 : 0);
     }
 
     /// <summary>
@@ -211,9 +235,9 @@ public unsafe class ActorManager : IDisposable
             if (actor.NativeAddress != 0)
             {
                 var charaManager = CharacterManager.Instance();
-                if (charaManager != null)
+                if (charaManager != null && deleteBattleChara != null)
                 {
-                    charaManager->DeleteBattleChara((BattleChara*)actor.NativeAddress);
+                    deleteBattleChara((nint)charaManager, actor.NativeAddress);
                 }
                 actor.NativeAddress = 0;
             }

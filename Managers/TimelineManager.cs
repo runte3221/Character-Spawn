@@ -1,5 +1,4 @@
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
-using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using CharacterSpawn.Models;
 using Dalamud.Plugin.Services;
 
@@ -15,7 +14,7 @@ public unsafe class TimelineManager
     }
 
     /// <summary>
-    /// アクターにActionTimeline（モーション）およびループを設定
+    /// アクターにActionTimeline（モーション）を設定
     /// </summary>
     public void ApplyTimeline(Character* chara, AnimationSettings anim)
     {
@@ -23,22 +22,12 @@ public unsafe class TimelineManager
 
         try
         {
-            // ActionTimelineの再生
             chara->Mode = Character.CharacterModes.Normal;
-            
-            if (anim.IsLoop)
-            {
-                // BaseTimeline（通常待機モーション）を差し替えることで、永続ループを実現
-                chara->Timeline.BaseTimeline = anim.TimelineId;
-            }
-            
-            // アニメーション再生トリガー
-            chara->Timeline.SetTimeline(anim.TimelineId);
+            chara->PlayTimeline(anim.TimelineId);
 
-            // 表情（Facial Expression）の適用
             if (anim.FacialExpressionId > 0)
             {
-                chara->Timeline.FacialTimeline = anim.FacialExpressionId;
+                chara->PlayTimeline(anim.FacialExpressionId);
             }
         }
         catch (Exception ex)
@@ -52,11 +41,11 @@ public unsafe class TimelineManager
     /// </summary>
     public void ApplyFacialExpression(Character* chara, ushort facialId)
     {
-        if (chara == null) return;
+        if (chara == null || facialId == 0) return;
 
         try
         {
-            chara->Timeline.FacialTimeline = facialId;
+            chara->PlayTimeline(facialId);
         }
         catch (Exception ex)
         {
@@ -73,9 +62,8 @@ public unsafe class TimelineManager
 
         try
         {
-            chara->Timeline.BaseTimeline = 1; // 1 = Default Idle
-            chara->Timeline.SetTimeline(1);
-            chara->Timeline.FacialTimeline = 0;
+            chara->StopTimeline();
+            chara->PlayTimeline(1); // 1 = Default Idle
         }
         catch (Exception ex)
         {

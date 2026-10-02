@@ -24,6 +24,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IGameGui GameGui { get; private set; } = null!;
     [PluginService] public static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] public static INamePlateGui NamePlateGui { get; private set; } = null!;
+    [PluginService] public static IGameInteropProvider GameInteropProvider { get; private set; } = null!;
     [PluginService] public static IPluginLog Log { get; private set; } = null!;
 
     public Configuration Configuration { get; init; }
@@ -58,7 +59,7 @@ public sealed class Plugin : IDalamudPlugin
         // Managers
         timelineManager = new TimelineManager(Log);
         headTrackingManager = new HeadTrackingManager(ClientState, Log);
-        actorManager = new ActorManager(ClientState, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc);
+        actorManager = new ActorManager(ClientState, GameInteropProvider, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc);
         namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
 
         // UI

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-10-02
+### Fixed
+- Fixed native actor management using SigScanner delegates for FFXIV 7.x compatibility.
+- Fixed `NamePlateController` event handling to match `INamePlateUpdateHandler` API.
+- Fixed `TimelineManager` animation trigger via `PlayTimeline`.
+- Added `repo.json` manifest for Dalamud custom plugin repository installer.
+- Added `IGameInteropProvider` service injection.
+
 ## [0.1.0] - 2026-10-02
 ### Added
 - Initial project structure and build configuration for Character Spawn plugin.

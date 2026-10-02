@@ -1,4 +1,5 @@
 using Dalamud.Plugin.Services;
+using Dalamud.Game.Gui.NamePlate;
 using CharacterSpawn.Models;
 
 namespace CharacterSpawn.Managers;
@@ -28,30 +29,29 @@ public unsafe class NamePlateController : IDisposable
         }
     }
 
-    private void OnNamePlateUpdate(INamePlateUpdateHandlerArgs args)
+    private void OnNamePlateUpdate(INamePlateUpdateHandler handler)
     {
         var spawned = getActors();
         if (spawned.Count == 0) return;
 
-        var chara = args.Actor;
-        if (chara == null) return;
+        var go = handler.GameObject;
+        if (go == null) return;
 
-        var charaAddr = (nint)chara.Address;
-
+        var charaAddr = (nint)go.Address;
         var match = spawned.FirstOrDefault(a => a.NativeAddress == charaAddr);
         if (match == null) return;
 
         // 非表示設定の場合
         if (!match.NamePlate.Show)
         {
-            args.IsVisible = false;
+            handler.RemoveName();
             return;
         }
 
         // カスタム名が指定されている場合
         if (!string.IsNullOrWhiteSpace(match.NamePlate.CustomName))
         {
-            args.Name = match.NamePlate.CustomName;
+            handler.Name = match.NamePlate.CustomName;
         }
     }
 
@@ -59,7 +59,13 @@ public unsafe class NamePlateController : IDisposable
     {
         if (namePlateGui != null)
         {
-            namePlateGui.OnNamePlateUpdate -= OnNamePlateUpdate;
+            try
+            {
+                namePlateGui.OnNamePlateUpdate -= OnNamePlateUpdate;
+            }
+            catch
+            {
+            }
         }
     }
 }

@@ -2,7 +2,7 @@
   "Author": "runte3221",
   "Name": "Character Spawn",
   "InternalName": "CharacterSpawn",
-  "AssemblyVersion": "0.1.0.0",
+  "AssemblyVersion": "0.1.1.0",
   "Description": "Spawn and place custom characters, NPCs, and monsters locally on the map with customizable animations, expressions, gizmos, and presets.",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/runte3221/Character-Spawn",

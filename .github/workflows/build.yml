@@ -42,10 +42,10 @@ jobs:
       shell: pwsh
       run: |
         $ErrorActionPreference = "Continue"
-        dotnet build CharacterSpawn.csproj -c Release /p:Platform="x64" --no-restore 2>&1 | Tee-Object -FilePath "build.log"
+        dotnet build CharacterSpawn.csproj -c Release /p:Platform="x64" 2>&1 | Tee-Object -FilePath "build.log"
         if ($LASTEXITCODE -ne 0) {
-          Write-Error "Build failed! Full log output:"
-          Get-Content "build.log"
+          Get-Content "build.log" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          Write-Error "Build failed! Full log output above."
           exit 1
         }
       env:
