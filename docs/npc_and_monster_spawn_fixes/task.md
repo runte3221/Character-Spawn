@@ -25,10 +25,10 @@ HDM (https://github.com/Enceladeum/HDM) の実装を徹底調査した結果判�
 - [x] 5. テンプレート保存・復元処理の確認・強化 (`CharacterLibraryTab.cs` & `GameDataService.cs`) <!-- id: 4 -->
   - モンスター・NPC の ID, ModelCharaId, CustomizeData, NpcEquipmentModelIds の保存と読み込み確認
   - `GameDataService.GetMonsterModelCharaId` によるモデル未紐付けモンスターの補完
-- [ ] 6. バージョン更新 & ビルド & 全バージョンフォルダ配置 <!-- id: 5 -->
+- [x] 6. バージョン更新 & ビルド & 全バージョンフォルダ配置 <!-- id: 5 -->
   - `package.json` を `0.1.22` に更新
   - `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json` を `0.1.22.0` に更新
   - `CHANGELOG.md` 追記
   - `docs` フォルダ同期
   - GitHub Actions ビルド & 最新 DLL を全バージョンフォルダ（`0.1.22.0` を含む）へ配置
-- [ ] 7. ユーザーへの完了報告と確認依頼 <!-- id: 6 -->
+- [x] 7. ユーザーへの完了報告と確認依頼 <!-- id: 6 -->
