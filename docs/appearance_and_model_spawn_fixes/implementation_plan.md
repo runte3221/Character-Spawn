@@ -1,28 +1,20 @@
-# 実装計画: 外見適用およびモデルスポーンの根本改修 (v0.1.14)
+# 実装計画: AQR完全準拠のMCDF Mod展開＆Penumbra一時コレクション連携
 
-## 1. 課題と根本原因の特定
+## 目的
+1. **MCDF完全互換**: 他ユーザーから受け取ったMCDF（自環境にModが未インストールの状態）でも、MCDF内に同梱されている3Dモデル、テクスチャ、マテリアル、FileSwap、MetaManipulationをローカルキャッシュに抽出し、Penumbraの一時コレクション（Temporary Collection）に登録することで100%外見を再現する（A Quest Reborn完全準拠）。
+2. **Penumbra手動コレクションの排除（MCDF時）**: MCDF利用時にユーザーに手動でPenumbraコレクションを選ばせる方式を廃止し、AQRと同様に全自動で一時コレクションを生成・適用する。
+3. **リソースライフサイクル管理**: アクターのデスポーン時やエリア移動時に、Penumbraの一時コレクションを確実に解放・削除する。
+4. **バージョン管理の確実化**: XIVLauncherが古いv0.1.9フォルダ等を読み込むことによる不整合を防ぐ。
 
-### A. Penumbra Collection が適用されない (ec=16 / InvalidIdentifier)
-- **原因**: `Penumbra.GameData.dll` の `CreateBNpcFromObject` を CIL 逆アセンブルした結果、Penumbra はアクターの `OwnerId` を検査し、`OwnerId != 0xE0000000` (`GameObject.InvalidGameObjectId`) の場合は親オブジェクトの探索（`objects.ById(ownerId)`）を行うことが判明。`CreateBattleCharacter()` で生成された GameObject は `OwnerId` が `0` で初期化されているため、親が見つからずに `InvalidIdentifier` (16) を返し、コレクションの割り当てが失敗していた。
-- **対策**: スポーン直後に `nativeChara->GameObject.OwnerId = 0xE000_0000` を明示的に代入。これにより Penumbra は親オブジェクト探索をスキップし、`nameId == 0` かつ `puppetName`、`HomeWorld` から正規の Player 識別子を生成し、コレクション割り当てが `ec=0` (Success) で成功する。
-
-### B. MCDF でスポーンさせると Penumbra Collection が読み込まれない
-- **原因**: `UI/CharacterLibraryTab.cs` の MCDF モーダルセクションに Penumbra Collection を選択する UI が存在しなかったため、テンプレート保存時に `PenumbraCollectionName` が空文字のまま保存されていた。
-- **対策**: MCDF モーダルセクションに Penumbra Collection 選択コンボボックス（検索機能付き）を追加し、MCDF の外見と Penumbra Collection の同時バインドおよび保存・適用を可能にする。
-
----
-
-## 2. アーキテクチャ改修方針
-
-### 1. アクターの OwnerId 明示初期化 (`Managers/ActorManager.cs`)
-- `SpawnCharacter` において、`nativeChara->GameObject.OwnerId = 0xE000_0000;` を設定。
-- Penumbra の `CreateBNpcFromObject` の Player 識別子生成パスを確実に通過させる。
-
-### 2. MCDF セクションの Penumbra コレクションセレクター共通化 (`UI/CharacterLibraryTab.cs`)
-- `DrawPenumbraCollectionSelector()` を抽出し、Glamourer セクションおよび MCDF セクションの双方から呼び出し可能にする。
-
----
-
-## 3. 検証・品質保証
-- `CreateBNpcFromObject` の CIL 逆アセンブル検証による `OwnerId` 境界条件の証明。
-- MCDF モーダルにおける Penumbra Collection 選択およびテンプレート保存・反映の整合性確認。
+## 設計詳細
+- **McdfParser**:
+  - LZ4ストリーム解凍後、JSON内の `Files` 配列から各ファイルの実バイナリを `mcdf_cache` フォルダに展開。
+  - `FileSwaps` および `Files` のゲーム内パスとキャッシュファイルパスのマッピングテーブル（`ModPaths`）を構築。
+- **PenumbraIpc**:
+  - `Penumbra.CreateTemporaryCollection.V6`: 一時コレクション生成。
+  - `Penumbra.AssignTemporaryCollection.V5`: スポーンアクター（`globalIndex`）に一時コレクションを割り当て。
+  - `Penumbra.AddTemporaryMod.V5`: 抽出されたModファイル群および `ManipulationData` を一時Modとしてコレクションに登録。
+  - `Penumbra.DeleteTemporaryCollection.V5`: デスポーン時に一時コレクションを削除。
+- **ActorManager**:
+  - スポーン時に上記Penumbra一時コレクションサイクルを実行後、Glamourerデザインを適用し、Penumbra Redrawを実行。
+  - デスポーン時に `TemporaryCollectionGuid` を参照してコレクションを解放。

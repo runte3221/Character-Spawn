@@ -111,6 +111,9 @@ public class SpawnedActorData
 
     [JsonIgnore]
     public bool IsSpawned => NativeAddress != 0;
+
+    [JsonIgnore]
+    public Guid? TemporaryCollectionGuid { get; set; }
 }
 
 public class ScenePreset

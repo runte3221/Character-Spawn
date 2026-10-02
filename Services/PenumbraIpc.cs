@@ -29,6 +29,12 @@ public class PenumbraIpc
     private readonly ICallGateSubscriber<string, int, int>? setCollectionForObjectOldLegacy;
     private readonly ICallGateSubscriber<int, int, object?>? redrawObjectLegacy;
 
+    // Temporary Collection IPC Subscribers (AQuestReborn / Mare Architecture)
+    private readonly ICallGateSubscriber<string, string, (int, Guid)>? createTemporaryCollectionV6;
+    private readonly ICallGateSubscriber<Guid, int, bool, int>? assignTemporaryCollectionV5;
+    private readonly ICallGateSubscriber<string, Guid, Dictionary<string, string>, string, int, int>? addTemporaryModV5;
+    private readonly ICallGateSubscriber<Guid, int>? deleteTemporaryCollectionV5;
+
     private bool isAvailable = false;
     private DateTime lastAvailabilityCheck = DateTime.MinValue;
 
@@ -66,6 +72,11 @@ public class PenumbraIpc
             setCollectionForObjectLegacyStringInt = pi.GetIpcSubscriber<int, string, bool, bool, int>("Penumbra.SetCollectionForObject");
             setCollectionForObjectOldLegacy = pi.GetIpcSubscriber<string, int, int>("Penumbra.SetCollectionForObject");
             redrawObjectLegacy = pi.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject");
+
+            createTemporaryCollectionV6 = pi.GetIpcSubscriber<string, string, (int, Guid)>("Penumbra.CreateTemporaryCollection.V6");
+            assignTemporaryCollectionV5 = pi.GetIpcSubscriber<Guid, int, bool, int>("Penumbra.AssignTemporaryCollection.V5");
+            addTemporaryModV5 = pi.GetIpcSubscriber<string, Guid, Dictionary<string, string>, string, int, int>("Penumbra.AddTemporaryMod.V5");
+            deleteTemporaryCollectionV5 = pi.GetIpcSubscriber<Guid, int>("Penumbra.DeleteTemporaryCollection.V5");
 
             CheckAvailability();
         }
@@ -323,6 +334,82 @@ public class PenumbraIpc
             }
         }
 
+        return false;
+    }
+
+    /// <summary>
+    /// AQR / Mare 準拠: 一時コレクション（Temporary Collection）を作成する
+    /// </summary>
+    public Guid CreateTemporaryCollection(string name)
+    {
+        if (!IsAvailable || createTemporaryCollectionV6 == null) return Guid.Empty;
+        try
+        {
+            var res = createTemporaryCollectionV6.InvokeFunc("CharacterSpawn", "CS_" + name);
+            log.Information($"Penumbra CreateTemporaryCollection 'CS_{name}' result: ec={res.Item1}, Guid={res.Item2}");
+            if (res.Item1 == 0) return res.Item2;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"CreateTemporaryCollection failed: {ex.Message}");
+        }
+        return Guid.Empty;
+    }
+
+    /// <summary>
+    /// AQR / Mare 準拠: 一時コレクションをアクターに強制割り当てする
+    /// </summary>
+    public bool AssignTemporaryCollection(Guid collectionId, int actorIndex)
+    {
+        if (!IsAvailable || assignTemporaryCollectionV5 == null || collectionId == Guid.Empty) return false;
+        try
+        {
+            int ec = assignTemporaryCollectionV5.InvokeFunc(collectionId, actorIndex, true);
+            log.Information($"Penumbra AssignTemporaryCollection ({collectionId}) to actor #{actorIndex} result: ec={ec}");
+            return ec == 0;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"AssignTemporaryCollection failed: {ex.Message}");
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// AQR / Mare 準拠: 一時コレクションに Mod ファイル群および ManipulationData を登録する
+    /// </summary>
+    public bool AddTemporaryMod(Guid collectionId, Dictionary<string, string> paths, string manipulationData)
+    {
+        if (!IsAvailable || addTemporaryModV5 == null || collectionId == Guid.Empty) return false;
+        try
+        {
+            int ec = addTemporaryModV5.InvokeFunc("CharacterSpawn_Mcdf", collectionId, paths, manipulationData ?? string.Empty, 0);
+            log.Information($"Penumbra AddTemporaryMod ({paths.Count} files) to coll {collectionId} result: ec={ec}");
+            return ec == 0;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"AddTemporaryMod failed: {ex.Message}");
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// AQR / Mare 準拠: 一時コレクションを削除してリソースを解放する
+    /// </summary>
+    public bool DeleteTemporaryCollection(Guid collectionId)
+    {
+        if (!IsAvailable || deleteTemporaryCollectionV5 == null || collectionId == Guid.Empty) return false;
+        try
+        {
+            int ec = deleteTemporaryCollectionV5.InvokeFunc(collectionId);
+            log.Information($"Penumbra DeleteTemporaryCollection ({collectionId}) result: ec={ec}");
+            return ec == 0;
+        }
+        catch (Exception ex)
+        {
+            log.Debug($"DeleteTemporaryCollection failed: {ex.Message}");
+        }
         return false;
     }
 }

@@ -354,8 +354,7 @@ public class CharacterLibraryTab
                     break;
                 case CharacterSourceType.Mcdf:
                     ImGui.BulletText($"File: {System.IO.Path.GetFileName(selectedTemplate.McdfFilePath)}");
-                    if (!string.IsNullOrWhiteSpace(selectedTemplate.PenumbraCollectionName))
-                        ImGui.BulletText($"Penumbra Collection: {selectedTemplate.PenumbraCollectionName}");
+                    ImGui.BulletText("Penumbra: Auto Temporary Collection (Embedded Mods)");
                     break;
             }
 
@@ -718,8 +717,8 @@ public class CharacterLibraryTab
         ImGui.Separator();
         ImGui.Spacing();
 
-        // MCDF でも Penumbra Collection を指定可能にする
-        DrawPenumbraCollectionSelector();
+        ImGui.TextColored(new Vector4(0.3f, 0.9f, 0.4f, 1.0f), "MCDF includes embedded mod files.");
+        ImGui.TextWrapped("Penumbra temporary collection will be automatically generated and assigned upon spawning (AQR / Mare standard). No manual collection selection required.");
     }
 
     private void DrawPenumbraCollectionSelector()
@@ -838,6 +837,7 @@ public class CharacterLibraryTab
         else if (modalSourceType == CharacterSourceType.Mcdf)
         {
             target.ModelCharaId = 0;
+            target.PenumbraCollectionName = string.Empty; // MCDF uses automatic temporary collection
             if (string.IsNullOrWhiteSpace(design) && !string.IsNullOrWhiteSpace(modalMcdfPath))
             {
                 var parsed = mcdfParser.ParseMcdf(modalMcdfPath);

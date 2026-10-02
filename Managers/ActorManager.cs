@@ -25,6 +25,7 @@ public unsafe class ActorManager : IDisposable
     private readonly GlamourerIpc glamourerIpc;
     private readonly PenumbraIpc penumbraIpc;
     private readonly McdfParser? mcdfParser;
+    private readonly IDalamudPluginInterface? pluginInterface;
 
     private readonly List<SpawnedActorData> activeActors = new();
     private readonly List<ushort> createdIndexes = new();
@@ -60,7 +61,8 @@ public unsafe class ActorManager : IDisposable
         GlamourerIpc glamourerIpc,
         PenumbraIpc penumbraIpc,
         LogManager? logManager = null,
-        McdfParser? mcdfParser = null)
+        McdfParser? mcdfParser = null,
+        IDalamudPluginInterface? pluginInterface = null)
     {
         this.clientState = clientState;
         this.objectTable = objectTable;
@@ -71,6 +73,7 @@ public unsafe class ActorManager : IDisposable
         this.glamourerIpc = glamourerIpc;
         this.penumbraIpc = penumbraIpc;
         this.mcdfParser = mcdfParser;
+        this.pluginInterface = pluginInterface;
 
         this.clientState.TerritoryChanged += OnTerritoryChanged;
     }
@@ -219,10 +222,6 @@ public unsafe class ActorManager : IDisposable
                 return null;
             }
 
-            // 4. AQR & HDM スポーン直後即時外見適用:
-            // 描画が有効化される前に、目的の外見（Glamourer / MCDF / Penumbra / Monster / NPC）をアクターに設定する
-            ApplyAppearanceDirect(nativeChara, globalIdx, template);
-
             var spawned = new SpawnedActorData
             {
                 TemplateId = template.Id,
@@ -244,6 +243,10 @@ public unsafe class ActorManager : IDisposable
                 },
                 IsTargetable = false
             };
+
+            // 4. AQR & HDM スポーン直後即時外見適用:
+            // 描画が有効化される前に、目的の外見（Glamourer / MCDF / Penumbra / Monster / NPC）をアクターに設定する
+            ApplyAppearanceDirect(nativeChara, globalIdx, template, spawned);
 
             // 5. 描画準備完了待機ジョブにエンキュー（IsReadyToDraw() を待って EnableDraw() を実行）
             readyJobs.Add(new ReadyJob
@@ -323,6 +326,13 @@ public unsafe class ActorManager : IDisposable
         try
         {
             readyJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
+
+            // Penumbra 一時コレクションのクリーンアップ (AQR / Mare 準拠)
+            if (actor.TemporaryCollectionGuid.HasValue)
+            {
+                penumbraIpc.DeleteTemporaryCollection(actor.TemporaryCollectionGuid.Value);
+                actor.TemporaryCollectionGuid = null;
+            }
 
             if (actor.NativeAddress != 0)
             {
@@ -432,7 +442,7 @@ public unsafe class ActorManager : IDisposable
                 readyJobs.RemoveAt(i);
                 try
                 {
-                    ApplyAppearanceDirect(chara, job.GlobalIndex, job.Template);
+                    ApplyAppearanceDirect(chara, job.GlobalIndex, job.Template, job.Spawned);
                     logManager?.Info($"Appearance finalized for humanoid '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex}.");
                 }
                 catch (Exception ex)
@@ -447,14 +457,84 @@ public unsafe class ActorManager : IDisposable
     /// 外見（Glamourer / Penumbra / MCDF / モンスター / NPC）の即時直接適用
     /// HDM & AQR アーキテクチャ準拠
     /// </summary>
-    public void ApplyAppearanceDirect(Character* chara, ushort globalIndex, CharacterTemplate template)
+    public void ApplyAppearanceDirect(Character* chara, ushort globalIndex, CharacterTemplate template, SpawnedActorData? spawned = null)
     {
         if (chara == null) return;
         int actorIndex = (int)globalIndex;
 
         logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId})...");
 
-        // 1. Penumbra コレクションの適用 (AQuestReborn 方式: コレクションを先に設定して Redraw)
+        // 1. MCDF の場合: AQR / Mare 準拠（内包 Mod ファイルのキャッシュ展開 + Penumbra Temporary Collection + Glamourer）
+        if (template.SourceType == CharacterSourceType.Mcdf)
+        {
+            if (!string.IsNullOrWhiteSpace(template.McdfFilePath) && mcdfParser != null)
+            {
+                try
+                {
+                    string configDir = pluginInterface?.ConfigDirectory.FullName ?? Path.GetTempPath();
+                    string cacheDir = Path.Combine(configDir, "mcdf_cache");
+                    Directory.CreateDirectory(cacheDir);
+
+                    var bundle = mcdfParser.ExtractMcdfBundle(template.McdfFilePath, cacheDir);
+                    if (bundle != null)
+                    {
+                        // 既存の一時コレクションがあれば削除して再作成
+                        if (spawned?.TemporaryCollectionGuid.HasValue == true)
+                        {
+                            penumbraIpc.DeleteTemporaryCollection(spawned.TemporaryCollectionGuid.Value);
+                            spawned.TemporaryCollectionGuid = null;
+                        }
+
+                        if (penumbraIpc.IsAvailable)
+                        {
+                            var tempGuid = penumbraIpc.CreateTemporaryCollection(template.Name);
+                            if (tempGuid != Guid.Empty)
+                            {
+                                penumbraIpc.AssignTemporaryCollection(tempGuid, actorIndex);
+                                if (bundle.ModPaths.Count > 0 || !string.IsNullOrEmpty(bundle.ManipulationData))
+                                {
+                                    penumbraIpc.AddTemporaryMod(tempGuid, bundle.ModPaths, bundle.ManipulationData ?? string.Empty);
+                                }
+                                if (spawned != null)
+                                {
+                                    spawned.TemporaryCollectionGuid = tempGuid;
+                                }
+                                logManager?.Info($"MCDF: Assigned Penumbra temporary collection {tempGuid} to actor #{actorIndex} with {bundle.ModPaths.Count} mod files.");
+                            }
+                        }
+
+                        // Glamourer デザインの適用
+                        string? designString = bundle.GlamourerDesign;
+                        if (string.IsNullOrWhiteSpace(designString)) designString = template.GlamourerDesignString;
+
+                        if (glamourerIpc.IsAvailable && !string.IsNullOrWhiteSpace(designString))
+                        {
+                            bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
+                            logManager?.Info($"MCDF Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
+                        }
+
+                        // 武器の表示・非表示
+                        chara->DrawData.HideWeapons(!template.WeaponVisible);
+                        chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
+
+                        // Penumbra Redraw (AQuestReborn 方式: 最後に必ず Redraw)
+                        if (penumbraIpc.IsAvailable)
+                        {
+                            penumbraIpc.Redraw(actorIndex);
+                            logManager?.Info($"MCDF Penumbra Redraw for Global#{actorIndex}.");
+                        }
+
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logManager?.Error($"Error applying MCDF bundle: {ex.Message}");
+                }
+            }
+        }
+
+        // 2. Penumbra コレクションの適用 (通常指定のコレクション)
         if (penumbraIpc.IsAvailable && !string.IsNullOrWhiteSpace(template.PenumbraCollectionName))
         {
             bool penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
@@ -465,7 +545,7 @@ public unsafe class ActorManager : IDisposable
             }
         }
 
-        // 2. モンスター / 非人型アクターの場合 (HDM GuiseService 方式)
+        // 3. モンスター / 非人型アクターの場合 (HDM GuiseService 方式)
         // ※ Penumbra Redraw は絶対に呼ばない（非人型 DrawObject が無効化されて消えるため）
         if (template.ModelCharaId > 0)
         {
@@ -479,7 +559,7 @@ public unsafe class ActorManager : IDisposable
             return;
         }
 
-        // 3. NPC (人型, ENpc) の場合
+        // 4. NPC (人型, ENpc) の場合
         if (template.SourceType == CharacterSourceType.Npc)
         {
             if (template.CustomizeData != null && template.CustomizeData.Length >= 26)
@@ -515,22 +595,10 @@ public unsafe class ActorManager : IDisposable
             return;
         }
 
-        // 4. Glamourer / MCDF / PlayerClone の適用 (AQR 方式)
+        // 5. Glamourer / PlayerClone の適用 (AQR 方式)
         if (glamourerIpc.IsAvailable)
         {
             string? designString = template.GlamourerDesignString;
-
-            // MCDF の場合：デザイン文字列が空ならファイルから再パース
-            if (template.SourceType == CharacterSourceType.Mcdf && string.IsNullOrWhiteSpace(designString) && !string.IsNullOrWhiteSpace(template.McdfFilePath) && mcdfParser != null)
-            {
-                var parsed = mcdfParser.ParseMcdf(template.McdfFilePath);
-                if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
-                {
-                    designString = parsed.GlamourerDesign;
-                    template.GlamourerDesignString = designString;
-                    logManager?.Info("Loaded Glamourer design string from MCDF file.");
-                }
-            }
 
             if (!string.IsNullOrWhiteSpace(designString))
             {
@@ -553,7 +621,7 @@ public unsafe class ActorManager : IDisposable
         }
         else
         {
-            if (template.SourceType == CharacterSourceType.Glamourer || template.SourceType == CharacterSourceType.Mcdf)
+            if (template.SourceType == CharacterSourceType.Glamourer)
             {
                 logManager?.Warning("Glamourer IPC not detected. Could not apply external appearance design.");
             }
@@ -563,7 +631,7 @@ public unsafe class ActorManager : IDisposable
         chara->DrawData.HideWeapons(!template.WeaponVisible);
         chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-        // 5. Penumbra Redraw (AQuestReborn 方式: 最後に必ず Redraw)
+        // 6. Penumbra Redraw (AQuestReborn 方式: 最後に必ず Redraw)
         if (penumbraIpc.IsAvailable)
         {
             penumbraIpc.Redraw(actorIndex);
@@ -577,7 +645,7 @@ public unsafe class ActorManager : IDisposable
     private void ApplyExternalAppearance(SpawnedActorData spawned, CharacterTemplate template)
     {
         if (spawned.NativeAddress == 0) return;
-        ApplyAppearanceDirect((Character*)spawned.NativeAddress, spawned.GlobalIndex, template);
+        ApplyAppearanceDirect((Character*)spawned.NativeAddress, spawned.GlobalIndex, template, spawned);
     }
 
     /// <summary>

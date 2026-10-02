@@ -14,9 +14,120 @@ public class McdfParser
 
     public record McdfData(string? GlamourerDesign, byte[]? CustomizeData, string? Description);
 
+    public class McdfBundle
+    {
+        public string? GlamourerDesign { get; set; }
+        public string? ManipulationData { get; set; }
+        public Dictionary<string, string> ModPaths { get; set; } = new(StringComparer.Ordinal);
+        public string? Description { get; set; }
+    }
+
     public McdfParser(IPluginLog log)
     {
         this.log = log;
+    }
+
+    /// <summary>
+    /// AQR / Mare 準拠: MCDF から外見文字列および内包 Mod ファイル群を展開し、Penumbra 用のパス対応マップを生成する
+    /// </summary>
+    public McdfBundle? ExtractMcdfBundle(string filePath, string cacheDir)
+    {
+        if (!File.Exists(filePath))
+        {
+            log.Error($"MCDF file not found: {filePath}");
+            return null;
+        }
+
+        try
+        {
+            using var fileStream = File.OpenRead(filePath);
+            using var lz4Stream = new LZ4Stream(fileStream, LZ4StreamMode.Decompress, LZ4StreamFlags.HighCompression);
+            using var reader = new BinaryReader(lz4Stream);
+
+            var headerChars = new string(reader.ReadChars(4));
+            if (!string.Equals(headerChars, "MCDF", StringComparison.Ordinal))
+            {
+                log.Warning($"Invalid MCDF header in '{Path.GetFileName(filePath)}'");
+                return null;
+            }
+
+            byte version = reader.ReadByte();
+            int dataLength = reader.ReadInt32();
+            if (dataLength <= 0 || dataLength > 100 * 1024 * 1024)
+            {
+                log.Warning($"Invalid MCDF data length {dataLength}");
+                return null;
+            }
+
+            byte[] rawBytes = reader.ReadBytes(dataLength);
+            string jsonStr = Encoding.UTF8.GetString(rawBytes);
+            var jObj = JObject.Parse(jsonStr);
+
+            var bundle = new McdfBundle
+            {
+                GlamourerDesign = jObj["GlamourerData"]?.ToString(),
+                ManipulationData = jObj["ManipulationData"]?.ToString(),
+                Description = jObj["Description"]?.ToString()
+            };
+
+            Directory.CreateDirectory(cacheDir);
+
+            // 1. Files: ストリームに連続して格納されている実ファイルバイナリを展開
+            var filesToken = jObj["Files"] as JArray;
+            if (filesToken != null)
+            {
+                foreach (var fileItem in filesToken)
+                {
+                    var hash = fileItem["Hash"]?.ToString();
+                    var length = fileItem["Length"]?.Value<int>() ?? 0;
+                    var gamePaths = fileItem["GamePaths"]?.ToObject<System.Collections.Generic.List<string>>() ?? new();
+
+                    if (length > 0)
+                    {
+                        var safeName = string.IsNullOrEmpty(hash) ? Guid.NewGuid().ToString("N") : hash;
+                        var cachedFilePath = Path.Combine(cacheDir, safeName + ".tmp");
+
+                        // ストリームから length バイト読み取り
+                        byte[] fileBytes = reader.ReadBytes(length);
+                        if (!File.Exists(cachedFilePath) || new FileInfo(cachedFilePath).Length != length)
+                        {
+                            File.WriteAllBytes(cachedFilePath, fileBytes);
+                        }
+
+                        foreach (var gp in gamePaths)
+                        {
+                            bundle.ModPaths[gp] = cachedFilePath;
+                        }
+                    }
+                }
+            }
+
+            // 2. FileSwaps: ゲーム内パスの別名スワップ設定
+            var swapsToken = jObj["FileSwaps"] as JArray;
+            if (swapsToken != null)
+            {
+                foreach (var swapItem in swapsToken)
+                {
+                    var fileSwapPath = swapItem["FileSwapPath"]?.ToString();
+                    var gamePaths = swapItem["GamePaths"]?.ToObject<System.Collections.Generic.List<string>>() ?? new();
+                    if (!string.IsNullOrEmpty(fileSwapPath))
+                    {
+                        foreach (var gp in gamePaths)
+                        {
+                            bundle.ModPaths[gp] = fileSwapPath;
+                        }
+                    }
+                }
+            }
+
+            log.Information($"Extracted MCDF '{Path.GetFileName(filePath)}': GlamourerLen={bundle.GlamourerDesign?.Length ?? 0}, ModFiles={bundle.ModPaths.Count}");
+            return bundle;
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Failed to extract MCDF bundle from '{Path.GetFileName(filePath)}': {ex.Message}");
+            return null;
+        }
     }
 
     public McdfData? ParseMcdf(string filePath)

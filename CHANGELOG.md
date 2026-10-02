@@ -2,7 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.14] - 2026-10-02
+## [0.1.15] - 2026-10-02
+### Added
+- **Full AQR-Compliant MCDF Mod Extraction & Penumbra Temporary Collection Lifecycle**:
+  - Implemented complete extraction of embedded Mod files (3D models, textures, materials, and FileSwaps) and `ManipulationData` directly from `.mcdf` LZ4 binary streams into local plugin cache (`mcdf_cache`).
+  - Integrated Penumbra Temporary Collection IPC APIs (`CreateTemporaryCollection`, `AssignTemporaryCollection`, `AddTemporaryMod`, `DeleteTemporaryCollection`).
+  - When spawning a character with an MCDF file, CharacterSpawn now dynamically creates a dedicated Penumbra temporary collection, binds all embedded mod files and meta manipulations to the spawned actor, applies the Glamourer design, and redraws seamlessly without requiring user-created Penumbra collections.
+  - Automatically deletes and reclaims temporary Penumbra collections upon despawning or territory transitions, preventing memory/handle leaks.
+- **Dynamic Plugin Assembly Version Logging**:
+  - Replaced hardcoded `v0.1.9` startup log string in `Plugin.cs` with dynamic assembly version resolution (`v{GetType().Assembly.GetName().Version}`).
+
+### Fixed
+- **MCDF UI Penumbra Independence (AQR Conformity)**:
+  - Removed manual Penumbra Collection selector from the MCDF section in `CharacterLibraryTab.cs`. MCDF templates now automatically inform users of embedded mod auto-loading via temporary collections, enabling full cross-user portability for third-party `.mcdf` files.
+- **ActorManager PluginInterface Injection**:
+  - Wired `IDalamudPluginInterface` through to `ActorManager` to provide reliable config directory resolution for MCDF file caching.
 ### Fixed
 - **Penumbra InvalidIdentifier (ec=16) Resolution via OwnerId Initialization**:
   - Through full CIL reverse engineering of `Penumbra.GameData.dll`'s `CreateBNpcFromObject`, discovered that Penumbra inspects `GameObject.OwnerId`. If `OwnerId` is not equal to `0xE0000000` (`GameObject.InvalidGameObjectId`), Penumbra attempts to look up the parent object (`objects.ById(ownerId)`). Because `CreateBattleCharacter` initializes `OwnerId` to `0`, the lookup failed and returned `InvalidIdentifier` (`ec=16`), causing all Penumbra collection assignments to be rejected.
