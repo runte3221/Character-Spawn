@@ -1,36 +1,34 @@
-# 実装計画: Glamourer 適用フラグ適正化と外見永続化 (v0.1.27)
+# 実装計画: Glamourer 適用フラグ適正化と外見永続化 (v0.1.28)
 
 ## 1. 概要
-- **対象バージョン**: v0.1.27 (0.1.27.0)
+- **対象バージョン**: v0.1.28 (0.1.28.0)
 - **目的**: 
-  1. `Chonk`（男性キャラ）や別キャラクターの MCDF（`test.mcdf`）をスポーンした際、Redraw によって自キャラ（Ruma Meow）の外見に巻き戻ってしまう問題を完全に解消する。
-  2. MCDF に内包された CustomizePlus データ（Base64 形式）がデシリアライズエラーになるのを防止し、体型・ボーンスケールを正確に反映する。
+  1. `Chonk`（男性キャラ）などの別キャラクターをスポーンした際、自キャラ（Ruma Meow）の外見に戻ってしまう問題を根本から完全に解消する。
+  2. デザインファイル内で `Race` や特定スロットの `Apply: false` が設定されている場合でも、キャラクタースポーンとして完全な外見を強制適用する。
+  3. ゲームエンジンのネイティブメモリ（`chara->DrawData.CustomizeData`）にも直接 26 バイトを同期し、Redraw 時にゲームエンジンが自キャラを再構築するのを防ぐ。
 
-## 2. 根本原因の技術的分析
-1. **Glamourer の ApplyFlag 仕様**:
-   - `ApplyFlag` 定義:
-     - `Once = 1`: 一時適用。ゲーム内の一時モデルを変更するが、アクターの Glamourer State は更新しない。
-     - `Equipment = 2`: 装備品データ
-     - `Customization = 4`: キャラメイク（種族・髪型・顔等）データ
-     - `Lock = 8`: 変更ロック
-   - これまでのコードでは `flags = 7UL`（`DesignDefault` = `Once | Equipment | Customization`）を使用していた。
-   - `Once (1)` が指定されているため、直後に Redraw が発生すると、Glamourer の State（スポーン時に自キャラからクローンしたベースライン）に即座に巻き戻っていた。
-2. **HDM の実装比較**:
-   - `HDM.dll` の `HumanGuise.TryApplyOnce` を IL 解析した結果、`ldc.i4.6 -> conv.u8 (6UL)` を渡していることが判明。
-   - `ApplyFlag.Equipment (2) | ApplyFlag.Customization (4) = 6` を指定することで、アクターの State そのものを更新させ、その後の Redraw やゾーンチェンジでも外見が維持される。
-3. **MCDF の CustomizePlus データ**:
-   - Mare Synchronos 由来の MCDF に含まれる `CustomizePlusData` は、JSON を UTF-8 でエンコードした上で Base64 化された文字列（`eyJCb25lcyI6...`）。
-   - CustomizePlus IPC `SetTemporaryProfileOnCharacter` は生の JSON 文字列を期待しているため、Base64 文字列の先頭文字 `'e'` を構文エラーとして弾いていた。
+## 2. 根本原因の技術的分析 (IL・設定ファイル完全解明)
+1. **Glamourer デザインファイルの Apply 設定**:
+   - `Chonk` のデザインファイル（`238897be-39ba-4ab6-b258-52e5292fe6dd.json`）を直接解析した結果：
+     `"Race": { "Value": 1, "Apply": false }`
+     `"Gender": { "Value": 0, "Apply": true }`
+     `"Clan": { "Value": 2, "Apply": true }`
+   - `Race`（ヒューラン）の適用が OFF になっていた。
+   - `ApplyDesign(Guid)` を呼ぶと、Glamourer はデザイン内の設定通り「Race は変更しない」ため、アクターの種族は自キャラの「ミコッテ（Race: 4）」のまま、性別「男性（Gender: 0）」とクラン「ハイランダー（Clan: 2）」のみが適用された。
+   - ミコッテ（Race 4）にハイランダー（Clan 2）はゲームエンジン上存在しないため、DirectX スケルトン初期化エラーとなり、自キャラのベースラインに戻っていた。
+2. **ネイティブメモリ未同期**:
+   - スポーン時に自キャラの完全クローンとして作成したあと、ネイティブ構造体の 26 バイトが自キャラ（ミコッテ女性）のまま残っていたため、ゲームエンジンの再描画フックがネイティブメモリからミコッテ女性を描画していた。
+3. **`test.mcdf` のデータ**:
+   - `test.mcdf` 内の `GlamourerData` を解凍したところ、データ自体が「ミコッテ女性（Race: 4, Clan: 7, Gender: 1）＝ Ruma Meow」であったため、Ruma の姿になるのは正常なデータ通りの挙動であった。
 
-## 3. 変更計画
+## 3. 変更計画 (v0.1.28)
 1. **`Services/GlamourerIpc.cs`**:
-   - `ApplyDesignToActor`: flags を `6UL` / `6U` に変更。
-   - `ApplyState`: flags を `6UL` / `6U` に変更。
-   - `ReapplyState`: flags を `6UL` / `6U` に変更。
+   - `ForceAllApply`: デザイン JObject の全 Customize スロット（Race, Gender, Clan, Face, etc.）および Equipment スロットの `Apply` を強制的に `true` に設定。
+   - `ExtractCustomizeBytes`: JObject の Customize からネイティブ用の 26 バイト `CustomizeData` を抽出。
+   - `ApplyDesignToActorEx`: JObject を解決し、`ForceAllApply` を施した上で 26 バイトを抽出し、`ApplyState`（flags=6UL）で完全適用。
 2. **`Managers/ActorManager.cs`**:
-   - `ApplyAppearanceDirect`: `Penumbra.SetCollectionForActor` 直後の重複 Redraw を削除（Glamourer 適用後の最終 Redraw に集約）。
-   - `ApplyCustomizePlusProfile`: `fallbackMcdfCPlusData` の先頭が `{` や `[` でない場合に Base64 デコードを行う防御処理を追加。
+   - Glamourer パスおよび MCDF パスで、抽出した 26 バイトの `CustomizeData` をネイティブ `chara->DrawData.CustomizeData` に直接書き込み、`CharacterSetup.CopyFromCharacter` を実行。
 3. **バージョン管理・リリース**:
    - `package.json`, `CharacterSpawn.csproj`, `CharacterSpawn.json`, `repo.json`, `CHANGELOG.md` を更新。
-   - GitHub にコミット・プッシュし、CI でバイナリを自動ビルド。
-   - `installedPlugins` の 0.1.27.0 および 0.1.26.0 に配置。
+   - GitHub にコミット・プッシュし、CI で自動ビルド。
+   - `installedPlugins` の 0.1.28.0, 0.1.27.0, 0.1.26.0 に配置。
