@@ -1,30 +1,36 @@
-# タスクリスト: 外見適用（Glamourer / Penumbra / MCDF）およびモデルスポーン（モンスター / NPC）の不具合修正
+# タスクリスト: 外見適用およびモデルスポーンの根本改修 (v0.1.12)
 
-## 完了したタスク
+## 概要
+Glamourer design、Penumbra Collection、MCDF、NPC、モンスターのスポーン時に発生していた外見未反映（自キャラ化）およびギズモのみ表示となる不具合を、A Quest Reborn (AQR) および HDM の完全解析に基づき根本解決する。
 
-- [x] **HDM および AQR リポジトリの構造調査・完全解析**
-  - [x] HDM (`Enceladeum/HDM`) から `SpawnService.cs` および `GuiseService.cs` を取得し完全解析
-  - [x] Two Index Spaces Trap（COM index と Global ObjectTable index の取り違えによる自キャラ化）の特定
-  - [x] Glamourer Identity の罠（The 0.8.44 Bug: NameId=0 かつ無効名による Glamourer の Invalid 判定）の特定
-  - [x] Draw-When-Ready（2フェーズ待機キュー: IsReadyToDraw -> EnableDraw -> DrawObject->IsVisible）の特定
-  - [x] モンスター・NPC のダブルコピー（素の SetupBNpc は不可視となりギズモのみになる問題）の特定
-- [x] **`Models/CharacterModels.cs` の改修**
-  - [x] `SpawnedActorData` に `GlobalIndex`（ushort）および `ComIndex`（ushort）を追加
-- [x] **`Managers/ActorManager.cs` の HDM & AQR アーキテクチャへの全面改修**
-  - [x] `ReadyJob` クラスと `readyJobs` リストの導入
-  - [x] ユニーク名生成 `NextPuppetName()` による Glamourer Identity スタンプの実装
-  - [x] `SpawnCharacter` での自キャラからのダブルコピー・初期化・グローバルインデックス解決
-  - [x] `UpdateFrame` での 2フェーズ（IsReadyToDraw -> EnableDraw -> DrawObject->IsVisible）ポーリング処理
-  - [x] `ApplyExternalAppearance` でのグローバルインデックス適用（Penumbra Collection, Glamourer flags=7, Monster ModelCharaId & Redraw, NPC Customize/Equip）
-  - [x] `DespawnCharacter` での `GetIndexByObject` による動的 COM インデックス解決とクリーンな破棄
-  - [x] `SetWeaponVisibility` のグローバルインデックス対応
-- [x] **`UI/CharacterLibraryTab.cs` の保存・表示・復元保証**
-  - [x] `SaveModalTemplate` での全ソースタイプ（Glamourer, MCDF, NPC, Monster）の完全保存と詳細ログ
-  - [x] `DrawModalGlamourerSection` での GUID 保存保証
-  - [x] `OpenEditCharacterModal` での Glamourer デザイン／GUID 復元
-  - [x] `DrawRightPane` の `Template Details` での Glamourer / MCDF / NPC / Monster 詳細表示強化
-- [x] **バージョン管理とリリース同期 (v0.1.11 / v0.1.11.0)**
-  - [x] `package.json` (`0.1.11`), `CharacterSpawn.json` (`0.1.11.0`), `CharacterSpawn.csproj` (`0.1.11.0`), `repo.json` (`0.1.11.0`) を更新
-  - [x] `CHANGELOG.md` に 0.1.11 の詳細内容を追記
-  - [x] `docs/appearance_and_model_spawn_fixes` のドキュメント（`task.md`, `implementation_plan.md`, `walkthrough.md`）を同期
-  - [x] `git add . && git commit && git push` の実行
+## タスク一覧
+
+- [x] **MCDF フォーマットの完全解析とバイナリパース実装 (AQR 準拠)**
+  - [x] 実ファイル (`test.mcdf`, `testruma.mcdf`) をバイナリ解析し、MCDF が ZIP ではなく独自バイナリ構造であることを解明
+  - [x] `"MCDF"` 4バイトヘッダ検出と UTF-8 JSON ペイロード (`GlamourerData`) の抽出ロジックを `Services/McdfParser.cs` に実装
+  - [x] MCDF 選択時およびスポーン時に Base64 外見文字列が Glamourer に正しく渡されるよう接続
+
+- [x] **Penumbra IPC タプル戻り値の不一致解消 (AQR 準拠)**
+  - [x] Dalamud ログの解析により `Penumbra.SetCollectionForObject.V5` が `ValueTuple<int, Guid>` を返しているのに `int` で購読し例外落ちしていた真因を特定
+  - [x] `Services/PenumbraIpc.cs` にタプル対応 subscriber およびフォールバックチェーンを実装
+
+- [x] **スポーン直後の即時外見適用による自キャラ露出ゼロ化**
+  - [x] 初期生成時に自キャラのダブルコピー後、`readyJobs` で可視化を待っていたため自キャラが画面に露出していた原因を特定
+  - [x] スポーン直後に直ちに `DisableDraw()` を呼び、描画有効化前に Penumbra Collection / Glamourer Design / MCDF / NPC 外見をアクターに直接適用するアーキテクチャに改修
+  - [x] `IsReadyToDraw()` を確認してから `EnableDraw()` を呼び出すことで、最初の1フレーム目から目的の外見で描画されるよう修正
+
+- [x] **HDM 準拠のモンスター・非人型 NPC スポーン修正 (ギズモのみ解消)**
+  - [x] HDM (`Enceladeum/HDM`) の IL 逆アセンブル解析を実施
+  - [x] モンスター（`ModelCharaId > 0`）に対して Penumbra Redraw を呼ぶと DrawObject が無効化・破棄されて「ギズモのみ」になる真因を特定
+  - [x] モンスターおよび非人型 NPC では Penumbra Redraw を呼ばず、ゲームエンジンのネイティブ描画サイクル (`DisableDraw` -> `IsReadyToDraw()` -> `EnableDraw()`) で安全に描画を完了させるよう改修
+
+- [x] **UI のブラッシュアップ**
+  - [x] 左ペインの境界線をフラット化し、キャラ選択時の横線アーティファクトを解消
+  - [x] 不要な開発用補足説明文の完全削除を確認
+
+- [x] **バージョン更新・ドキュメント同期・リリース**
+  - [x] バージョンを `0.1.12` / `0.1.12.0` に更新 (`package.json`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json`)
+  - [x] `CHANGELOG.md` に詳細を追記
+  - [x] `docs/appearance_and_model_spawn_fixes` のドキュメント更新
+  - [x] Git コミット & プッシュ
+  - [x] ローカル環境（XIVLauncher installedPlugins）への最新成果物配置

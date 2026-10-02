@@ -2,7 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.11] - 2026-10-02
+## [0.1.12] - 2026-10-02
+### Fixed
+- **Binary MCDF Format Parsing (AQR MCDF-Loader Architecture)**:
+  - Resolved the issue where selecting an MCDF file appeared not to load and spawned the local player's appearance. Discovered that modern MCDF files are proprietary binary containers (`"MCDF"` 4-byte header + UTF-8 JSON payload) rather than standard ZIP archives.
+  - Rewrote `Services/McdfParser.cs` with binary header scanning and direct extraction of the Base64 `GlamourerData` string, enabling instant parsing and full appearance restoration from `.mcdf` files.
+- **Penumbra IPC Return Signature Tuple Resolution (AQR Penumbra Architecture)**:
+  - Fixed `Penumbra.SetCollectionForObject.V5` failure where Penumbra returns `(PenumbraApiEc, Guid)` (`ValueTuple<int, Guid>`) while legacy code expected `int`, causing CallGate runtime conversion exceptions that prevented Penumbra collections from applying.
+  - Added robust tuple-based subscriber fallbacks in `Services/PenumbraIpc.cs` supporting both V5 and legacy signatures.
+- **Pre-Draw Direct Appearance Application (Root Cause of "Temporary Local Player" Eliminated)**:
+  - Completely redesigned `ActorManager.SpawnCharacter` and `ApplyAppearanceDirect`: actors now immediately call `DisableDraw()` upon creation and have their target appearance (Glamourer design, Penumbra collection, MCDF state, or Monster `ModelCharaId`) applied *before* the first frame renders, rather than waiting for `DrawObject->IsVisible`.
+  - Eliminates the brief appearance of the local player before transitioning to the desired design.
+- **HDM-Compliant Monster & Non-Humanoid Rendering (Fix for "Gizmo Only")**:
+  - Identified that triggering Penumbra `RedrawObject` on non-humanoid monsters (`ModelCharaId > 0`, Letter Moogle, Ruin Runner, Antelope Doe, Gnat) caused Penumbra to invalidate and strip non-humanoid `DrawObject`s, leaving only a gizmo.
+  - Removed Penumbra redraw calls from monsters in accordance with HDM's `GuiseService`, using native engine `DisableDraw` -> `IsReadyToDraw()` -> `EnableDraw()` cycle, ensuring 100% stable 3D monster and non-humanoid NPC rendering.
+- **UI Flat Styling & Border Glitch Fix**:
+  - Removed borders on the left tree scroll child window in `UI/CharacterLibraryTab.cs` to prevent visual line artifacts when selecting spawned characters.
 ### Fixed
 - **Two Index Spaces Trap Resolution (Glamourer/Penumbra Player Clone Fix)**:
   - Resolved critical architectural flaw where internal `ClientObjectManager` slots (COM# 0, 1...) were passed to IPC endpoints instead of global `IObjectTable` indices (~200-244 reserved range). Passing COM# 0 caused Glamourer and Penumbra to target the local player character (index 0).

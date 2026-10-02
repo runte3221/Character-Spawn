@@ -107,7 +107,7 @@ public class CharacterLibraryTab
     private void DrawLeftPane()
     {
         var contentHeight = ImGui.GetContentRegionAvail().Y - (ImGui.GetFrameHeightWithSpacing() + 8f);
-        if (ImGui.BeginChild("LibraryTreeScroll", new Vector2(-1, contentHeight), true))
+        if (ImGui.BeginChild("LibraryTreeScroll", new Vector2(-1, contentHeight), false))
         {
             var allFolders = new HashSet<string>(configuration.Folders);
             foreach (var t in configuration.Templates)
