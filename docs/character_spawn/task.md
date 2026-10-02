@@ -30,4 +30,10 @@
     - [x] ActorManager のアクター生成を `ClientObjectManager` (FFXIVClientStructs / Brio標準) に刷新 <!-- id: 31 -->
     - [x] 削除処理を `ClientObjectManager.DeleteObjectByIndex` に対応 <!-- id: 32 -->
     - [x] バージョン 0.1.6 への更新・ドキュメント同期・Git Push <!-- id: 33 -->
+- [x] v0.1.7 不具合修正（ギズモのみ表示されキャラモデルが表示されない現象の解消） <!-- id: 34 -->
+    - [x] `UpdateFrame()` での継続的描画監視（IsReadyToDraw待機・DrawObject不可視ビットクリア） <!-- id: 35 -->
+    - [x] `Penumbra.RedrawObject` および `Glamourer.ReapplyState` IPC の追加とスポーン時トリガー <!-- id: 36 -->
+    - [x] テンプレート保存時のプレイヤー外見デザイン自動補完 <!-- id: 37 -->
+    - [x] バージョン 0.1.7 への更新・ドキュメント同期・Git Push <!-- id: 38 -->
+
 

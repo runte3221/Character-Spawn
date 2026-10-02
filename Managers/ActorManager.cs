@@ -247,11 +247,39 @@ public unsafe class ActorManager : IDisposable
     }
 
     /// <summary>
-    /// 毎フレームの更新処理（視線追従等）
+    /// 毎フレームの更新処理（視線追従および描画状態の継続監視・保証）
     /// </summary>
     public void UpdateFrame()
     {
         headTrackingManager.UpdateTracking(activeActors);
+
+        // 各アクターの描画状態を監視・強制（Brio / AQR方式）
+        foreach (var actor in activeActors)
+        {
+            if (actor.NativeAddress == 0) continue;
+            var chara = (Character*)actor.NativeAddress;
+
+            // 1. DrawObject が存在する場合、隠蔽フラグ (0x10) をクリア
+            if (chara->GameObject.DrawObject != null)
+            {
+                if ((chara->GameObject.DrawObject->Flags & 0x10) != 0)
+                {
+                    chara->GameObject.DrawObject->Flags &= unchecked((byte)~0x10);
+                    chara->GameObject.EnableDraw();
+                }
+            }
+            else
+            {
+                // DrawObject が生成されるまで EnableDraw を試行
+                chara->GameObject.EnableDraw();
+            }
+
+            // 2. 準備ができていれば描画を有効化
+            if (chara->GameObject.IsReadyToDraw())
+            {
+                chara->GameObject.EnableDraw();
+            }
+        }
     }
 
     private void ApplyExternalAppearance(SpawnedActorData spawned, CharacterTemplate template)
@@ -262,15 +290,38 @@ public unsafe class ActorManager : IDisposable
         var actorIndex = chara->ObjectIndex;
 
         // Glamourerの適用
-        if (!string.IsNullOrWhiteSpace(template.GlamourerDesignString))
+        if (glamourerIpc.IsAvailable)
         {
-            glamourerIpc.ApplyDesignToActor(template.GlamourerDesignString, actorIndex);
+            if (!string.IsNullOrWhiteSpace(template.GlamourerDesignString))
+            {
+                glamourerIpc.ApplyDesignToActor(template.GlamourerDesignString, actorIndex);
+            }
+            else if (template.SourceType == CharacterSourceType.PlayerClone)
+            {
+                var playerDesign = glamourerIpc.GetCustomization(0);
+                if (!string.IsNullOrWhiteSpace(playerDesign))
+                {
+                    glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex);
+                }
+                else
+                {
+                    glamourerIpc.ReapplyState(actorIndex);
+                }
+            }
+            else
+            {
+                glamourerIpc.ReapplyState(actorIndex);
+            }
         }
 
-        // Penumbraコレクションの適用
-        if (!string.IsNullOrWhiteSpace(template.PenumbraCollectionName))
+        // Penumbraコレクションの適用と RedrawObject のトリガー
+        if (penumbraIpc.IsAvailable)
         {
-            penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
+            if (!string.IsNullOrWhiteSpace(template.PenumbraCollectionName))
+            {
+                penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
+            }
+            penumbraIpc.Redraw(actorIndex);
         }
     }
 

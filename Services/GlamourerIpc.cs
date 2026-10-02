@@ -11,6 +11,7 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
     private readonly ICallGateSubscriber<int, (int, int)>? getApiVersions;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getDesignList;
+    private readonly ICallGateSubscriber<int, uint, uint, object?>? reapplyState;
 
     public bool IsAvailable { get; private set; }
 
@@ -24,6 +25,7 @@ public class GlamourerIpc
             applyByString = pi.GetIpcSubscriber<string, int, object?>("Glamourer.ApplyByString");
             getCustomizationFromActor = pi.GetIpcSubscriber<int, string?>("Glamourer.GetCustomizationFromActor");
             getDesignList = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList");
+            reapplyState = pi.GetIpcSubscriber<int, uint, uint, object?>("Glamourer.ReapplyState");
 
             CheckAvailability();
         }
@@ -92,6 +94,22 @@ public class GlamourerIpc
         catch
         {
             return new();
+        }
+    }
+
+    public bool ReapplyState(int actorIndex)
+    {
+        if (!IsAvailable || reapplyState == null) return false;
+
+        try
+        {
+            reapplyState.InvokeAction(actorIndex, 0, 0);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Failed to reapply Glamourer state for actor {actorIndex}: {ex.Message}");
+            return false;
         }
     }
 }

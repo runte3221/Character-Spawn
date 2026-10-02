@@ -10,6 +10,7 @@ public class PenumbraIpc
     private readonly ICallGateSubscriber<(int, int)>? getApiVersions;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getCollections;
     private readonly ICallGateSubscriber<string, int, int>? setCollectionForObject;
+    private readonly ICallGateSubscriber<int, int, object?>? redrawObject;
 
     public bool IsAvailable { get; private set; }
 
@@ -22,6 +23,7 @@ public class PenumbraIpc
             getApiVersions = pi.GetIpcSubscriber<(int, int)>("Penumbra.ApiVersion");
             getCollections = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Penumbra.GetCollections");
             setCollectionForObject = pi.GetIpcSubscriber<string, int, int>("Penumbra.SetCollectionForObject");
+            redrawObject = pi.GetIpcSubscriber<int, int, object?>("Penumbra.RedrawObject");
 
             CheckAvailability();
         }
@@ -74,6 +76,22 @@ public class PenumbraIpc
         catch (Exception ex)
         {
             log.Error($"Failed to set Penumbra collection: {ex.Message}");
+            return false;
+        }
+    }
+
+    public bool Redraw(int actorIndex)
+    {
+        if (!IsAvailable || redrawObject == null) return false;
+
+        try
+        {
+            redrawObject.InvokeAction(actorIndex, 0);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Failed to trigger Penumbra Redraw for actor {actorIndex}: {ex.Message}");
             return false;
         }
     }

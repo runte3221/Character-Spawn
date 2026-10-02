@@ -124,3 +124,15 @@ Character-Spawn/
    - BrioおよびA Quest Rebornで実証されている標準構造体 `ClientObjectManager.Instance()->CreateBattleCharacter` / `DeleteObjectByIndex` を採用。
    - キャラクター生成後、プレイヤー外見のコピー、モンスター/NPCモデルIDの適用、`GameObject.EnableDraw()` による確実な描画有効化を行うアーキテクチャに刷新しました。
 
+---
+
+## [v0.1.7] 不具合修正と改善内容（3Dモデルが表示されない問題の解決）
+1. **継続的な描画状態の監視とモデルの強制可視化**:
+   - ゲームエンジンの非同期リソースロードに対応するため、`UpdateFrame()`（毎フレーム処理）において各アクターの `IsReadyToDraw()` を継続監視し、準備完了時に `EnableDraw()` を確実にトリガーする処理を追加しました。
+   - アクターの `DrawObject->Flags` に不可視ビット（0x10）が立っていた場合に自動クリアする処理を実装しました。
+2. **Penumbra & Glamourer IPC 連携（モデル再構築）**:
+   - スポーン時に `Penumbra.RedrawObject` および `Glamourer.ReapplyState` を呼び出し、Penumbra / Glamourer 導入環境下で即座にモデル構築・テクスチャ展開が行われるようにしました。
+3. **キャラクリ時のプレイヤーデザイン自動保持**:
+   - テンプレート保存時、自キャラクローンまたはGlamourerデザインが空の場合、現在のローカルプレイヤーのGlamourerデザインを自動取得して保持するように改善しました。
+
+

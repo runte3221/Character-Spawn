@@ -319,11 +319,20 @@ public class CharacterLibraryTab
 
     private void SaveNewTemplate()
     {
+        var design = glamourerDesignInput;
+        if (string.IsNullOrWhiteSpace(design) && (selectedSourceType == CharacterSourceType.PlayerClone || selectedSourceType == CharacterSourceType.Glamourer))
+        {
+            if (glamourerIpc.IsAvailable)
+            {
+                design = glamourerIpc.GetCustomization(0) ?? string.Empty;
+            }
+        }
+
         var template = new CharacterTemplate
         {
             Name = string.IsNullOrWhiteSpace(newName) ? "Character" : newName,
             SourceType = selectedSourceType,
-            GlamourerDesignString = glamourerDesignInput,
+            GlamourerDesignString = design,
             PenumbraCollectionName = selectedPenumbraCollection,
             McdfFilePath = mcdfFilePath
         };
