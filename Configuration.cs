@@ -12,6 +12,9 @@ public class Configuration : IPluginConfiguration
     // Library templates
     public List<CharacterTemplate> Templates { get; set; } = new();
 
+    // Folders for template organization
+    public List<string> Folders { get; set; } = new();
+
     // Stored scene presets
     public List<ScenePreset> Scenes { get; set; } = new();
 

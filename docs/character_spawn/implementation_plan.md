@@ -1,118 +1,55 @@
-# 実装計画: Character Spawn プラグイン
+# 実装計画書: Character Library UI刷新 & 外見・検索・ファイル選択不具合修正
 
-任意のキャラクター（NPC / MOB / カスタムキャラ）をマップ上にスポーン・配置し、エモートや表情、3Dギズモ操作、Stagehandライクなプリセット管理を提供するDalamudプラグイン「Character Spawn」を新規開発します。
-
----
-
-## ユーザー要件の整理
-
-1. **キャラクターの指定方法**:
-   - **Glamourer / Penumbra**: Glamourerのデザイン指定またはデザイン文字列、Penumbraコレクションの適用
-   - **モンスター・モデル**: `BNpcBase` / `BNpcName`（モンスター・敵キャラ）、`ENpcBase` / `ENpcResident`（一般NPC）の検索と指定
-   - **MCDFファイル**: Mare Synchronos形式（`.mcdf`）のインポート
-   - **自キャラ / ターゲットコピー**: 現在のターゲットや自キャラの外見・装備を取得
-2. **位置調整・操作方法**:
-   - **3Dギズモ**: 画面上のXYZ軸移動矢印およびYaw回転リングによるマウスドラッグ操作
-   - **UIパネル**: スライダー入力、微調整ボタン（+0.1, -0.1等）、自キャラ位置呼び出し、正面配置、床スナップ
-3. **エモート・アニメーション・表情設定**:
-   - ゲーム内の通常エモート、NPC専用待機モーション、戦闘ポーズなど `ActionTimeline` 全データから検索・選択
-   - **ループ再生**: 1回終了型エモートも待機モーション（BaseTimeline）として途切れずリピート
-   - **表情（Facial Expression）**: エモートとは独立して表情を指定・固定
-   - **視線追従（Head Tracking）**: 自キャラの移動に首と視線を自動追従させる
-4. **プリセットとShow / Hide（Stagehandライク）**:
-   - **二段階ワークフロー**:
-     - Step 1: キャラクター外見を作成してライブラリに保存（Template）
-     - Step 2: 保存したキャラを選んでマップにスポーンし、配置・アニメーション・表情・演出を設定してシーン（Scene）として登録
-   - **シーン一括管理**: 複数キャラの配置・演出をシーンとして一括管理
-   - **ゾーン連動**: マップ（TerritoryType）に紐づけ、エリア移動時の自動デスポーンと「マップ入場時の自動スポーン（Auto-Spawn）」
-5. **ネームプレート・ターゲット・当たり判定**:
-   - ネームプレート: 表示 / 非表示、自由な名前設定
-   - ターゲット可否: ターゲット可能 / 不可のトグル切り替え
-   - 当たり判定: 不要（常時すり抜け）
-6. **プロジェクト形態**:
-   - 開発名: `Character Spawn`
-   - リポジトリ: `https://github.com/runte3221/Character-Spawn.git`
-   - フォルダ: `C:\Users\RYO\Desktop\Character-Spawn`
+ユーザーからの要望に基づき、Character Libraryのレイアウトをフォルダ階層構造（ツリービュー）に刷新し、判明している各不具合（Glamourer/Penumbra選択UI、Monster/NPC検索上限、NPC外見の反映、MCDFファイル選択ダイアログ）を根本解決します。
 
 ---
 
-## アーキテクチャ設計
+## 1. ユーザー要望と改修方針
 
-```mermaid
-flowchart TD
-    subgraph Core["CharacterSpawn Core"]
-        Plugin["Plugin.cs<br/>(Framework, CommandManager, ClientState)"]
-        Config["Configuration.cs<br/>(Library & Presets)"]
-        ActorMgr["ActorManager.cs<br/>(ClientStructs Actor Lifecycle)"]
-        TimelineMgr["TimelineManager.cs<br/>(ActionTimeline, Loop, Face)"]
-        HeadTrack["HeadTrackingManager.cs<br/>(LookAt Local Player)"]
-        NamePlate["NamePlateController.cs<br/>(INamePlateGui Hook/Flags)"]
-    end
+### (1) Character Library レイアウトの刷新（提供画像準拠）
+- **左ペイン（フォルダツリー）**:
+  - フォルダ・キャラクターの階層ツリービュー（開閉可能、フォルダ・キャラクターアイコン表示）。
+  - 下部ボタン：`[New Chara]`, `[New Folder]`, `[Delete]`。
+- **右ペイン（選択キャラクター情報）**:
+  - `Chara Name` 表示・インライン編集。
+  - アクションボタン：`[Spawn]`（マップ召喚）、`[edit]`（編集モーダル呼び出し）、`[delete]`（削除）。
+- **「New Chara」ポップアップ・モーダル**:
+  - `New Chara` ボタン押下で専用の作成ウィンドウ（またはモーダル）を表示。
+  - 外見ソース選択（Glamourer & Penumbra / Monster / NPC / MCDF / Player Clone）。
+  - `[Save to Chara]` でツリー内の現在選択中フォルダ（またはルート）に保存。
 
-    subgraph External["External & Game Integration"]
-        LuminaData["GameDataService.cs<br/>(Lumina Sheets: ENpc, BNpc, ActionTimeline)"]
-        Glamourer["GlamourerIpc.cs<br/>(Glamourer.Api)"]
-        Penumbra["PenumbraIpc.cs<br/>(Penumbra.Api)"]
-        Mcdf["McdfParser.cs<br/>(Mare Chara Data File Extractor)"]
-    end
+### (2) Glamourer & Penumbra 選択方法の改善（AQR準拠）
+- 文字列の手動入力ではなく、Glamourer IPCから取得したデザイン一覧（`Dictionary<Guid, string>`）およびPenumbra IPCから取得したコレクション一覧をドロップダウン（検索フィルタ付きコンボ）で選択可能にする。
 
-    subgraph UI["User Interface"]
-        MainWindow["MainWindow.cs<br/>(ImGui Window)"]
-        LibraryTab["CharacterLibraryTab.cs<br/>(Step 1: Character Creation)"]
-        StageTab["StageSceneTab.cs<br/>(Step 2: Placer, Transform, Scene Presets)"]
-        Gizmo["GizmoRenderer.cs<br/>(3D Screen Projection Manipulator)"]
-    end
+### (3) Monster / NPC 検索上限の拡大
+- 現在10件に制限されていた `maxResults` を撤廃・大幅拡大（100件以上＋スクロールリスト化）。
 
-    Plugin --> ActorMgr
-    Plugin --> Config
-    Plugin --> MainWindow
-    MainWindow --> LibraryTab
-    MainWindow --> StageTab
-    MainWindow --> Gizmo
-    StageTab --> ActorMgr
-    StageTab --> TimelineMgr
-    StageTab --> HeadTrack
-    StageTab --> NamePlate
-    LibraryTab --> Glamourer
-    LibraryTab --> Penumbra
-    LibraryTab --> Mcdf
-    LibraryTab --> LuminaData
-    ActorMgr --> External
-```
+### (4) NPC (ENpc) 外見が自キャラになってしまう不具合の修正
+- `ENpcBase` から `ModelCharaId`、`CustomizeData`（人型NPCの髪型・顔・肌色等）、装備モデルIDを取得し、アクター生成時に適用。
+- モーグリなどの非人型NPCだけでなく、ミューヌなどの人型NPCも完全に本来の姿でスポーンするように修正。
+
+### (5) MCDF ファイル選択ダイアログ（エクスプローラー連携）
+- Win32 API (`comdlg32.dll` の `GetOpenFileNameW`) によるファイル選択ダイアログを実装し、「Browse...」ボタンから `.mcdf` ファイルをエクスプローラーで選択できるようにする。
 
 ---
 
-## 実装ステップ
+## 2. 変更対象ファイル
 
-### Phase 1: プロジェクト基盤の構築
-- `package.json`, `CHANGELOG.md`, `.gitignore`, `CharacterSpawn.csproj`, `CharacterSpawn.json`
-- GitHub Actionsワークフロー (`build.yml`)
-
-### Phase 2: データモデルと設定の定義
-- `CharacterTemplate`: 外見ソース（Glamourer, Monster, MCDF, PlayerClone）、外観データ
-- `SpawnedActorData`: 位置・回転、アニメーションID、ループ有無、表情ID、視線追従有無、ネームプレート設定、ターゲット設定
-- `ScenePreset`: シーンID、名前、マップID（TerritoryType）、AutoSpawn設定、アクターリスト
-- `Configuration`: テンプレート一覧、シーン一覧、一般設定
-
-### Phase 3: ゲームデータ検索およびIPC連携
-- `GameDataService`: Luminaを用いた `ENpcResident`, `ENpcBase`, `BNpcName`, `BNpcBase`, `ActionTimeline` の検索キャッシュ
-- `GlamourerIpc` & `PenumbraIpc`: 外見の適用・デザイン読み込み
-- `McdfParser`: MCDFアーカイブの読み込み
-
-### Phase 4: アクター生成＆演出制御エンジン
-- `ActorManager`: FFXIV ClientStructs (`CharacterManager`) を用いたローカルキャラクター生成・削除・ゾーン遷移ハンドリング
-- `TimelineManager`: アニメーション適用、BaseTimeline差し替えによる永久ループ、表情（FaceExpression）制御
-- `HeadTrackingManager`: プレイヤー位置に応じたリアルタイム視線追従（IK/LookAt）
-- `NamePlateController`: ネームプレートの表示名上書き・非表示化
-- ターゲット不可フラグ制御
-
-### Phase 5: 3Dギズモ & UI実装
-- `GizmoRenderer`: 画面投影による3軸（XYZ）移動・Yaw回転ギズモの描画とマウスドラッグ処理
-- `CharacterLibraryTab`: ステップ1（外見作成・保存UI）
-- `StageSceneTab`: ステップ2（マップ配置、Transform操作、演出設定、シーンプリセット管理）
-
-### Phase 6: 検証・ドキュメント作成・GitHubプッシュ
-- `walkthrough.md` の作成
-- `package.json` のバージョン確認
-- `CHANGELOG.md` 追記
-- コミット＆プッシュ（`git add . && git commit -m "..." && git push`）
+1. **`Models/CharacterModels.cs`**:
+   - `CharacterTemplate` に `FolderPath`、`NpcEquipmentIds` などの外見保持フィールドを追加。
+2. **`Configuration.cs`**:
+   - `Folders`（フォルダパスの永続化リスト）を追加。
+3. **`Services/GameDataService.cs`**:
+   - `SearchNpcs`, `SearchMonsters` の上限緩和。
+   - `ENpcBase` の詳細データ（Customize, Equipment）抽出メソッドを追加。
+4. **`Services/FilePicker.cs` (新規)**:
+   - Win32 ネイティブファイルオープンダイアログの実装。
+5. **`Managers/ActorManager.cs`**:
+   - NPC外見（`ENpcBase` 由来のモデル・カスタマイズ・装備）の正確なアクター適用処理を追加。
+6. **`UI/CharacterLibraryTab.cs`**:
+   - フォルダツリー ＋ 詳細パネル ＋ 新規作成モーダルの新UIに全面刷新。
+   - AQR準拠のGlamourerデザイン・Penumbraコレクション選択UIを実装。
+7. **バージョン管理・メタデータ**:
+   - `package.json`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json` (v0.1.8)
+   - `CHANGELOG.md`
+   - `docs/character_spawn/task.md`, `walkthrough.md`

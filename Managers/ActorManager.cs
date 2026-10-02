@@ -98,10 +98,44 @@ public unsafe class ActorManager : IDisposable
                 nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
             }
 
-            // 2. モンスター／NPCモデルIDの適用
+            // 2. モンスター／NPCモデルおよび外見データの適用
             if (template.SourceType == CharacterSourceType.Monster && template.ModelCharaId > 0)
             {
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
+                nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
+            }
+            else if (template.SourceType == CharacterSourceType.Npc)
+            {
+                if (template.ModelCharaId > 0)
+                {
+                    // 非人型NPC（モーグリ等の固有モデル）
+                    nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
+                    nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
+                }
+                else
+                {
+                    // 人型NPC（ミューヌ等のHumanモデル）
+                    // カスタマイズデータ（26バイト）を適用
+                    if (template.CustomizeData != null && template.CustomizeData.Length >= 26)
+                    {
+                        fixed (byte* pCust = template.CustomizeData)
+                        {
+                            Buffer.MemoryCopy(pCust, &nativeChara->DrawData.CustomizeData, 26, 26);
+                        }
+                    }
+
+                    // 装備モデルIDを適用
+                    if (template.NpcEquipmentModelIds != null && template.NpcEquipmentModelIds.Length > 0)
+                    {
+                        var equipSpan = nativeChara->DrawData.EquipmentModelIds;
+                        for (int i = 0; i < template.NpcEquipmentModelIds.Length && i < equipSpan.Length; i++)
+                        {
+                            equipSpan[i] = template.NpcEquipmentModelIds[i];
+                        }
+                    }
+
+                    nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
+                }
             }
 
             // 3. 位置・回転を設定

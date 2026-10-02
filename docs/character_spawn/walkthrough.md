@@ -1,138 +1,75 @@
-# 開発完了ウォークスルー: Character Spawn プラグイン
+# Character Spawn v0.1.8 改修ウォークスルー
 
-任意のキャラクター（NPC / MOB / カスタムキャラ）をマップ上にスポーン・配置し、エモートや表情、3Dギズモ操作、Stagehandライクなプリセット管理を提供するDalamudプラグイン「Character Spawn」の初期開発が完了しました。
+## 概要
 
----
-
-## 主な実装機能の概要
-
-### 1. 二段階の直感的なワークフロー
-- **Step 1: Character Library（キャラクリ・ライブラリ）**
-  - **外見ソース選択（AQR準拠）**:
-    - **Glamourer & Penumbra**: Glamourerのデザイン文字列やPenumbraコレクションの割り当て
-    - **Monster / Mob**: `BNpcName` / `BNpcBase` からゲーム内モンスターを検索・指定
-    - **NPC (ENpc)**: `ENpcResident` / `ENpcBase` から既存NPCを検索・指定
-    - **MCDFファイル**: Mare Synchronos形式の `.mcdf` アーカイブからデザインを自動抽出・インポート
-    - **自キャラ / ターゲットコピー**: 現在のターゲットや自キャラの外観をワンクリックで複製
-  - テンプレートに名前をつけて保存・管理。
-- **Step 2: Stage & Scene（マップ配置・演出）**
-  - ライブラリからキャラクターを選んで「Spawn onto Map」でローカル召喚。
-  - 複数のスポーン中キャラクターをリスト管理し、選択したキャラクターに対して演出・設定を適用。
-
-### 2. 位置・回転操作（3Dギズモ & UI操作のハイブリッド）
-- **3Dギズモ（スクリーン投影型）**:
-  - キャラクターの足元に赤(X)・緑(Y)・青(Z)の移動矢印および黄色(Yaw)の回転リングを直接描画。
-  - マウスドラッグで画面上から直感的に移動・回転操作が可能。
-- **UIパネル操作**:
-  - X, Y, Z, Yaw のドラッグスライダー ＋ `+0.1` / `-0.1` などの微調整トグルボタン。
-  - 「自キャラの位置にスナップ」「自キャラの正面1.5mに配置」のワンクリックボタン。
-
-### 3. アニメーション・表情・演出制御
-- **ActionTimeline 全モーション検索**:
-  - 通常エモート、NPC専用待機ポーズ、戦闘待機などすべての `ActionTimeline` から検索可能。
-- **シームレスループ再生**:
-  - エモート等のワンショットモーションも待機モーション（`BaseTimeline`）として保持し、途切れずリピート再生。
-- **独立した表情（Facial Expression）設定**:
-  - モーションとは独立して、笑顔や目閉じなどの表情（`fac_...`）を指定・維持。
-- **自キャラ視線追従（LookAt / Head Tracking）**:
-  - トグルをONにすると、プレイヤーの移動に合わせてキャラクターの頭部・視線が常に自キャラを追従。
-
-### 4. ネームプレート・ターゲット制御
-- **ネームプレート**:
-  - 表示 / 非表示の切り替え。
-  - 自由な表示名を設定可能（空欄時はデフォルト名）。
-- **ターゲット可否**:
-  - クリックしてターゲットサークルを出すか、背景としてクリック不可にするかをトグルで切り替え。
-- **当たり判定**:
-  - クライアントサイド生成のため、プレイヤーは自由にすり抜け可能（非干渉）。
-
-### 5. シーンプリセット管理（Stagehandライク）
-- **シーン保存**:
-  - 現在のマップに配置された全キャラクター（位置・向き・モーション・表情・ネーム設定）を1つの「シーン」として保存。
-- **Show / Hide**:
-  - シーン一覧からワンクリックで全キャラの一括スポーン（Show） / デスポーン（Hide）。
-- **ゾーン（TerritoryType）連動**:
-  - エリア移動時は安全に全アクターを自動デスポーン。
-  - **「Auto-Spawn on Zone」**にチェックを入れたシーンは、そのマップに入場した際に自動で復元・スポーン。
+本アップデート (v0.1.8) では、ユーザーから提供されたレイアウト設計（フォルダ階層ツリー構造＋右側詳細パネル＋作成/編集モーダル）に沿って **Character Library UI を全面刷新** し、併せて報告されていた **4 件の主要な不具合・改善要望** をすべて解消しました。
 
 ---
 
-## ファイル構成とコード構造
+## 修正・実装内容の詳細
 
-```
-Character-Spawn/
-├── .github/
-│   └── workflows/
-│       └── build.yml               # CI/CD (GitHub Actions自動ビルド＆リリース)
-├── docs/
-│   └── character_spawn/
-│       ├── task.md                 # タスクリスト
-│       ├── implementation_plan.md  # 実装計画書
-│       └── walkthrough.md          # 完了ウォークスルー (本ファイル)
-├── Managers/
-│   ├── ActorManager.cs             # ローカルアクター生成・削除・Transform管理
-│   ├── HeadTrackingManager.cs      # 自キャラへの視線・頭部IK追従
-│   ├── NamePlateController.cs      # ネームプレートの表示名上書き・非表示化
-│   └── TimelineManager.cs          # ActionTimeline再生、シームレスループ、表情設定
-├── Models/
-│   └── CharacterModels.cs          # テンプレート、配置、シーン、Transformデータ構造
-├── Services/
-│   ├── GameDataService.cs          # Luminaデータ検索 (ENpc, BNpc, ActionTimeline, 表情)
-│   ├── GlamourerIpc.cs             # Glamourer IPC連携
-│   ├── PenumbraIpc.cs              # Penumbra IPC連携
-│   └── McdfParser.cs               # MCDFアーカイブ抽出パーサー
-├── UI/
-│   ├── CharacterLibraryTab.cs      # タブ1: キャラクター作成・ライブラリ
-│   ├── StageSceneTab.cs            # タブ2: マップ配置、Transform、演出、シーンプリセット
-│   ├── GizmoRenderer.cs            # 3Dスクリーン投影マニピュレータ
-│   └── MainWindow.cs               # プラグインメインウィンドウ
-├── .gitignore
-├── CHANGELOG.md
-├── CharacterSpawn.csproj           # .NET 10 / Dalamud API 15プロジェクトファイル
-├── CharacterSpawn.json             # Dalamudプラグインマニフェスト
-├── Configuration.cs                # プラグイン設定・永続化
-├── package.json                    # バージョン管理メタデータ
-├── Plugin.cs                       # プラグインエントリーポイント・コマンド・イベント
-└── README.md
-```
+### 1. Character Library レイアウトの刷新（提供画像準拠）
+- **左ペイン（フォルダ・キャラ階層ツリー）**:
+  - ルート直下のキャラクターおよび作成したフォルダ（`📁 FolderName`）をツリービュー（`TreeNodeEx`）で階層表示。
+  - フォルダの開閉展開および配下キャラクターの選択（ハイライト表示）に対応。
+  - 下部に `[New Chara]`、`[New Folder]`、`[Delete]` ボタンを均等配置。
+- **右ペイン（選択キャラクター詳細パネル）**:
+  - 選択中のキャラクター名をインライン表示・即時編集（テキストボックス入力で即座に設定ファイルへ反映）。
+  - `[Spawn]`、`[edit]`、`[delete]` の 3 アクションボタンを配置。
+  - 外見タイプ（Monster/NPC/Glamourer等）、フォルダ、モデルID、装備保持状況などの詳細サマリーを表示。
+- **New Chara / Edit Chara モーダルウィンドウ**:
+  - `[New Chara]` または `[edit]` をクリックした際に開く専用ポップアップダイアログ。
+  - キャラ名入力、所属フォルダ選択コンボボックス、外見ソース選択、および各ソース固有の詳細設定を集約。
+  - 下部に `[Save to Chara]` と `[Cancel]` ボタンを設置。
 
----
+### 2. Glamourer & Penumbra 選択の改善（AQRスタイル）
+- **Glamourer Design ドロップダウン**:
+  - `Glamourer.GetDesignList` IPC から取得した保存済みデザイン一覧を検索テキストフィルター付きのコンボボックスで選択可能に。
+  - デザイン名を選択すると自動でキャラ名にも反映され、Guid が設定される。直接の文字列入力にも対応。
+- **Penumbra Collection ドロップダウン**:
+  - `Penumbra.GetCollections` IPC から取得したコレクション一覧を検索テキストフィルター付きコンボボックスで選択可能に。
 
-## ランチャー（/xlplugins）への登録手順
+### 3. Monster / Mob 検索件数の上限緩和
+- これまで 10 件固定で絞り込まれていた制限を撤廃し、最大 500 件まで検索結果を取得可能に拡張。
+- 縦 160px のスムーズなスクロールリストボックスで多数のモンスターを快適に閲覧・選択可能。
 
-1. ゲーム内で `/xlplugins` を開く
-2. 左下の **「設定（Settings）」** （歯車アイコン）をクリック
-3. **「実験的（Experimental）」** タブを開く
-4. **「カスタムプラグインリポジトリ（Custom Plugin Repositories）」** の入力欄に以下のURLを入力：
-   ```
-   https://raw.githubusercontent.com/runte3221/Character-Spawn/main/repo.json
-   ```
-5. 右側の **「＋」**（追加）ボタンを押し、下部の **「保存して閉じる（Save and Close）」** をクリック
-6. プラグイン一覧の検索欄で **`Character Spawn`** と検索すると表示され、ワンクリックでインストール可能です。
+### 4. NPC (ENpc) 検索上限緩和 & スポーン時の外見不具合解消
+- **検索件数上限の拡大**: 最大 500 件まで検索結果を取得可能に。
+- **自キャラの姿でスポーンしてしまう問題の根本修正**:
+  - **非人型NPC（レターモーグリ等）**: `ModelCharaId > 0` の場合、`nativeChara->ModelContainer.ModelCharaId` にモデルIDを設定し、`CopyFromCharacter(nativeChara, CharacterCopyFlags.None)` で Native モデルを更新。
+  - **人型NPC（ミューヌ等）**: `ENpcBase` から抽出した 26 バイトの `CustomizeData`（種族、性別、顔、髪型、肌色等）および `NpcEquip` / `ENpcBase` から取得した 10 スロットの装備モデルID（Head, Body, Hands, Legs, Feet 等）を `nativeChara->DrawData.CustomizeData` と `EquipmentModelIds` に直接コピーして適用。
 
-## 起動コマンド
-- `/charaspawn` または `/cspawn` でメインウィンドウの開閉が可能です。
+### 5. MCDF ファイル選択のエクスプローラー連携
+- 手動のテキストパス入力を改善し、`[Browse...]` ボタンを新設。
+- Windows の `comdlg32.dll`（`GetOpenFileNameW` API）を STA バックグラウンドスレッドで起動し、ゲームのフレーム描画を停止させることなくネイティブの「ファイルを開く」ダイアログで `.mcdf` ファイルを選択可能に。
+- ファイル選択と同時に自動でアーカイブをパースし、含まれる Glamourer デザインを抽出。
 
 ---
 
-## [v0.1.6] 不具合修正と改善内容
-1. **「Spawn onto Map」および「Delete」ボタンが押せないUI問題の修正**:
-   - `CharacterLibraryTab.cs` の一覧表示を `ImGui.BeginTable` による3列テーブルレイアウトに刷新。
-   - `ImGui.Selectable` によるクリック領域の独占を解消し、ボタンが確実に反応するように修正しました。
-2. **キャラクターがマップ上にスポーンしない不具合の解消**:
-   - 旧方式のSigScannerによる関数呼び出し（7.xパッチでシグネチャ不整合となり失敗していた）を廃止。
-   - BrioおよびA Quest Rebornで実証されている標準構造体 `ClientObjectManager.Instance()->CreateBattleCharacter` / `DeleteObjectByIndex` を採用。
-   - キャラクター生成後、プレイヤー外見のコピー、モンスター/NPCモデルIDの適用、`GameObject.EnableDraw()` による確実な描画有効化を行うアーキテクチャに刷新しました。
+## 変更ファイル一覧
+
+| ファイル | 変更概要 |
+| :--- | :--- |
+| `Services/FilePicker.cs` (新規) | Win32 `GetOpenFileNameW` によるネイティブファイル選択ダイアログの実装 |
+| `Services/GameDataService.cs` | 検索件数上限を 500 件に拡張、ENpcBase からの CustomizeData (26B) および装備抽出 |
+| `Managers/ActorManager.cs` | スポーン時の NPC 外見適用処理（非人型 ModelCharaId、人型 CustomizeData & 装備モデルID） |
+| `UI/CharacterLibraryTab.cs` | 提供画像に合わせた階層ツリー・詳細・モーダル UI の全面刷新 |
+| `Models/CharacterModels.cs` | `FolderPath`、`NpcEquipmentModelIds` フィールドの追加 |
+| `Configuration.cs` | 空フォルダ保持用 `Folders` リストの追加 |
+| `package.json` | バージョンを `0.1.8` に更新 |
+| `CharacterSpawn.json` | `AssemblyVersion` を `0.1.8.0` に更新 |
+| `CharacterSpawn.csproj` | `Version`, `AssemblyVersion`, `FileVersion` を `0.1.8.0` に更新 |
+| `repo.json` | `AssemblyVersion` を `0.1.8.0` に更新 |
+| `CHANGELOG.md` | v0.1.8 リリースノートを追記 |
+| `docs/character_spawn/task.md` | タスク完了状態に更新 |
 
 ---
 
-## [v0.1.7] 不具合修正と改善内容（3Dモデルが表示されない問題の解決）
-1. **継続的な描画状態の監視とモデルの強制可視化**:
-   - ゲームエンジンの非同期リソースロードに対応するため、`UpdateFrame()`（毎フレーム処理）において各アクターの `IsReadyToDraw()` を継続監視し、準備完了時に `EnableDraw()` を確実にトリガーする処理を追加しました。
-   - アクターの `DrawObject->Flags` に不可視ビット（0x10）が立っていた場合に自動クリアする処理を実装しました。
-2. **Penumbra & Glamourer IPC 連携（モデル再構築）**:
-   - スポーン時に `Penumbra.RedrawObject` および `Glamourer.ReapplyState` を呼び出し、Penumbra / Glamourer 導入環境下で即座にモデル構築・テクスチャ展開が行われるようにしました。
-3. **キャラクリ時のプレイヤーデザイン自動保持**:
-   - テンプレート保存時、自キャラクローンまたはGlamourerデザインが空の場合、現在のローカルプレイヤーのGlamourerデザインを自動取得して保持するように改善しました。
+## 次のステップ（ユーザーによるゲーム内動作確認）
 
-
+1. GitHub リポジトリへプッシュ後、GitHub Actions CI により最新ビルド (`latest.zip`) が Releases に自動発行されます。
+2. ゲーム内 Dalamud プラグイン一覧より「Character Spawn」をアップデート（または再読み込み）。
+3. `/charaspawn` でウィンドウを開き、以下を確認してください：
+   - Character Library タブが左ツリー＋右詳細パネルの構成になっていること。
+   - `[New Chara]` でモーダルが開き、Glamourer/Penumbra ドロップダウン、Monster/NPC の多数スクロールリスト、MCDF のエクスプローラー選択ができること。
+   - レターモーグリやミューヌをスポーンさせた際、自キャラにならず本来の姿で出現すること。

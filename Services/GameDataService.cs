@@ -11,6 +11,12 @@ public class GameDataService
     public record MonsterEntry(uint Id, string Name, uint ModelCharaId);
     public record TimelineEntry(ushort Id, string Key, string Description, bool IsEmote);
 
+    public record NpcAppearanceData(
+        uint ModelCharaId,
+        byte[]? CustomizeData,
+        ulong[]? EquipmentModelIds
+    );
+
     private List<NpcEntry>? cachedNpcs;
     private List<MonsterEntry>? cachedMonsters;
     private List<TimelineEntry>? cachedTimelines;
@@ -21,7 +27,7 @@ public class GameDataService
         this.dataManager = dataManager;
     }
 
-    public IReadOnlyList<NpcEntry> SearchNpcs(string query, int maxResults = 50)
+    public IReadOnlyList<NpcEntry> SearchNpcs(string query, int maxResults = 500)
     {
         cachedNpcs ??= BuildNpcCache();
 
@@ -34,7 +40,7 @@ public class GameDataService
             .ToList();
     }
 
-    public IReadOnlyList<MonsterEntry> SearchMonsters(string query, int maxResults = 50)
+    public IReadOnlyList<MonsterEntry> SearchMonsters(string query, int maxResults = 500)
     {
         cachedMonsters ??= BuildMonsterCache();
 
@@ -45,6 +51,83 @@ public class GameDataService
             .Where(m => m.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || m.Id.ToString().Contains(query))
             .Take(maxResults)
             .ToList();
+    }
+
+    public NpcAppearanceData? GetNpcAppearanceData(uint enpcId)
+    {
+        var baseSheet = dataManager.GetExcelSheet<ENpcBase>();
+        if (baseSheet == null || !baseSheet.TryGetRow(enpcId, out var baseRow))
+            return null;
+
+        var modelCharaId = baseRow.ModelChara.RowId;
+        if (modelCharaId > 0)
+        {
+            // 非人型NPC（モーグリ等の特殊モデル）
+            return new NpcAppearanceData(modelCharaId, null, null);
+        }
+
+        // 人型NPC（ミューヌ等のHumanモデル）
+        var cust = new byte[26];
+        cust[0] = (byte)baseRow.Race.RowId;
+        cust[1] = baseRow.Gender;
+        cust[2] = baseRow.BodyType;
+        cust[3] = baseRow.Height;
+        cust[4] = (byte)baseRow.Tribe.RowId;
+        cust[5] = baseRow.Face;
+        cust[6] = baseRow.HairStyle;
+        cust[7] = baseRow.HairHighlight;
+        cust[8] = baseRow.SkinColor;
+        cust[9] = baseRow.EyeHeterochromia;
+        cust[10] = baseRow.HairColor;
+        cust[11] = baseRow.HairHighlightColor;
+        cust[12] = baseRow.FacialFeature;
+        cust[13] = baseRow.FacialFeatureColor;
+        cust[14] = baseRow.Eyebrows;
+        cust[15] = baseRow.EyeColor;
+        cust[16] = baseRow.EyeShape;
+        cust[17] = baseRow.Nose;
+        cust[18] = baseRow.Jaw;
+        cust[19] = baseRow.Mouth;
+        cust[20] = baseRow.LipColor;
+        cust[21] = baseRow.BustOrTone1;
+        cust[22] = baseRow.ExtraFeature1;
+        cust[23] = baseRow.ExtraFeature2OrBust;
+        cust[24] = baseRow.FacePaint;
+        cust[25] = baseRow.FacePaintColor;
+
+        var equip = new ulong[10];
+        if (baseRow.NpcEquip.RowId != 0)
+        {
+            var npcEquipSheet = dataManager.GetExcelSheet<NpcEquip>();
+            if (npcEquipSheet != null && npcEquipSheet.TryGetRow(baseRow.NpcEquip.RowId, out var eqRow))
+            {
+                equip[0] = eqRow.ModelHead;
+                equip[1] = eqRow.ModelBody;
+                equip[2] = eqRow.ModelHands;
+                equip[3] = eqRow.ModelLegs;
+                equip[4] = eqRow.ModelFeet;
+                equip[5] = eqRow.ModelEars;
+                equip[6] = eqRow.ModelNeck;
+                equip[7] = eqRow.ModelWrists;
+                equip[8] = eqRow.ModelRightRing;
+                equip[9] = eqRow.ModelLeftRing;
+            }
+        }
+        else
+        {
+            equip[0] = baseRow.ModelHead;
+            equip[1] = baseRow.ModelBody;
+            equip[2] = baseRow.ModelHands;
+            equip[3] = baseRow.ModelLegs;
+            equip[4] = baseRow.ModelFeet;
+            equip[5] = baseRow.ModelEars;
+            equip[6] = baseRow.ModelNeck;
+            equip[7] = baseRow.ModelWrists;
+            equip[8] = baseRow.ModelRightRing;
+            equip[9] = baseRow.ModelLeftRing;
+        }
+
+        return new NpcAppearanceData(0, cust, equip);
     }
 
     public IReadOnlyList<TimelineEntry> SearchTimelines(string query, int maxResults = 50)
@@ -162,7 +245,6 @@ public class GameDataService
         var sheet = dataManager.GetExcelSheet<ActionTimeline>();
         if (sheet == null) return list;
 
-        // ActionTimeline for facial expressions typically have keys starting with "fac_"
         foreach (var row in sheet)
         {
             var key = row.Key.ExtractText();

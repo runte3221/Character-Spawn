@@ -17,6 +17,7 @@ public class CharacterTemplate
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Name { get; set; } = "New Character";
+    public string FolderPath { get; set; } = string.Empty;
     public CharacterSourceType SourceType { get; set; } = CharacterSourceType.PlayerClone;
 
     // NPC / Monster IDs
@@ -25,6 +26,7 @@ public class CharacterTemplate
 
     // Appearance / Customization
     public byte[]? CustomizeData { get; set; }
+    public ulong[]? NpcEquipmentModelIds { get; set; } // Head, Body, Hands, Legs, Feet, Ears, Neck, Wrists, RingR, RingL
     public Dictionary<EquipSlot, EquipmentItem>? Equipment { get; set; }
 
     // External integration data

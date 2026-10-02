@@ -35,5 +35,13 @@
     - [x] `Penumbra.RedrawObject` および `Glamourer.ReapplyState` IPC の追加とスポーン時トリガー <!-- id: 36 -->
     - [x] テンプレート保存時のプレイヤー外見デザイン自動補完 <!-- id: 37 -->
     - [x] バージョン 0.1.7 への更新・ドキュメント同期・Git Push <!-- id: 38 -->
+- [x] v0.1.8 Character Library UI刷新 & 4件の不具合修正 <!-- id: 39 -->
+    - [x] モデル拡張（フォルダ階層、NPC装備・外見データ保持） <!-- id: 40 -->
+    - [x] `GameDataService` 検索件数上限緩和 & NPC詳細外見データ取得実装 <!-- id: 41 -->
+    - [x] `ActorManager` でのNPC外見（非人型モデルID、人型Customize/Equip）の確実なスポーン適用 <!-- id: 42 -->
+    - [x] `FilePicker`（Win32ファイル選択ダイアログ）の実装 <!-- id: 43 -->
+    - [x] AQR準拠の Glamourer デザイン & Penumbra コレクション ドロップダウン選択UI <!-- id: 44 -->
+    - [x] 提供画像に合わせたフォルダツリー ＋ 詳細パネル ＋ 新規作成モーダルUIの実装 <!-- id: 45 -->
+    - [x] バージョン 0.1.8 への更新・ドキュメント同期・Git Push <!-- id: 46 -->
 
 
