@@ -65,8 +65,6 @@ public unsafe class ActorManager : IDisposable
     private const int ReadyWarmupTicks = 2;
     private const int MaxReadyTicks = 200;
 
-    // Glamourer Identity 用のユニークな "Forename Surname" 名前シリアル (HDM The 0.8.44 Bug対策)
-    private int nameSerial = 0;
 
     // 単一プレビューアクター（Characterタブ専用）
     public SpawnedActorData? CurrentPreviewActor { get; private set; }
@@ -128,7 +126,8 @@ public unsafe class ActorManager : IDisposable
     private string GetPuppetName(CharacterTemplate template)
     {
         // テンプレート固有の一意ID（8文字）をSurnameにして、過去の他キャラの名前キャッシュとの衝突を100%防止！
-        var suffix = template.Id.ToString("N")[..8];
+        var raw = template.Id.Replace("-", "");
+        var suffix = raw.Length >= 8 ? raw[..8] : raw;
         return $"Csp {suffix}";
     }
 
@@ -864,7 +863,7 @@ public unsafe class ActorManager : IDisposable
 
         if (customizePlusIpc != null && customizePlusIpc.IsAvailable)
         {
-            customizePlusIpc.DeleteTemporaryProfileOnCharacter(actorIndex);
+            customizePlusIpc.DeleteTemporaryProfileOnCharacter((ushort)actorIndex);
         }
 
         // 人型モデルの場合は ObjectKind.Pc を担保（Penumbra Identifier 解決の生命線）
@@ -1072,7 +1071,7 @@ public unsafe class ActorManager : IDisposable
                 customizePlusIpc.DeleteTemporaryProfile(spawned.TemporaryCustomizePlusGuid.Value);
                 spawned.TemporaryCustomizePlusGuid = null;
             }
-            customizePlusIpc.DeleteTemporaryProfileOnCharacter(actorIndex);
+            customizePlusIpc.DeleteTemporaryProfileOnCharacter((ushort)actorIndex);
 
             Guid? assignedGuid = null;
 
