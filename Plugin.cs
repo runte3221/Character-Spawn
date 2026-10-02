@@ -21,6 +21,8 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] public static IDataManager DataManager { get; private set; } = null!;
     [PluginService] public static IFramework Framework { get; private set; } = null!;
     [PluginService] public static IClientState ClientState { get; private set; } = null!;
+    [PluginService] public static IObjectTable ObjectTable { get; private set; } = null!;
+    [PluginService] public static ISigScanner SigScanner { get; private set; } = null!;
     [PluginService] public static IGameGui GameGui { get; private set; } = null!;
     [PluginService] public static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] public static INamePlateGui NamePlateGui { get; private set; } = null!;
@@ -58,14 +60,14 @@ public sealed class Plugin : IDalamudPlugin
 
         // Managers
         timelineManager = new TimelineManager(Log);
-        headTrackingManager = new HeadTrackingManager(ClientState, Log);
-        actorManager = new ActorManager(ClientState, GameInteropProvider, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc);
+        headTrackingManager = new HeadTrackingManager(ObjectTable, Log);
+        actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc);
         namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
 
         // UI
         gizmoRenderer = new GizmoRenderer(GameGui, Configuration);
-        libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, ClientState, TargetManager, Log);
-        stageTab = new StageSceneTab(Configuration, actorManager, gameDataService, ClientState, Log);
+        libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, ObjectTable, TargetManager, Log);
+        stageTab = new StageSceneTab(Configuration, actorManager, gameDataService, ClientState, ObjectTable, Log);
         mainWindow = new MainWindow(Configuration, libraryTab, stageTab, gizmoRenderer, actorManager, Log);
 
         WindowSystem.AddWindow(mainWindow);

@@ -133,7 +133,7 @@ public class GameDataService
                 var emoteName = emote.Name.ExtractText();
                 if (string.IsNullOrEmpty(emoteName)) continue;
 
-                var animRow = emote.ActionTimeline.RowId;
+                var animRow = emote.ActionTimeline.Count > 0 ? emote.ActionTimeline[0].RowId : 0;
                 if (animRow > 0 && !emoteMap.ContainsKey((ushort)animRow))
                 {
                     emoteMap[(ushort)animRow] = emoteName;

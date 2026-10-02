@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.4] - 2026-10-02
+### Fixed
+- Fixed LocalPlayer access using `IObjectTable[0]` conforming to Dalamud API 15 standards.
+- Fixed `ISigScanner` integration for native delegate resolution.
+- Fixed `ObjectTargetableFlags.IsTargetable` type conversion.
+- Fixed `ActionTimeline` collection index access in `GameDataService`.
+
 ## [0.1.3] - 2026-10-02
 ### Fixed
 - Fixed `OnTerritoryChanged` signature to `uint` parameter.

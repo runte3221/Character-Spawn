@@ -14,7 +14,7 @@ public class CharacterLibraryTab
     private readonly GlamourerIpc glamourerIpc;
     private readonly PenumbraIpc penumbraIpc;
     private readonly McdfParser mcdfParser;
-    private readonly IClientState clientState;
+    private readonly IObjectTable objectTable;
     private readonly ITargetManager targetManager;
     private readonly IPluginLog log;
 
@@ -41,7 +41,7 @@ public class CharacterLibraryTab
         GlamourerIpc glamourerIpc,
         PenumbraIpc penumbraIpc,
         McdfParser mcdfParser,
-        IClientState clientState,
+        IObjectTable objectTable,
         ITargetManager targetManager,
         IPluginLog log)
     {
@@ -50,7 +50,7 @@ public class CharacterLibraryTab
         this.glamourerIpc = glamourerIpc;
         this.penumbraIpc = penumbraIpc;
         this.mcdfParser = mcdfParser;
-        this.clientState = clientState;
+        this.objectTable = objectTable;
         this.targetManager = targetManager;
         this.log = log;
     }
@@ -280,7 +280,7 @@ public class CharacterLibraryTab
 
         if (ImGui.Button("Copy from Local Player"))
         {
-            var player = clientState.LocalPlayer;
+            var player = objectTable.Length > 0 ? objectTable[0] : null;
             if (player != null)
             {
                 newName = $"{player.Name.ExtractText()} Clone";

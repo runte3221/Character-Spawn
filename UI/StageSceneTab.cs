@@ -14,6 +14,7 @@ public class StageSceneTab
     private readonly ActorManager actorManager;
     private readonly GameDataService gameDataService;
     private readonly IClientState clientState;
+    private readonly IObjectTable objectTable;
     private readonly IPluginLog log;
 
     private SpawnedActorData? selectedActor;
@@ -28,12 +29,14 @@ public class StageSceneTab
         ActorManager actorManager,
         GameDataService gameDataService,
         IClientState clientState,
+        IObjectTable objectTable,
         IPluginLog log)
     {
         this.configuration = configuration;
         this.actorManager = actorManager;
         this.gameDataService = gameDataService;
         this.clientState = clientState;
+        this.objectTable = objectTable;
         this.log = log;
     }
 
@@ -220,7 +223,7 @@ public class StageSceneTab
 
         if (ImGui.Button("Snap to Local Player"))
         {
-            var p = clientState.LocalPlayer;
+            var p = objectTable.Length > 0 ? objectTable[0] : null;
             if (p != null)
             {
                 actorManager.UpdateActorTransform(selectedActor, p.Position, p.Rotation);
@@ -231,7 +234,7 @@ public class StageSceneTab
 
         if (ImGui.Button("Place 1.5m in Front"))
         {
-            var p = clientState.LocalPlayer;
+            var p = objectTable.Length > 0 ? objectTable[0] : null;
             if (p != null)
             {
                 var forward = new Vector3((float)Math.Sin(p.Rotation), 0, (float)Math.Cos(p.Rotation));

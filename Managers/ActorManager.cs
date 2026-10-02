@@ -12,7 +12,8 @@ namespace CharacterSpawn.Managers;
 public unsafe class ActorManager : IDisposable
 {
     private readonly IClientState clientState;
-    private readonly IGameInteropProvider? interopProvider;
+    private readonly IObjectTable objectTable;
+    private readonly ISigScanner? sigScanner;
     private readonly IPluginLog log;
     private readonly TimelineManager timelineManager;
     private readonly HeadTrackingManager headTrackingManager;
@@ -46,7 +47,8 @@ public unsafe class ActorManager : IDisposable
 
     public ActorManager(
         IClientState clientState,
-        IGameInteropProvider? interopProvider,
+        IObjectTable objectTable,
+        ISigScanner? sigScanner,
         IPluginLog log,
         TimelineManager timelineManager,
         HeadTrackingManager headTrackingManager,
@@ -54,7 +56,8 @@ public unsafe class ActorManager : IDisposable
         PenumbraIpc penumbraIpc)
     {
         this.clientState = clientState;
-        this.interopProvider = interopProvider;
+        this.objectTable = objectTable;
+        this.sigScanner = sigScanner;
         this.log = log;
         this.timelineManager = timelineManager;
         this.headTrackingManager = headTrackingManager;
@@ -66,12 +69,12 @@ public unsafe class ActorManager : IDisposable
 
     private void InitializeNativeDelegates()
     {
-        if (interopProvider == null) return;
+        if (sigScanner == null) return;
 
         try
         {
             // FFXIV CreateBattleChara signature
-            if (interopProvider.TryScanSig("E8 ?? ?? ?? ?? 48 8B F8 48 85 C0 74 38 48 8B CB", out var createPtr))
+            if (sigScanner.TryScanText("E8 ?? ?? ?? ?? 48 8B F8 48 85 C0 74 38 48 8B CB", out var createPtr))
             {
                 createBattleChara = Marshal.GetDelegateForFunctionPointer<CreateBattleCharaDelegate>(createPtr);
                 log.Information($"Found CreateBattleChara at 0x{createPtr:X}");
@@ -82,7 +85,7 @@ public unsafe class ActorManager : IDisposable
             }
 
             // FFXIV DeleteBattleChara signature
-            if (interopProvider.TryScanSig("E8 ?? ?? ?? ?? 48 8B 5C 24 ?? 48 83 C4 20 5F C3 48 8B 0D", out var deletePtr))
+            if (sigScanner.TryScanText("E8 ?? ?? ?? ?? 48 8B 5C 24 ?? 48 83 C4 20 5F C3 48 8B 0D", out var deletePtr))
             {
                 deleteBattleChara = Marshal.GetDelegateForFunctionPointer<DeleteBattleCharaDelegate>(deletePtr);
                 log.Information($"Found DeleteBattleChara at 0x{deletePtr:X}");
@@ -222,7 +225,7 @@ public unsafe class ActorManager : IDisposable
         var obj = (GameObject*)actor.NativeAddress;
         if (obj == null) return;
 
-        obj->TargetableStatus = (byte)(actor.IsTargetable ? 1 : 0);
+        obj->TargetableStatus = actor.IsTargetable ? ObjectTargetableFlags.IsTargetable : 0;
     }
 
     /// <summary>
@@ -295,7 +298,7 @@ public unsafe class ActorManager : IDisposable
 
     private Vector3 GetDefaultSpawnPosition()
     {
-        var player = clientState.LocalPlayer;
+        var player = objectTable.Length > 0 ? objectTable[0] : null;
         if (player == null) return Vector3.Zero;
 
         // 自キャラの正面1.5mの位置を初期位置にする

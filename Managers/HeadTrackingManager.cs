@@ -7,12 +7,12 @@ namespace CharacterSpawn.Managers;
 
 public unsafe class HeadTrackingManager
 {
-    private readonly IClientState clientState;
+    private readonly IObjectTable objectTable;
     private readonly IPluginLog log;
 
-    public HeadTrackingManager(IClientState clientState, IPluginLog log)
+    public HeadTrackingManager(IObjectTable objectTable, IPluginLog log)
     {
-        this.clientState = clientState;
+        this.objectTable = objectTable;
         this.log = log;
     }
 
@@ -21,7 +21,7 @@ public unsafe class HeadTrackingManager
     /// </summary>
     public void UpdateTracking(IReadOnlyList<SpawnedActorData> actors)
     {
-        var localPlayer = clientState.LocalPlayer;
+        var localPlayer = objectTable.Length > 0 ? objectTable[0] : null;
         if (localPlayer == null) return;
 
         var targetPos = localPlayer.Position;

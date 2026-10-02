@@ -83,8 +83,6 @@ public class MainWindow : Window, IDisposable
         if (spawned != null)
         {
             stageTab.SelectActor(spawned);
-            // Switch view to Stage tab
-            activeTab = 1;
         }
     }
 
