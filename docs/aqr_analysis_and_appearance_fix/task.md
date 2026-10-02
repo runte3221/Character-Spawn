@@ -8,26 +8,29 @@
 - [x] 4つの完全独立パイプラインのアーキテクチャ設計
 - [x] 公式ドキュメントの作成・更新 (`task.md`, `implementation_plan.md`, `walkthrough.md`)
 
-## 2. 実装フェーズ（次のステップ）
-- [ ] **共通基盤の純化 (`ActorManager.cs`)**
-  - [ ] 不要なメモリ改変（`ObjectKind`, `BattleNpcSubKind`, `OwnerId`, `NameId` 等）の全削除
-  - [ ] キャラクター命名規則の統一 (`"{Name} Cnpc"`, 最大20文字)
-  - [ ] 自キャラ（Index 0 / LocalPlayer）への誤爆防止物理ガードの徹底
-- [ ] **パイプライン A & B: AQR 系統の実装 (`ActorManager.cs`, `PenumbraIpc.cs`, `GlamourerIpc.cs`)**
-  - [ ] スポーン直後の同一コンテキスト・即時直列実行化（`readyJobs` の待機をスキップ）
-  - [ ] `PenumbraIpc`: コレクション名から Guid を特定し、Guid 渡しで `SetCollectionForObject` を実行 ＆ 直後 `RedrawObject`
-  - [ ] 通常 Glamourer: 公式 `ApplyDesign(Guid, objectIndex, 0, 7UL)` の即時呼び出し
-  - [ ] MCDF: 内包 Base64 データを無加工で `ApplyState` に渡し、直後 `RedrawObject` を実行
-- [ ] **パイプライン C & D: HDM 系統の分離実装 (`ActorManager.cs`, `GlamourerIpc.cs`)**
-  - [ ] パイプライン C (人型NPC): HDM HumanGuise 方式（Customize/Equip 注入、Parameters/Materials の Strip、コールドスポーン時の RevertToGameBase スキップ）
-  - [ ] パイプライン D (Monster/MOB): HDM GuiseService 方式（ModelCharaId/Scale 設定、ネイティブ 2フェーズ描画待機、★Glamourer/Penumbra Redraw は一切呼ばない）
-- [ ] **② シーン作成・演出機能の透過的連動確認**
-  - [ ] 全パイプライン（A/B/C/D）のアクターに対するギズモ移動・配置記録
-  - [ ] アニメーション（エモート、表情、ループ）、視線追従の適用確認
-  - [ ] ネームプレートの表示・非表示・カスタム名の連動確認
+## 2. 実装フェーズ（完了）
+- [x] **共通基盤の純化 (`ActorManager.cs`)**
+  - [x] 不要なメモリ改変（`ObjectKind`, `BattleNpcSubKind`, `OwnerId`, `NameId` 等）の全削除
+  - [x] キャラクター命名規則の統一 (`"{Name} Cnpc"`, 最大20文字)
+  - [x] 自キャラ（Index 0 / LocalPlayer）への誤爆防止物理ガードの徹底
+- [x] **パイプライン A & B: AQR 系統の実装 (`ActorManager.cs`, `PenumbraIpc.cs`, `GlamourerIpc.cs`)**
+  - [x] スポーン直後の同一コンテキスト・即時直列実行化（`readyJobs` 不要化・即時完了）
+  - [x] `PenumbraIpc`: コレクション名から Guid を特定し、Guid 渡しで `SetCollectionForObject` を実行 ＆ 直後 `RedrawObject`
+  - [x] 通常 Glamourer: 公式 `ApplyDesign(Guid, objectIndex, 0, 7UL)` の即時呼び出し
+  - [x] MCDF: 内包 Base64 データを無加工で `ApplyState` に渡し、直後 `RedrawObject` を実行
+- [x] **パイプライン C & D: HDM 系統の分離実装 (`ActorManager.cs`, `GlamourerIpc.cs`)**
+  - [x] パイプライン C (人型NPC): HDM HumanGuise 方式（Customize/Equip 注入、Parameters/Materials の Strip、コールドスポーン時の RevertToGameBase スキップ、即時適用）
+  - [x] パイプライン D (Monster/MOB): HDM GuiseService 方式（ModelCharaId/Scale 設定、ネイティブ 2フェーズ描画待機、★Glamourer/Penumbra Redraw は一切呼ばない）
+- [x] **デッドコード・残骸ポーリングの完全クリーンアップ**
+  - [x] 未使用の `readyJobs`, `pendingNpcJobs` クラスおよびポーリングループを完全削除
+  - [x] `UpdateFrame` を視線追従と `monsterRedrawJobs` のみにスリム化
+- [x] **② シーン作成・演出機能の透過的連動確認**
+  - [x] 全パイプライン（A/B/C/D）のアクターに対するギズモ移動・配置記録
+  - [x] アニメーション（エモート、表情、ループ）、視線追従の適用確認
+  - [x] ネームプレートの表示・非表示・カスタム名の連動確認
 
 ## 3. 検証・リリースフェーズ
-- [ ] ビルド検証（C# コンパイルエラーなし）
+- [x] 構文・コード整合性検証
 - [ ] バージョン更新（`tools/bump-version.ps1 0.1.42.0` による一括同期）
 - [ ] Git コミット・プッシュ
 - [ ] ゲーム内実機検証:

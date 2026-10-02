@@ -1,12 +1,12 @@
 {
-  "Author": "runte3221",
-  "Name": "Character Spawn",
-  "InternalName": "CharacterSpawn",
-  "AssemblyVersion": "0.1.41.0",
-  "Description": "Spawn and place custom characters, NPCs, and monsters locally on the map with customizable animations, expressions, gizmos, and presets.",
-  "ApplicableVersion": "any",
-  "RepoUrl": "https://github.com/runte3221/Character-Spawn",
-  "DalamudApiLevel": 15,
-  "LoadPriority": 0,
-  "Punchline": "Custom local character spawner and stage scene staging tool."
+    "Author":  "runte3221",
+    "Name":  "Character Spawn",
+    "InternalName":  "CharacterSpawn",
+    "AssemblyVersion":  "0.1.42.0",
+    "Description":  "Spawn and place custom characters, NPCs, and monsters locally on the map with customizable animations, expressions, gizmos, and presets.",
+    "ApplicableVersion":  "any",
+    "RepoUrl":  "https://github.com/runte3221/Character-Spawn",
+    "DalamudApiLevel":  15,
+    "LoadPriority":  0,
+    "Punchline":  "Custom local character spawner and stage scene staging tool."
 }

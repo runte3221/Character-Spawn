@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.42] - 2026-10-03
+### Fixed
+- **AQR (AQuestReborn) ＆ HDM (Housing Decorator/Doll Master) 参照仕様の完全分離と4系統独立パイプライン構築**:
+  - **ツールの最終目標（①ローカルキャラ作成、②シーン作成演出）に即したアーキテクチャ分離**:
+    - **Pipeline A (AQR: 通常Glamourer / Penumbra / Customize+ / PlayerClone)**:
+      - 素の `BattleCharacter` 生成 → 素体コピー → その場で Penumbra（Guid指定）＋ RedrawObject ＋ Glamourer（Guid指定/PlayerClone）を直列即時実行。`readyJobs` 遅延待機を廃止し即時完了。
+    - **Pipeline B (AQR: MCDF)**:
+      - 素の `BattleCharacter` 生成 → 一時コレクション割当 → 内包 Base64 を無加工で `ApplyState` に渡す → 直後 `RedrawObject`。即時完了。
+    - **Pipeline C (HDM: 人型NPC)**:
+      - 素の `BattleCharacter` 生成 → `ApplyNpcAppearance`（Customize/Equip注入、Parameters/Materials の Strip、コールドスポーン時の RevertToGameBase スキップ、直後 RedrawObject）。即時完了。
+    - **Pipeline D (HDM: Monster / MOB)**:
+      - `ModelCharaId` と `Scale` 設定 → 武器非表示 → ネイティブ描画ポーリング（`MonsterRedrawJob`）。Glamourer や Penumbra Redraw は一切呼ばない。
+  - **不要なメモリ改変の完全撤廃 (AQR / Brio 黄金律)**:
+    - `ObjectKind`, `BattleNpcSubKind`, `OwnerId`, `NameId`, `HomeWorld` の改変を全廃し、ゲーム本来の `BattleCharacter` を維持。
+  - **命名規則の統一**:
+    - `"{Name} Cnpc"`（例: `"Kimo Cnpc"`）形式とし、FF14 の名前検証規則を完全充足。
+  - **自キャラ物理遮断ガードの徹底**:
+    - `globalIndex <= 0 || objectTable[0]?.Address == chara` による誤爆防御を全適用パスに配置。
+  - **デッドコード・残骸ポーリングの完全クリーンアップ**:
+    - 旧アーキテクチャの `readyJobs`, `pendingNpcJobs` クラスおよびポーリングループを完全削除（421行削減）し、`UpdateFrame` は視線追従と `monsterRedrawJobs` のみにスリム化。
+
 ## [0.1.41] - 2026-10-03
 ### Fixed
 - **AQuestReborn (AQR) 実装完全解析 & Proteus 外部干渉防御による自キャラ変身根絶と外見適用の完全分離**:

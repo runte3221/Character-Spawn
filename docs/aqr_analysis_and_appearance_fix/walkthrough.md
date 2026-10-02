@@ -54,7 +54,17 @@
 
 ---
 
-## 4. 今後の検証・確認手順
+## 4. 今回の実装完了内容 (`0.1.42.0`)
+- **ActorManager.cs の純化**:
+  - 不要なメモリ書き換え (`ObjectKind`, `BattleNpcSubKind`, `OwnerId`, `NameId`, `HomeWorld`) を全廃し、AQR/Brio 準拠の素の `BattleCharacter` のまま保持。
+  - キャラクター命名規則を AQR 黄金律 `"{Name} Cnpc"` (例: `"Kimo Cnpc"`) に統一し、FF14 の名前検証規則を完全クリア。
+  - `ApplyNpcAppearance` を HDM HumanGuise 準拠の独立メソッドとして新設。
+  - `ApplyAppearanceDirect` を AQR 専用（Pipeline A/B）に純化し、自キャラ物理遮断ガード (`globalIndex <= 0 || objectTable[0]?.Address == chara`) を配置。
+  - 旧アーキテクチャの残骸ポーリング (`readyJobs`, `pendingNpcJobs`) を完全削除（421行削減）し、`UpdateFrame` は視線追従と `monsterRedrawJobs` のみにスリム化。
+
+---
+
+## 5. 今後の検証・確認手順
 
 1. **ローカルキャラクター単体検証**:
    - AQR系（Kimo 等）: スポーン時、自キャラが変身せず、パペットのみに外見と Penumbra コレクションが初回から適用されること。
@@ -64,3 +74,4 @@
 2. **シーン作成（複数配置）検証**:
    - 異なるパイプライン（例: AQR系キャラ ＋ NPC ＋ モンスター）を同時にステージ上にスポーンさせ、互いに干渉しないこと。
    - ギズモによる座標移動、アニメーション変更、視線追従、ネームプレートが全パイプラインで等しく動作すること。
+
