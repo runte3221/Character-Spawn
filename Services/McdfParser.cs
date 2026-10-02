@@ -19,6 +19,7 @@ public class McdfParser
     {
         public string? GlamourerDesign { get; set; }
         public string? ManipulationData { get; set; }
+        public string? CustomizePlusData { get; set; }
         public Dictionary<string, string> ModPaths { get; set; } = new(StringComparer.Ordinal);
         public string? Description { get; set; }
     }
@@ -68,6 +69,7 @@ public class McdfParser
             {
                 GlamourerDesign = jObj["GlamourerData"]?.ToString(),
                 ManipulationData = jObj["ManipulationData"]?.ToString(),
+                CustomizePlusData = jObj["CustomizePlusData"]?.ToString(),
                 Description = jObj["Description"]?.ToString()
             };
 

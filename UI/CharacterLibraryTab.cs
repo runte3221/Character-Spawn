@@ -56,9 +56,16 @@ public class CharacterLibraryTab
     // MCDF modal fields
     private string modalMcdfPath = string.Empty;
 
+    // Customize+ modal fields
+    private string customizePlusSearch = string.Empty;
+    private string selectedCustomizePlusProfileGuid = string.Empty;
+    private string selectedCustomizePlusProfileName = string.Empty;
+
     // Folder creation popup state
     private bool openNewFolderPopup = false;
     private string newFolderName = string.Empty;
+
+    private readonly CustomizePlusIpc? customizePlusIpc;
 
     public CharacterLibraryTab(
         Configuration configuration,
@@ -70,7 +77,8 @@ public class CharacterLibraryTab
         IObjectTable objectTable,
         ITargetManager targetManager,
         IPluginLog log,
-        LogManager? logManager = null)
+        LogManager? logManager = null,
+        CustomizePlusIpc? customizePlusIpc = null)
     {
         this.configuration = configuration;
         this.gameDataService = gameDataService;
@@ -82,6 +90,7 @@ public class CharacterLibraryTab
         this.targetManager = targetManager;
         this.log = log;
         this.logManager = logManager;
+        this.customizePlusIpc = customizePlusIpc;
     }
 
     public void Draw()
@@ -358,6 +367,11 @@ public class CharacterLibraryTab
                     break;
             }
 
+            if (!string.IsNullOrWhiteSpace(selectedTemplate.CustomizePlusProfileName))
+            {
+                ImGui.BulletText($"Customize+ Profile: {selectedTemplate.CustomizePlusProfileName}");
+            }
+
             ImGui.EndChild();
         }
     }
@@ -410,6 +424,10 @@ public class CharacterLibraryTab
 
         modalMcdfPath = string.Empty;
 
+        customizePlusSearch = string.Empty;
+        selectedCustomizePlusProfileGuid = string.Empty;
+        selectedCustomizePlusProfileName = string.Empty;
+
         isModalOpen = true;
     }
 
@@ -424,6 +442,10 @@ public class CharacterLibraryTab
         customGlamourerString = template.GlamourerDesignString ?? string.Empty;
         selectedPenumbraCollection = template.PenumbraCollectionName ?? string.Empty;
         modalMcdfPath = template.McdfFilePath ?? string.Empty;
+
+        customizePlusSearch = string.Empty;
+        selectedCustomizePlusProfileGuid = template.CustomizePlusProfileGuid ?? string.Empty;
+        selectedCustomizePlusProfileName = template.CustomizePlusProfileName ?? string.Empty;
 
         glamourerSearch = string.Empty;
         selectedGlamourerDesignGuid = string.Empty;
@@ -649,16 +671,13 @@ public class CharacterLibraryTab
                 }
             }
             ImGui.EndCombo();
-        }
-
-        ImGui.Spacing();
-        ImGui.TextUnformatted("Or Direct Design String / Code:");
-        ImGui.InputTextMultiline("##CustomGlamString", ref customGlamourerString, 4096, new Vector2(-1, 55));
-
         ImGui.Spacing();
 
         // Penumbra Collection Combo
         DrawPenumbraCollectionSelector();
+
+        // Customize+ Profile Combo
+        DrawCustomizePlusProfileSelector();
     }
 
     private void DrawModalMcdfSection()
@@ -719,6 +738,9 @@ public class CharacterLibraryTab
 
         ImGui.TextColored(new Vector4(0.3f, 0.9f, 0.4f, 1.0f), "MCDF includes embedded mod files.");
         ImGui.TextWrapped("Penumbra temporary collection will be automatically generated and assigned upon spawning (AQR / Mare standard). No manual collection selection required.");
+
+        ImGui.Spacing();
+        DrawCustomizePlusProfileSelector();
     }
 
     private void DrawPenumbraCollectionSelector()
@@ -758,6 +780,54 @@ public class CharacterLibraryTab
         else
         {
             ImGui.TextDisabled("Penumbra IPC not detected.");
+        }
+    }
+
+    private void DrawCustomizePlusProfileSelector()
+    {
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Customize+ Profile:");
+        if (customizePlusIpc != null && customizePlusIpc.IsAvailable)
+        {
+            var profiles = customizePlusIpc.GetProfiles();
+            string profilePreview = !string.IsNullOrEmpty(selectedCustomizePlusProfileName) 
+                ? selectedCustomizePlusProfileName 
+                : "Select a profile (Optional)...";
+
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.BeginCombo("##CustomizePlusProfileCombo", profilePreview))
+            {
+                ImGui.InputTextWithHint("##CPlusSearch", "Search profiles...", ref customizePlusSearch, 64);
+                ImGui.Separator();
+
+                if (ImGui.Selectable("(None / Default)", string.IsNullOrEmpty(selectedCustomizePlusProfileGuid)))
+                {
+                    selectedCustomizePlusProfileGuid = string.Empty;
+                    selectedCustomizePlusProfileName = string.Empty;
+                }
+
+                var sortedProfiles = profiles.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase);
+                foreach (var profile in sortedProfiles)
+                {
+                    if (!string.IsNullOrWhiteSpace(customizePlusSearch) && 
+                        !profile.Name.Contains(customizePlusSearch, StringComparison.OrdinalIgnoreCase) &&
+                        !profile.VirtualPath.Contains(customizePlusSearch, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    bool isSelected = selectedCustomizePlusProfileGuid == profile.UniqueId.ToString();
+                    string label = string.IsNullOrWhiteSpace(profile.VirtualPath) ? profile.Name : $"{profile.Name} ({profile.VirtualPath})";
+                    if (ImGui.Selectable(label, isSelected))
+                    {
+                        selectedCustomizePlusProfileGuid = profile.UniqueId.ToString();
+                        selectedCustomizePlusProfileName = profile.Name;
+                    }
+                }
+                ImGui.EndCombo();
+            }
+        }
+        else
+        {
+            ImGui.TextDisabled("Customize+ not detected or IPC unavailable.");
         }
     }
 
@@ -823,6 +893,8 @@ public class CharacterLibraryTab
         target.SourceType = modalSourceType;
         target.PenumbraCollectionName = selectedPenumbraCollection;
         target.McdfFilePath = modalMcdfPath;
+        target.CustomizePlusProfileGuid = string.IsNullOrWhiteSpace(selectedCustomizePlusProfileGuid) ? null : selectedCustomizePlusProfileGuid;
+        target.CustomizePlusProfileName = string.IsNullOrWhiteSpace(selectedCustomizePlusProfileName) ? null : selectedCustomizePlusProfileName;
 
         string design = customGlamourerString;
         if (modalSourceType == CharacterSourceType.Glamourer)

@@ -36,6 +36,8 @@ public class CharacterTemplate
     public string? GlamourerDesignString { get; set; }
     public string? PenumbraCollectionName { get; set; }
     public string? McdfFilePath { get; set; }
+    public string? CustomizePlusProfileGuid { get; set; }
+    public string? CustomizePlusProfileName { get; set; }
 
     public CharacterTemplate Clone()
     {
@@ -116,6 +118,9 @@ public class SpawnedActorData
 
     [JsonIgnore]
     public Guid? TemporaryCollectionGuid { get; set; }
+
+    [JsonIgnore]
+    public Guid? TemporaryCustomizePlusGuid { get; set; }
 }
 
 public class ScenePreset

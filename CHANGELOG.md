@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.17] - 2026-10-02
+### Added
+- **Customize+ (C+) Profile Integration**:
+  - Implemented comprehensive IPC integration with Customize+ (v6+ API) via `Services/CustomizePlusIpc.cs`.
+  - Added Customize+ profile selector to character creation and editing modals in `CharacterLibraryTab.cs`.
+  - Spawning a character with an assigned Customize+ profile now automatically queries and applies temporary body scales and bone transforms to the spawned actor.
+  - Full automatic cleanup: temporary Customize+ profiles are seamlessly revoked and freed upon despawning characters, scene transitions, or territory changes.
+  - Added support for embedded `CustomizePlusData` within `.mcdf` archives, allowing automatic body scaling even for third-party MCDF files without manual profile mapping.
+
+### Changed
+- **Modal UI Cleanup**:
+  - Removed the unused `Or Direct Design String / Code` manual multiline input box from `CharacterLibraryTab.cs`, streamlining the character creation modal to design and collection dropdown pickers.
+
 ## [0.1.16] - 2026-10-02
 ### Fixed
 - **Penumbra Collection & MCDF Temporary Collection Assignment via ObjectKind.Player**:

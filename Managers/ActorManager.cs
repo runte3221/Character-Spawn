@@ -27,6 +27,7 @@ public unsafe class ActorManager : IDisposable
     private readonly PenumbraIpc penumbraIpc;
     private readonly McdfParser? mcdfParser;
     private readonly IDalamudPluginInterface? pluginInterface;
+    private readonly CustomizePlusIpc? customizePlusIpc;
 
     private readonly List<SpawnedActorData> activeActors = new();
     private readonly List<ushort> createdIndexes = new();
@@ -63,7 +64,8 @@ public unsafe class ActorManager : IDisposable
         PenumbraIpc penumbraIpc,
         LogManager? logManager = null,
         McdfParser? mcdfParser = null,
-        IDalamudPluginInterface? pluginInterface = null)
+        IDalamudPluginInterface? pluginInterface = null,
+        CustomizePlusIpc? customizePlusIpc = null)
     {
         this.clientState = clientState;
         this.objectTable = objectTable;
@@ -75,6 +77,7 @@ public unsafe class ActorManager : IDisposable
         this.penumbraIpc = penumbraIpc;
         this.mcdfParser = mcdfParser;
         this.pluginInterface = pluginInterface;
+        this.customizePlusIpc = customizePlusIpc;
 
         this.clientState.TerritoryChanged += OnTerritoryChanged;
     }
@@ -82,6 +85,17 @@ public unsafe class ActorManager : IDisposable
     private void OnTerritoryChanged(uint territoryType)
     {
         logManager?.Info("Territory changed. Clearing spawned actors tracking.");
+        foreach (var actor in activeActors)
+        {
+            if (actor.TemporaryCollectionGuid.HasValue)
+            {
+                penumbraIpc.DeleteTemporaryCollection(actor.TemporaryCollectionGuid.Value);
+            }
+            if (actor.TemporaryCustomizePlusGuid.HasValue && customizePlusIpc != null)
+            {
+                customizePlusIpc.DeleteTemporaryProfile(actor.TemporaryCustomizePlusGuid.Value);
+            }
+        }
         readyJobs.Clear();
         activeActors.Clear();
         createdIndexes.Clear();
@@ -343,6 +357,13 @@ public unsafe class ActorManager : IDisposable
                 actor.TemporaryCollectionGuid = null;
             }
 
+            // CustomizePlus 一時プロファイルのクリーンアップ
+            if (actor.TemporaryCustomizePlusGuid.HasValue && customizePlusIpc != null)
+            {
+                customizePlusIpc.DeleteTemporaryProfile(actor.TemporaryCustomizePlusGuid.Value);
+                actor.TemporaryCustomizePlusGuid = null;
+            }
+
             if (actor.NativeAddress != 0)
             {
                 var com = ClientObjectManager.Instance();
@@ -533,6 +554,9 @@ public unsafe class ActorManager : IDisposable
                             logManager?.Info($"MCDF Penumbra Redraw for Global#{actorIndex}.");
                         }
 
+                        // Customize+ Profile の適用 (テンプレート指定 または MCDF内包データ)
+                        ApplyCustomizePlusProfile(actorIndex, template, spawned, bundle.CustomizePlusData);
+
                         return;
                     }
                 }
@@ -645,6 +669,58 @@ public unsafe class ActorManager : IDisposable
         {
             penumbraIpc.Redraw(actorIndex);
             logManager?.Info($"Triggered Penumbra Redraw for Global#{actorIndex}.");
+        }
+
+        // 7. Customize+ Profile の適用
+        ApplyCustomizePlusProfile(actorIndex, template, spawned);
+    }
+
+    /// <summary>
+    /// Customize+ Profile (テンプレート指定 または MCDF内包) をアクターに一時適用
+    /// </summary>
+    private void ApplyCustomizePlusProfile(int actorIndex, CharacterTemplate template, SpawnedActorData? spawned, string? fallbackMcdfCPlusData = null)
+    {
+        if (customizePlusIpc == null || !customizePlusIpc.IsAvailable) return;
+
+        try
+        {
+            // 既存の一時プロファイルがあれば削除
+            if (spawned?.TemporaryCustomizePlusGuid.HasValue == true)
+            {
+                customizePlusIpc.DeleteTemporaryProfile(spawned.TemporaryCustomizePlusGuid.Value);
+                spawned.TemporaryCustomizePlusGuid = null;
+            }
+
+            Guid? assignedGuid = null;
+
+            // 1. テンプレートで明示指定された CustomizePlus プロファイル
+            if (!string.IsNullOrWhiteSpace(template.CustomizePlusProfileGuid) &&
+                Guid.TryParse(template.CustomizePlusProfileGuid, out var profileGuid))
+            {
+                assignedGuid = customizePlusIpc.SetTemporaryProfileByGuid((ushort)actorIndex, profileGuid);
+                if (assignedGuid.HasValue)
+                {
+                    logManager?.Info($"CustomizePlus: Applied profile '{template.CustomizePlusProfileName ?? profileGuid.ToString()}' ({assignedGuid.Value}) to Global#{actorIndex}.");
+                }
+            }
+            // 2. MCDF に内包された CustomizePlus データ
+            else if (!string.IsNullOrWhiteSpace(fallbackMcdfCPlusData))
+            {
+                assignedGuid = customizePlusIpc.SetTemporaryProfile((ushort)actorIndex, fallbackMcdfCPlusData);
+                if (assignedGuid.HasValue)
+                {
+                    logManager?.Info($"CustomizePlus: Applied embedded MCDF profile ({assignedGuid.Value}) to Global#{actorIndex}.");
+                }
+            }
+
+            if (assignedGuid.HasValue && spawned != null)
+            {
+                spawned.TemporaryCustomizePlusGuid = assignedGuid.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            logManager?.Error($"Error applying CustomizePlus profile: {ex.Message}");
         }
     }
 

@@ -37,6 +37,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly GlamourerIpc glamourerIpc;
     private readonly PenumbraIpc penumbraIpc;
     private readonly McdfParser mcdfParser;
+    private readonly CustomizePlusIpc customizePlusIpc;
 
     private readonly TimelineManager timelineManager;
     private readonly HeadTrackingManager headTrackingManager;
@@ -63,17 +64,18 @@ public sealed class Plugin : IDalamudPlugin
         glamourerIpc = new GlamourerIpc(PluginInterface, Log);
         penumbraIpc = new PenumbraIpc(PluginInterface, Log);
         mcdfParser = new McdfParser(Log);
+        customizePlusIpc = new CustomizePlusIpc(PluginInterface, Log);
 
         // Managers
         timelineManager = new TimelineManager(Log);
         headTrackingManager = new HeadTrackingManager(ObjectTable, Log);
-        actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser, PluginInterface);
+        actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser, PluginInterface, customizePlusIpc);
         namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
 
         // UI
         gizmoRenderer = new GizmoRenderer(GameGui, Configuration);
         logTab = new LogTab(logManager);
-        libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, actorManager, ObjectTable, TargetManager, Log, logManager);
+        libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, actorManager, ObjectTable, TargetManager, Log, logManager, customizePlusIpc);
         stageTab = new StageSceneTab(Configuration, actorManager, gameDataService, ClientState, ObjectTable, Log);
         mainWindow = new MainWindow(Configuration, libraryTab, stageTab, logTab, gizmoRenderer, actorManager, Log);
 
