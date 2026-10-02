@@ -283,7 +283,7 @@ public class CharacterLibraryTab
             var player = objectTable.Length > 0 ? objectTable[0] : null;
             if (player != null)
             {
-                newName = $"{player.Name.ExtractText()} Clone";
+                newName = $"{player.Name.TextValue} Clone";
                 if (glamourerIpc.IsAvailable)
                 {
                     glamourerDesignInput = glamourerIpc.GetCustomization(0) ?? string.Empty;
@@ -298,7 +298,7 @@ public class CharacterLibraryTab
             var target = targetManager.Target;
             if (target != null)
             {
-                newName = $"{target.Name.ExtractText()} Clone";
+                newName = $"{target.Name.TextValue} Clone";
                 if (glamourerIpc.IsAvailable)
                 {
                     glamourerDesignInput = glamourerIpc.GetCustomization(target.ObjectIndex) ?? string.Empty;

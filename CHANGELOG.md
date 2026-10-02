@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.5] - 2026-10-02
+### Fixed
+- Fixed `SeString.TextValue` usage for Player and Target clone name extraction.
+
 ## [0.1.4] - 2026-10-02
 ### Fixed
 - Fixed LocalPlayer access using `IObjectTable[0]` conforming to Dalamud API 15 standards.
