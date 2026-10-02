@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
     - デスポーン時は `CustomizePlus.Profile.RemovePlayerCharacter` で安全に紐付け解除。
   - **デスポーン時の武器孤立残留バグの完全解消**:
     - `chara->DrawData.HideWeapons(true)` + `chara->GameObject.DisableDraw()` を実行し、描画パイプラインから全メッシュ・ボーンをアンロードした上で `ClientObjectManager.DeleteObjectByIndex` を実行。マップ上に武器だけが取り残される現象を完全根絶。
+- **Documentation**:
+  - `docs/development_history_and_design_architecture` 配下に開発経緯、本来の意図、確立されたアーキテクチャ仕様、検証プロトコル（`task.md`, `implementation_plan.md`, `walkthrough.md`）を整備・保存。以後の開発において都度参照し、場当たり的修正による不具合ループの再発を完全防止。
 
 ## [0.1.36] - 2026-10-02
 ### Fixed
