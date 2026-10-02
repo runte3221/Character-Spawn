@@ -886,8 +886,17 @@ public unsafe class ActorManager : IDisposable
 
                         if (glamourerIpc.IsAvailable && !string.IsNullOrWhiteSpace(designString))
                         {
-                            bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
+                            var (glamSuccess, custBytes) = glamourerIpc.ApplyDesignToActorEx(designString, actorIndex);
                             logManager?.Info($"MCDF Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
+                            if (custBytes != null && custBytes.Length >= 26)
+                            {
+                                fixed (byte* pCust = custBytes)
+                                {
+                                    Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
+                                }
+                                chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
+                                logManager?.Info($"MCDF: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
+                            }
                         }
 
                         // 武器の表示・非表示
@@ -966,8 +975,17 @@ public unsafe class ActorManager : IDisposable
 
             if (!string.IsNullOrWhiteSpace(designString))
             {
-                bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
+                var (glamSuccess, custBytes) = glamourerIpc.ApplyDesignToActorEx(designString, actorIndex);
                 logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
+                if (custBytes != null && custBytes.Length >= 26)
+                {
+                    fixed (byte* pCust = custBytes)
+                    {
+                        Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
+                    }
+                    chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
+                    logManager?.Info($"Glamourer: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
+                }
             }
             else if (template.SourceType == CharacterSourceType.PlayerClone)
             {

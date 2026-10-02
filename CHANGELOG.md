@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.28] - 2026-10-02
+### Fixed
+- **Force All Apply Flags & Direct Native `CustomizeData` Synchronization (Fixing Male/Different Race Character Spawning)**:
+  - **Root Cause Identified**: Discovered via deep inspection of Glamourer design files (`238897be-...` / `Chonk`) that certain presets have `"Apply": false` on essential customization slots like `Race` (e.g., Highlander Male with `Race: Apply = false`). Calling `ApplyDesign(Guid)` directly left the spawned actor's race unchanged as Miqo'te (the player character's baseline) while applying male gender and highlander clan, causing an invalid race-clan mismatch that failed rendering and caused fallback to player appearance.
+  - **ForceAllApply**: Implemented automatic resolution of full design JObjects (via `Glamourer.GetDesignJObject` and disk fallback) and forced `Apply = true` across all Customize slots (`Race`, `Gender`, `Clan`, `BodyType`, `Face`, `Hairstyle`, etc.) and Equipment slots before calling `ApplyState`.
+  - **Direct Native Memory Synchronization**: Extracted the exact 26-byte `CustomizeData` from the design JObject and wrote it directly into `chara->DrawData.CustomizeData` followed by `CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None)`. This ensures the game engine's native character data itself is immediately transformed to the target race and gender, eliminating any chance of fallback during Redraw.
+
 ## [0.1.27] - 2026-10-02
 ### Fixed
 - **Persistent Glamourer Design & State Synchronization Across Redraws (Fixing Spawning as Player Character)**:

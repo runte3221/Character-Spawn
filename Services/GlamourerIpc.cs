@@ -22,6 +22,7 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
     private readonly ICallGateSubscriber<int, uint, (int, JObject?)>? getStateV2;
     private readonly ICallGateSubscriber<int, (int, JObject?)>? getStateLegacy;
+    private readonly ICallGateSubscriber<Guid, JObject?>? getDesignJObject;
 
     // Fallback Subscribers
     private readonly ICallGateSubscriber<int, (int, int)>? apiVersionsLegacy;
@@ -53,6 +54,7 @@ public class GlamourerIpc
         {
             apiVersionV2 = pi.GetIpcSubscriber<(int, int)>("Glamourer.ApiVersion.V2");
             getDesignListV2 = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList.V2");
+            getDesignJObject = pi.GetIpcSubscriber<Guid, JObject?>("Glamourer.GetDesignJObject");
             applyDesignV2Ulong = pi.GetIpcSubscriber<Guid, int, uint, ulong, int>("Glamourer.ApplyDesign");
             applyDesignV2Uint = pi.GetIpcSubscriber<Guid, int, uint, uint, int>("Glamourer.ApplyDesign");
             applyStateV2Ulong = pi.GetIpcSubscriber<string, int, uint, ulong, int>("Glamourer.ApplyState");
@@ -150,14 +152,149 @@ public class GlamourerIpc
         return new();
     }
 
-    /// <summary>
-    /// Guid または State 文字列（MCDF / Base64 / JSON）を適切な API でアクターに適用する
-    /// <summary>
-    /// Guid、名前、または State 文字列（MCDF Base64 / JSON）を適切な API (flags = 7: 全適用) でアクターに適用する
-    /// </summary>
-    public bool ApplyDesignToActor(string designString, int actorIndex)
+    public JObject? GetDesign(Guid guid)
     {
-        if (!IsAvailable || string.IsNullOrWhiteSpace(designString)) return false;
+        if (getDesignJObject != null)
+        {
+            try
+            {
+                var jobj = getDesignJObject.InvokeFunc(guid);
+                if (jobj != null) return jobj;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer GetDesignJObject IPC failed: {ex.Message}");
+            }
+        }
+
+        // Disk fallback: %APPDATA%\XIVLauncher\pluginConfigs\Glamourer\designs\{guid}.json
+        try
+        {
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string designPath = Path.Combine(appData, "XIVLauncher", "pluginConfigs", "Glamourer", "designs", $"{guid}.json");
+            if (File.Exists(designPath))
+            {
+                string json = File.ReadAllText(designPath);
+                return JObject.Parse(json);
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Debug($"Failed to read design file from disk: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    public JObject? ParseDesignString(string designString)
+    {
+        if (string.IsNullOrWhiteSpace(designString)) return null;
+        string trimmed = designString.Trim();
+        if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
+        {
+            try { return JObject.Parse(trimmed); } catch { }
+        }
+
+        // Base64 + Gzip decode
+        try
+        {
+            byte[] rawBytes = Convert.FromBase64String(trimmed);
+            if (rawBytes.Length > 2)
+            {
+                int gzipOffset = -1;
+                for (int i = 0; i < rawBytes.Length - 1; i++)
+                {
+                    if (rawBytes[i] == 0x1F && rawBytes[i + 1] == 0x8B)
+                    {
+                        gzipOffset = i;
+                        break;
+                    }
+                }
+
+                if (gzipOffset >= 0)
+                {
+                    using var ms = new MemoryStream(rawBytes, gzipOffset, rawBytes.Length - gzipOffset);
+                    using var gz = new System.IO.Compression.GZipStream(ms, System.IO.Compression.CompressionMode.Decompress);
+                    using var reader = new StreamReader(gz, System.Text.Encoding.UTF8);
+                    string json = reader.ReadToEnd();
+                    return JObject.Parse(json);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Debug($"Failed to parse compressed design string: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    public static void ForceAllApply(JObject jObj)
+    {
+        // 1. Customize スロットの全 Apply を true に
+        if (jObj["Customize"] is JObject cust)
+        {
+            foreach (var prop in cust.Properties())
+            {
+                if (prop.Value is JObject slotObj)
+                {
+                    slotObj["Apply"] = true;
+                }
+            }
+        }
+
+        // 2. Equipment スロットの全 Apply を true に
+        if (jObj["Equipment"] is JObject equip)
+        {
+            foreach (var prop in equip.Properties())
+            {
+                if (prop.Value is JObject slotObj)
+                {
+                    slotObj["Apply"] = true;
+                    slotObj["ApplyStain"] = true;
+                }
+            }
+        }
+    }
+
+    public static byte[]? ExtractCustomizeBytes(JObject jObj)
+    {
+        if (jObj["Customize"] is not JObject cust) return null;
+        byte[] bytes = new byte[26];
+
+        foreach (var (key, byteIdx, mask) in CustomizeMap)
+        {
+            if (cust[key] is JObject slotObj && slotObj["Value"] != null)
+            {
+                try
+                {
+                    int val = slotObj["Value"]!.Value<int>();
+                    if (mask == 0xFF)
+                    {
+                        bytes[byteIdx] = (byte)(val & 0xFF);
+                    }
+                    else
+                    {
+                        if (val != 0)
+                            bytes[byteIdx] |= mask;
+                        else
+                            bytes[byteIdx] &= (byte)~mask;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        return bytes;
+    }
+
+    /// <summary>
+    /// Guid、名前、または State 文字列（MCDF Base64 / JSON）を全スロット強制適用(ForceAllApply)し、
+    /// ネイティブ反映用の CustomizeBytes(26byte) も同時に抽出してアクターに適用する
+    /// </summary>
+    public (bool Success, byte[]? CustomizeBytes) ApplyDesignToActorEx(string designString, int actorIndex)
+    {
+        if (!IsAvailable || string.IsNullOrWhiteSpace(designString)) return (false, null);
 
         // 1. Guid 文字列かどうか判定、あるいは名前から Guid を解決
         Guid targetGuid = Guid.Empty;
@@ -179,16 +316,64 @@ public class GlamourerIpc
             }
         }
 
+        JObject? targetDesignObj = null;
         if (targetGuid != Guid.Empty)
         {
-            // ApplyDesign V2 (ulong flags = 6: Equipment | Customization, no Once)
+            targetDesignObj = GetDesign(targetGuid);
+        }
+        else
+        {
+            targetDesignObj = ParseDesignString(designString);
+        }
+
+        byte[]? customizeBytes = null;
+        if (targetDesignObj != null)
+        {
+            // 全スロットの Apply を強制 true にして Race の抜けや装備の不整合を撲滅！
+            ForceAllApply(targetDesignObj);
+            customizeBytes = ExtractCustomizeBytes(targetDesignObj);
+
+            string stateJson = targetDesignObj.ToString(Newtonsoft.Json.Formatting.None);
+
+            if (applyStateV2Ulong != null)
+            {
+                try
+                {
+                    int res = applyStateV2Ulong.InvokeFunc(stateJson, actorIndex, 0, 6UL);
+                    log.Information($"Glamourer ApplyState (ForceAllApply ulong flags=6) result: {res}");
+                    if (res == 0) return (true, customizeBytes);
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyState V2 (ulong) failed: {ex.Message}");
+                }
+            }
+
+            if (applyStateV2Uint != null)
+            {
+                try
+                {
+                    int res = applyStateV2Uint.InvokeFunc(stateJson, actorIndex, 0, 6U);
+                    log.Information($"Glamourer ApplyState (ForceAllApply uint flags=6) result: {res}");
+                    if (res == 0) return (true, customizeBytes);
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyState V2 (uint) failed: {ex.Message}");
+                }
+            }
+        }
+
+        // フォールバック: 生の Guid または文字列で Apply
+        if (targetGuid != Guid.Empty)
+        {
             if (applyDesignV2Ulong != null)
             {
                 try
                 {
                     int res = applyDesignV2Ulong.InvokeFunc(targetGuid, actorIndex, 0, 6UL);
-                    log.Information($"Glamourer ApplyDesign(Guid: {targetGuid}, Flags: 6UL) result: {res}");
-                    if (res == 0) return true;
+                    log.Information($"Glamourer ApplyDesign fallback (Guid: {targetGuid}, Flags: 6UL) result: {res}");
+                    if (res == 0) return (true, null);
                 }
                 catch (Exception ex)
                 {
@@ -196,14 +381,13 @@ public class GlamourerIpc
                 }
             }
 
-            // ApplyDesign V2 (uint flags = 6)
             if (applyDesignV2Uint != null)
             {
                 try
                 {
                     int res = applyDesignV2Uint.InvokeFunc(targetGuid, actorIndex, 0, 6U);
-                    log.Information($"Glamourer ApplyDesign(Guid: {targetGuid}, Flags: 6U) result: {res}");
-                    if (res == 0) return true;
+                    log.Information($"Glamourer ApplyDesign fallback (Guid: {targetGuid}, Flags: 6U) result: {res}");
+                    if (res == 0) return (true, null);
                 }
                 catch (Exception ex)
                 {
@@ -211,14 +395,13 @@ public class GlamourerIpc
                 }
             }
 
-            // Legacy ApplyByGuid
             if (applyByGuidLegacy != null)
             {
                 try
                 {
                     applyByGuidLegacy.InvokeAction(targetGuid, actorIndex);
                     log.Information($"Glamourer ApplyByGuid Legacy executed for actor {actorIndex}.");
-                    return true;
+                    return (true, null);
                 }
                 catch (Exception ex)
                 {
@@ -226,52 +409,57 @@ public class GlamourerIpc
                 }
             }
         }
-
-        // 2. State 文字列（Base64 / MCDF / JSON）(flags = 6: Equipment | Customization, no Once)
-        if (applyStateV2Ulong != null)
+        else
         {
-            try
+            if (applyStateV2Ulong != null)
             {
-                int res = applyStateV2Ulong.InvokeFunc(designString, actorIndex, 0, 6UL);
-                log.Information($"Glamourer ApplyState (ulong flags=6) result: {res}");
-                if (res == 0) return true;
+                try
+                {
+                    int res = applyStateV2Ulong.InvokeFunc(designString, actorIndex, 0, 6UL);
+                    log.Information($"Glamourer ApplyState raw (ulong flags=6) result: {res}");
+                    if (res == 0) return (true, null);
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyState V2 raw (ulong) failed: {ex.Message}");
+                }
             }
-            catch (Exception ex)
+
+            if (applyStateV2Uint != null)
             {
-                log.Warning($"Glamourer ApplyState V2 (ulong) failed: {ex.Message}");
+                try
+                {
+                    int res = applyStateV2Uint.InvokeFunc(designString, actorIndex, 0, 6U);
+                    log.Information($"Glamourer ApplyState raw (uint flags=6) result: {res}");
+                    if (res == 0) return (true, null);
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyState V2 raw (uint) failed: {ex.Message}");
+                }
+            }
+
+            if (applyByStringLegacy != null)
+            {
+                try
+                {
+                    applyByStringLegacy.InvokeAction(designString, actorIndex);
+                    log.Information($"Glamourer ApplyByString Legacy executed for actor {actorIndex}.");
+                    return (true, null);
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyByString Legacy failed: {ex.Message}");
+                }
             }
         }
 
-        if (applyStateV2Uint != null)
-        {
-            try
-            {
-                int res = applyStateV2Uint.InvokeFunc(designString, actorIndex, 0, 6U);
-                log.Information($"Glamourer ApplyState (uint flags=6) result: {res}");
-                if (res == 0) return true;
-            }
-            catch (Exception ex)
-            {
-                log.Warning($"Glamourer ApplyState V2 (uint) failed: {ex.Message}");
-            }
-        }
+        return (false, null);
+    }
 
-        // Legacy ApplyByString
-        if (applyByStringLegacy != null)
-        {
-            try
-            {
-                applyByStringLegacy.InvokeAction(designString, actorIndex);
-                log.Information($"Glamourer ApplyByString Legacy executed for actor {actorIndex}.");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                log.Warning($"Glamourer ApplyByString Legacy failed: {ex.Message}");
-            }
-        }
-
-        return false;
+    public bool ApplyDesignToActor(string designString, int actorIndex)
+    {
+        return ApplyDesignToActorEx(designString, actorIndex).Success;
     }
 
     public string? GetCustomization(int actorIndex)
