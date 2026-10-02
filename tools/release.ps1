@@ -74,21 +74,38 @@ if (-not $runSuccess) {
     Write-Warning "GitHub Actions run did not complete within the timeout period. Please check the URL manually."
 }
 
-# Step 5: Verify Raw repo.json
-Write-Host "`n[Step 5/5] Verifying raw repo.json distribution..." -ForegroundColor Yellow
-Start-Sleep -Seconds 3
-try {
-    $rawUrl = "https://raw.githubusercontent.com/runte3221/Character-Spawn/main/repo.json?_nocache=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
-    $webRes = Invoke-WebRequest -Uri $rawUrl -UseBasicParsing
-    $rawText = $webRes.Content.Trim()
-    if (-not $rawText.StartsWith("[") -or -not $rawText.EndsWith("]")) {
-        throw "CRITICAL: Raw repo.json is not an array format! Starts with: $($rawText.Substring(0, 10))"
+# Step 5: Verify Raw repo.json & Wait for CDN Cache Expiry
+Write-Host "`n[Step 5/5] Verifying live repo.json on raw.githubusercontent.com (waiting for CDN cache update)..." -ForegroundColor Yellow
+$cdnMaxAttempts = 35 # up to ~5.5 minutes
+$cdnSuccess = $false
+
+for ($j = 1; $j -le $cdnMaxAttempts; $j++) {
+    try {
+        $rawUrl = "https://raw.githubusercontent.com/runte3221/Character-Spawn/main/repo.json?_nocache=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+        $webRes = Invoke-WebRequest -Uri $rawUrl -UseBasicParsing
+        $rawText = $webRes.Content.Trim()
+        
+        if ($rawText.StartsWith("[") -and $rawText.EndsWith("]")) {
+            $rawJson = $rawText | ConvertFrom-Json
+            $entry = $rawJson | Where-Object { $_.InternalName -eq "CharacterSpawn" } | Select-Object -First 1
+            if ($entry -and $entry.AssemblyVersion -eq $Version) {
+                Write-Host "  Live CDN repo.json successfully updated! (AssemblyVersion: $($entry.AssemblyVersion), Array format verified)" -ForegroundColor Green
+                $cdnSuccess = $true
+                break
+            } else {
+                Write-Host "  Attempt $j/$cdnMaxAttempts: CDN still serving version '$($entry.AssemblyVersion)'. Waiting 10s for Fastly CDN cache expiry..."
+            }
+        } else {
+            Write-Host "  Attempt $j/$cdnMaxAttempts: CDN still serving old non-array format. Waiting 10s for Fastly CDN cache expiry..."
+        }
+    } catch {
+        Write-Host "  Attempt $j/$cdnMaxAttempts: Request error ($_) - retrying in 10s..."
     }
-    $rawJson = $rawText | ConvertFrom-Json
-    $entry = $rawJson | Where-Object { $_.InternalName -eq "CharacterSpawn" } | Select-Object -First 1
-    Write-Host "  Verified live repo.json is valid array. AssemblyVersion: $($entry.AssemblyVersion)" -ForegroundColor Green
-} catch {
-    Write-Warning "Could not verify raw repo.json (may be due to GitHub raw CDN cache delay): $_"
+    Start-Sleep -Seconds 10
+}
+
+if (-not $cdnSuccess) {
+    Write-Warning "CDN cache did not reflect the new version within 5 minutes. It may take another 1-2 minutes to expire automatically."
 }
 
 Write-Host "`n==========================================================" -ForegroundColor Cyan
