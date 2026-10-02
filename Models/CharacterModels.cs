@@ -27,6 +27,7 @@ public class CharacterTemplate
     public uint ModelCharaId { get; set; } = 0;
 
     // Appearance / Customization
+    public float Scale { get; set; } = 1.0f;
     public bool WeaponVisible { get; set; } = true;
     public byte[]? CustomizeData { get; set; }
     public ulong[]? NpcEquipmentModelIds { get; set; } // Head, Body, Hands, Legs, Feet, Ears, Neck, Wrists, RingR, RingL
