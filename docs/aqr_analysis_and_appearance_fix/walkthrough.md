@@ -62,8 +62,6 @@
   - `ApplyAppearanceDirect` を AQR 専用（Pipeline A/B）に純化し、自キャラ物理遮断ガード (`globalIndex <= 0 || objectTable[0]?.Address == chara`) を配置。
   - 旧アーキテクチャの残骸ポーリング (`readyJobs`, `pendingNpcJobs`) を完全削除（421行削減）し、`UpdateFrame` は視線追従と `monsterRedrawJobs` のみにスリム化。
 
----
-
 ## 5. 今後の検証・確認手順
 
 1. **ローカルキャラクター単体検証**:
@@ -74,4 +72,29 @@
 2. **シーン作成（複数配置）検証**:
    - 異なるパイプライン（例: AQR系キャラ ＋ NPC ＋ モンスター）を同時にステージ上にスポーンさせ、互いに干渉しないこと。
    - ギズモによる座標移動、アニメーション変更、視線追従、ネームプレートが全パイプラインで等しく動作すること。
+
+---
+
+## 6. プラグインアップデート手順の確立と再発防止策
+
+### 発生した問題
+Dalamud プラグインインストーラで「ダウンロードが失敗しました。(https://raw.githubusercontent.com/runte3221/Character-Spawn/main/repo.json)」という赤字エラーが発生。
+
+### 原因
+`bump-version.ps1` 内で PowerShell の `ConvertTo-Json` を実行した際、要素が1件の配列（`[ { ... } ]`）が単一オブジェクト（`{ ... }`）に自動アンラップされて出力されたため、Dalamud が期待するプラグイン一覧の配列デシリアライズに失敗していた。
+
+### 恒久対策
+1. **`repo.json` の配列構造の完全保護**:
+   `bump-version.ps1` において、JSON を壊す `ConvertTo-Json` ではなく、正規表現による `"AssemblyVersion"` のピンポイント置換を採用。
+2. **自動バリデーションの組み込み**:
+   更新後に `repo.json` が配列 `[` で始まり `]` で終わること、および各マニフェスト（.csproj, CharacterSpawn.json, repo.json）のバージョンが一致していることをスクリプト内で自動検査し、不正時は即座に中断。
+3. **ワンコマンド・リリース自動化スクリプトの導入 (`tools/release.ps1`)**:
+   `powershell -File tools/release.ps1 <Version> "Commit message"` を実行するだけで、
+   - バージョン更新
+   - マニフェスト・CHANGELOG整合性検証
+   - Git コミット ＆ プッシュ
+   - GitHub Actions CI/CD ビルドの完了待機（成功確認）
+   - 公開された raw.githubusercontent.com 上の `repo.json` の配列パース検証
+   を一貫して自動実行し、リリースの不整合を完全に根絶。
+
 
