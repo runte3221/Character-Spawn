@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.22] - 2026-10-02
+### Fixed
+- **HDM-Compliant Monster & Mob Spawning (Resolved Invisible 3D Model / Gizmo-Only Bug)**:
+  - Resolved issue where spawned monsters / mobs were invisible, showing only gizmo manipulators.
+  - Aligned with HDM's (`Enceladeum/HDM`) proven two-phase rendering architecture: actors are initially seeded as clean humanoid baseline clones (`ModelCharaId = 0`, `Scale = 1.0f`) to allow the engine to establish a valid baseline draw object.
+  - In Phase 2, once the humanoid draw object is verified visible (`DrawObject != null && DrawObject->IsVisible`), the actor is transitioned to the target monster `ModelCharaId` and scale, followed by a dedicated native redraw sequence (`DisableDraw()` -> `IsReadyToDraw()` wait -> `EnableDraw()`).
+  - Completely suppressed Penumbra / Glamourer redraw invocations on monster models to prevent invalidation of non-humanoid draw objects.
+  - Added Demihuman equipment mapping and `IsHatHidden = false` preservation for non-humanoid demihumans.
+- **HDM-Compliant Humanoid NPC Spawning via Glamourer IPC**:
+  - Implemented `Glamourer.GetState` and `Glamourer.ApplyState` IPC integration in `GlamourerIpc.cs` conforming to HDM's `HumanGuise.cs`.
+  - Added `ApplyNpcAppearance` to map 26-byte `CustomizeData` into Glamourer's 36-field `Customize` model via `CustomizeMap`, and injected NPC gear slots using bit-packed `CustomItemId`.
+  - Automatically stripped `Parameters` and `Materials` blocks on NPC appearance apply, preventing player skin tone / shader overrides from bleeding onto NPC disguises.
+  - Added automatic fallback resolution of `ModelCharaId` and NPC appearance from `GameDataService` if template IDs are present.
+
 ## [0.1.21] - 2026-10-02
 ### Fixed
 - **Continuous 360-Degree Horizontal Rotation (Resolved 180° Flip & Jitter)**:

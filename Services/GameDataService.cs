@@ -57,6 +57,29 @@ public class GameDataService
         return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
     }
 
+    public uint GetMonsterModelCharaId(uint bnpcNameId)
+    {
+        cachedMonsters ??= BuildMonsterCache();
+        var match = cachedMonsters.FirstOrDefault(m => m.Id == bnpcNameId);
+        if (match != null && match.ModelCharaId > 0)
+            return match.ModelCharaId;
+
+        var map = LoadBNpcLinks();
+        if (map.TryGetValue(bnpcNameId, out var baseIds))
+        {
+            var baseSheet = dataManager.GetExcelSheet<BNpcBase>();
+            if (baseSheet != null)
+            {
+                foreach (var bId in baseIds)
+                {
+                    if (baseSheet.TryGetRow(bId, out var baseRow) && baseRow.ModelChara.RowId > 0)
+                        return baseRow.ModelChara.RowId;
+                }
+            }
+        }
+        return 0;
+    }
+
     public NpcAppearanceData? GetNpcAppearanceData(uint enpcId)
     {
         var baseSheet = dataManager.GetExcelSheet<ENpcBase>();
@@ -220,6 +243,8 @@ public class GameDataService
             {
                 modelChara = fallbackRow.ModelChara.RowId;
             }
+
+            if (modelChara == 0) continue;
 
             list.Add(new MonsterEntry(row.RowId, name, modelChara));
         }

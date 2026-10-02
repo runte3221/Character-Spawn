@@ -28,6 +28,7 @@ public unsafe class ActorManager : IDisposable
     private readonly McdfParser? mcdfParser;
     private readonly IDalamudPluginInterface? pluginInterface;
     private readonly CustomizePlusIpc? customizePlusIpc;
+    private readonly GameDataService? gameDataService;
 
     private readonly List<SpawnedActorData> activeActors = new();
     private readonly List<ushort> createdIndexes = new();
@@ -42,6 +43,16 @@ public unsafe class ActorManager : IDisposable
         public bool DrawEnabled;
     }
     private readonly List<ReadyJob> readyJobs = new();
+
+    // HDM GuiseService.cs 準拠: モンスター/再描画待機キュー (Phase: WaitEnable)
+    private sealed class MonsterRedrawJob
+    {
+        public SpawnedActorData Spawned = null!;
+        public ushort GlobalIndex;
+        public int Ticks;
+    }
+    private readonly List<MonsterRedrawJob> monsterRedrawJobs = new();
+
     private const int ReadyWarmupTicks = 2;
     private const int MaxReadyTicks = 200;
 
@@ -65,7 +76,8 @@ public unsafe class ActorManager : IDisposable
         LogManager? logManager = null,
         McdfParser? mcdfParser = null,
         IDalamudPluginInterface? pluginInterface = null,
-        CustomizePlusIpc? customizePlusIpc = null)
+        CustomizePlusIpc? customizePlusIpc = null,
+        GameDataService? gameDataService = null)
     {
         this.clientState = clientState;
         this.objectTable = objectTable;
@@ -78,6 +90,7 @@ public unsafe class ActorManager : IDisposable
         this.mcdfParser = mcdfParser;
         this.pluginInterface = pluginInterface;
         this.customizePlusIpc = customizePlusIpc;
+        this.gameDataService = gameDataService;
 
         this.clientState.TerritoryChanged += OnTerritoryChanged;
     }
@@ -97,6 +110,7 @@ public unsafe class ActorManager : IDisposable
             }
         }
         readyJobs.Clear();
+        monsterRedrawJobs.Clear();
         activeActors.Clear();
         createdIndexes.Clear();
         CurrentPreviewActor = null;
@@ -183,6 +197,26 @@ public unsafe class ActorManager : IDisposable
             var pos = spawnPosition ?? GetDefaultSpawnPosition();
             var rot = spawnRotation ?? localPlayer.Rotation;
 
+            // モンスターモデルIDの補完 (もし 0 の場合は DataId / BNpcNameId から解決)
+            if (template.SourceType == CharacterSourceType.Monster && template.ModelCharaId == 0 && template.DataId > 0 && gameDataService != null)
+            {
+                template.ModelCharaId = gameDataService.GetMonsterModelCharaId(template.DataId);
+                logManager?.Info($"Auto-resolved Monster ModelCharaId {template.ModelCharaId} from DataId {template.DataId} for '{template.Name}'.");
+            }
+
+            // NPCデータの補完 (もし CustomizeData が空の場合は DataId / ENpcId から取得)
+            if (template.SourceType == CharacterSourceType.Npc && (template.CustomizeData == null || template.CustomizeData.Length == 0) && template.DataId > 0 && gameDataService != null)
+            {
+                var app = gameDataService.GetNpcAppearanceData(template.DataId);
+                if (app != null)
+                {
+                    template.ModelCharaId = app.ModelCharaId;
+                    template.CustomizeData = app.CustomizeData;
+                    template.NpcEquipmentModelIds = app.EquipmentModelIds;
+                    logManager?.Info($"Auto-resolved NPC appearance data for '{template.Name}' from ENpcId {template.DataId}.");
+                }
+            }
+
             logManager?.Info($"Spawning '{template.Name}' (Source: {template.SourceType}, ModelChara: {template.ModelCharaId}, Weapon: {template.WeaponVisible}) at COM#{comIdx}...");
 
             // HDM & AQR 黄金パターン:
@@ -199,17 +233,9 @@ public unsafe class ActorManager : IDisposable
             nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
             nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-            // クラス分類: 人型は Pc (= Player 1, Penumbra IPC/Glamourer での Player 認識を保証), モンスターモデルは BattleNpc
-            if (template.ModelCharaId > 0)
-            {
-                nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc;
-                nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.None;
-            }
-            else
-            {
-                nativeChara->GameObject.ObjectKind = ObjectKind.Pc;
-                nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
-            }
+            // クラス分類: HDM & AQR 準拠 (BattleNpc + Player: Glamourer の Player 救援ブランチに乗せつつセットピースとして管理)
+            nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc;
+            nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
             nativeChara->GameObject.TargetableStatus = 0;
             nativeChara->GameObject.EventId = 0;
 
@@ -268,9 +294,12 @@ public unsafe class ActorManager : IDisposable
                 IsTargetable = false
             };
 
-            // 4. AQR & HDM スポーン直後即時外見適用:
-            // 描画が有効化される前に、目的の外見（Glamourer / MCDF / Penumbra / Monster / NPC）をアクターに設定する
-            ApplyAppearanceDirect(nativeChara, globalIdx, template, spawned);
+            // 4. MCDF や 通常Penumbraコレクションの初期事前適用 (人型プレイヤー/Glamourer/MCDFのみ)
+            // ※ モンスター (ModelCharaId > 0) や NPC は、人間ベースラインの可視化 (Phase 2) 後に HDM 方式で確定させる
+            if (template.ModelCharaId == 0 && template.SourceType != CharacterSourceType.Npc)
+            {
+                ApplyAppearanceDirect(nativeChara, globalIdx, template, spawned);
+            }
 
             // 5. 描画準備完了待機ジョブにエンキュー（IsReadyToDraw() を待って EnableDraw() を実行）
             readyJobs.Add(new ReadyJob
@@ -350,6 +379,7 @@ public unsafe class ActorManager : IDisposable
         try
         {
             readyJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
+            monsterRedrawJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
 
             // Penumbra 一時コレクションのクリーンアップ (AQR / Mare 準拠)
             if (actor.TemporaryCollectionGuid.HasValue)
@@ -406,6 +436,7 @@ public unsafe class ActorManager : IDisposable
     public void DespawnAll()
     {
         readyJobs.Clear();
+        monsterRedrawJobs.Clear();
         var list = activeActors.ToList();
         foreach (var actor in list)
         {
@@ -419,12 +450,14 @@ public unsafe class ActorManager : IDisposable
 
     /// <summary>
     /// 毎フレームの更新処理: HDM Draw-when-ready 2フェーズポーリング & 視線追従
+    /// <summary>
+    /// 毎フレームの更新処理: HDM Draw-when-ready 2フェーズポーリング & 視線追従 & モンスターRedraw
     /// </summary>
     public void UpdateFrame()
     {
         headTrackingManager.UpdateTracking(activeActors);
 
-        // HDM Draw-when-ready 2フェーズポーリング
+        // 1. HDM Draw-when-ready 2フェーズポーリング (人間ベースラインの実体化待機)
         if (readyJobs.Count > 0)
         {
             for (int i = readyJobs.Count - 1; i >= 0; i--)
@@ -452,25 +485,98 @@ public unsafe class ActorManager : IDisposable
 
                     chara->GameObject.EnableDraw();
                     job.DrawEnabled = true;
-
-                    // モンスター / 非人型モデル（ModelCharaId > 0）は EnableDraw() だけでネイティブ描画完了
-                    // Penumbra Redraw を呼ぶと DrawObject が無効化されるため即座に完了とする (HDM 方式)
-                    if (job.Template.ModelCharaId > 0)
-                    {
-                        readyJobs.RemoveAt(i);
-                        logManager?.Info($"Monster model {job.Template.ModelCharaId} ready and enabled for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex}.");
-                        continue;
-                    }
                     continue;
                 }
 
-                // Phase 2: 人型アクター（Glamourer / MCDF / NPC）の可視化待機と確定
+                // Phase 2: 人間ベースライン描画オブジェクトの可視化待機
                 var draw = chara->GameObject.DrawObject;
                 bool visible = draw != null && draw->IsVisible;
                 if (!visible && job.Ticks < MaxReadyTicks) continue;
 
-                // 描画準備完了！最終確定として外見を適用・定着
+                // 人間ベースラインが完全に描画実体化した！
                 readyJobs.RemoveAt(i);
+
+                // A. モンスター / 非人型モデル (ModelCharaId > 0) の場合: HDM GuiseService.cs 準拠
+                if (job.Template.ModelCharaId > 0)
+                {
+                    chara->ModelContainer.ModelCharaId = (int)job.Template.ModelCharaId;
+                    chara->GameObject.Scale = job.Template.Scale > 0 ? job.Template.Scale : 1.0f;
+                    chara->DrawData.HideWeapons(true);
+                    chara->DrawData.IsWeaponHidden = true;
+
+                    // Demihuman 装備データがある場合
+                    if (job.Template.NpcEquipmentModelIds != null && job.Template.NpcEquipmentModelIds.Length > 0)
+                    {
+                        var equipSpan = chara->DrawData.EquipmentModelIds;
+                        for (int idx = 0; idx < job.Template.NpcEquipmentModelIds.Length && idx < equipSpan.Length; idx++)
+                        {
+                            equipSpan[idx] = new EquipmentModelId { Value = job.Template.NpcEquipmentModelIds[idx] };
+                        }
+                        chara->DrawData.IsHatHidden = false;
+                    }
+
+                    chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
+
+                    // モンスターモデルへの再描画を開始: DisableDraw() して RedrawJob にエンキュー (HDM BeginRedraw 方式)
+                    chara->GameObject.DisableDraw();
+                    monsterRedrawJobs.Add(new MonsterRedrawJob
+                    {
+                        Spawned = job.Spawned,
+                        GlobalIndex = job.GlobalIndex,
+                        Ticks = 0
+                    });
+                    logManager?.Info($"Transitioning obj#{job.GlobalIndex} '{job.Spawned.DisplayName}' to Monster ModelCharaId {job.Template.ModelCharaId} via RedrawJob...");
+                    continue;
+                }
+
+                // B. 人型 NPC (SourceType == Npc かつ ModelCharaId == 0) の場合: HDM HumanGuise.cs 準拠
+                if (job.Template.SourceType == CharacterSourceType.Npc)
+                {
+                    try
+                    {
+                        if (glamourerIpc.IsAvailable)
+                        {
+                            bool success = glamourerIpc.ApplyNpcAppearance(
+                                job.GlobalIndex,
+                                job.Template.CustomizeData,
+                                job.Template.NpcEquipmentModelIds,
+                                showHeadgear: true
+                            );
+                            logManager?.Info($"Applied NPC appearance via Glamourer to Global#{job.GlobalIndex}: {success}");
+                        }
+                        else
+                        {
+                            ApplyNpcAppearanceDirectFallback(chara, job.Template);
+                        }
+
+                        // 武器の表示・非表示
+                        chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
+                        chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
+
+                        // スケルトン再構築の確定 (Penumbra Redraw または Disable/Enable)
+                        if (penumbraIpc.IsAvailable)
+                        {
+                            penumbraIpc.Redraw(job.GlobalIndex);
+                        }
+                        else
+                        {
+                            chara->GameObject.DisableDraw();
+                            monsterRedrawJobs.Add(new MonsterRedrawJob
+                            {
+                                Spawned = job.Spawned,
+                                GlobalIndex = job.GlobalIndex,
+                                Ticks = 0
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logManager?.Error($"Error applying NPC appearance for {job.Spawned.DisplayName}: {ex.Message}");
+                    }
+                    continue;
+                }
+
+                // C. その他の人型アクター (MCDF / Glamourer / PlayerClone) の最終確定
                 try
                 {
                     ApplyAppearanceDirect(chara, job.GlobalIndex, job.Template, job.Spawned);
@@ -482,10 +588,59 @@ public unsafe class ActorManager : IDisposable
                 }
             }
         }
+
+        // 2. モンスター / 再描画待機キュー (HDM GuiseService RedrawPhase.WaitEnable 方式)
+        if (monsterRedrawJobs.Count > 0)
+        {
+            for (int i = monsterRedrawJobs.Count - 1; i >= 0; i--)
+            {
+                var job = monsterRedrawJobs[i];
+                job.Ticks++;
+
+                if (!activeActors.Contains(job.Spawned) || job.Spawned.NativeAddress == 0)
+                {
+                    monsterRedrawJobs.RemoveAt(i);
+                    continue;
+                }
+
+                // 最低 2 フレーム待機 (DisableDraw がゲームエンジンに反映されるのを待つ)
+                if (job.Ticks < 2) continue;
+
+                var chara = (Character*)job.Spawned.NativeAddress;
+                bool ready = chara->GameObject.IsReadyToDraw();
+                if (!ready && job.Ticks < MaxReadyTicks) continue;
+
+                chara->GameObject.EnableDraw();
+                monsterRedrawJobs.RemoveAt(i);
+                logManager?.Info($"Monster/Actor redraw complete for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex} after {job.Ticks} ticks.");
+            }
+        }
+    }
+
+    private void ApplyNpcAppearanceDirectFallback(Character* chara, CharacterTemplate template)
+    {
+        if (template.CustomizeData != null && template.CustomizeData.Length >= 26)
+        {
+            fixed (byte* pCust = template.CustomizeData)
+            {
+                Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
+            }
+        }
+
+        if (template.NpcEquipmentModelIds != null && template.NpcEquipmentModelIds.Length > 0)
+        {
+            var equipSpan = chara->DrawData.EquipmentModelIds;
+            for (int idx = 0; idx < template.NpcEquipmentModelIds.Length && idx < equipSpan.Length; idx++)
+            {
+                equipSpan[idx] = new EquipmentModelId { Value = template.NpcEquipmentModelIds[idx] };
+            }
+        }
+
+        chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
     }
 
     /// <summary>
-    /// 外見（Glamourer / Penumbra / MCDF / モンスター / NPC）の即時直接適用
+    /// 外見（Glamourer / Penumbra / MCDF）の即時直接適用
     /// HDM & AQR アーキテクチャ準拠
     /// </summary>
     public void ApplyAppearanceDirect(Character* chara, ushort globalIndex, CharacterTemplate template, SpawnedActorData? spawned = null)
@@ -584,7 +739,7 @@ public unsafe class ActorManager : IDisposable
         if (template.ModelCharaId > 0)
         {
             chara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
-            chara->GameObject.Scale = 1.0f;
+            chara->GameObject.Scale = template.Scale > 0 ? template.Scale : 1.0f;
             chara->DrawData.HideWeapons(true);
             chara->DrawData.IsWeaponHidden = true;
             chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
@@ -593,33 +748,20 @@ public unsafe class ActorManager : IDisposable
             return;
         }
 
-        // 4. NPC (人型, ENpc) の場合
+        // 4. NPC (人型) の場合
         if (template.SourceType == CharacterSourceType.Npc)
         {
-            if (template.CustomizeData != null && template.CustomizeData.Length >= 26)
+            if (glamourerIpc.IsAvailable)
             {
-                fixed (byte* pCust = template.CustomizeData)
-                {
-                    Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
-                }
-                logManager?.Info($"Applied NPC CustomizeData to Global#{actorIndex}.");
+                glamourerIpc.ApplyNpcAppearance(actorIndex, template.CustomizeData, template.NpcEquipmentModelIds, showHeadgear: true);
+            }
+            else
+            {
+                ApplyNpcAppearanceDirectFallback(chara, template);
             }
 
-            if (template.NpcEquipmentModelIds != null && template.NpcEquipmentModelIds.Length > 0)
-            {
-                var equipSpan = chara->DrawData.EquipmentModelIds;
-                for (int idx = 0; idx < template.NpcEquipmentModelIds.Length && idx < equipSpan.Length; idx++)
-                {
-                    equipSpan[idx] = new EquipmentModelId { Value = template.NpcEquipmentModelIds[idx] };
-                }
-                logManager?.Info($"Applied {template.NpcEquipmentModelIds.Length} NPC EquipmentModelIds to Global#{actorIndex}.");
-            }
-
-            // 武器の表示・非表示
             chara->DrawData.HideWeapons(!template.WeaponVisible);
             chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
-
-            chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
 
             if (penumbraIpc.IsAvailable)
             {
