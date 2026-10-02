@@ -14,6 +14,6 @@
 - [x] バージョン更新 (0.1.19 / 0.1.19.0)
   - `package.json`, `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json`
   - `CHANGELOG.md` 追記
-- [ ] Git Commit & Push
-- [ ] GitHub Actions ビルド待機 & XIVLauncher 全バージョンフォルダへの最新 DLL 配置
-- [ ] 完了報告
+- [x] Git Commit & Push
+- [x] GitHub Actions ビルド待機 & XIVLauncher 全バージョンフォルダへの最新 DLL 配置
+- [x] 完了報告
