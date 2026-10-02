@@ -255,9 +255,9 @@ public unsafe class ActorManager : IDisposable
             // 内部で allowPlayerNpc: false で FromObject を呼ぶ。
             // ObjectKind が BattleNpc だと CreateBNpcFromObject に進み、NameId 0 のアクターは必ず InvalidActor (ec=16 / ec=255) となり、
             // Penumbra のコレクションがアクターに割り当てられずバニラになってしまう。
-            // 人型パペット (Glamourer / MCDF / PlayerClone / Humanoid) は ObjectKind.Player に設定することで、
+            // 人型パペット (Glamourer / MCDF / PlayerClone / Humanoid) は ObjectKind.Pc に設定することで、
             // Penumbra の CreatePlayerFromObject が走り、100% 確実にコレクション・MOD が解決される。
-            nativeChara->GameObject.ObjectKind = template.ModelCharaId > 0 ? ObjectKind.BattleNpc : ObjectKind.Player;
+            nativeChara->GameObject.ObjectKind = template.ModelCharaId > 0 ? ObjectKind.BattleNpc : ObjectKind.Pc;
             nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
             nativeChara->GameObject.TargetableStatus = 0;
             nativeChara->GameObject.EventId = 0;
@@ -711,10 +711,10 @@ public unsafe class ActorManager : IDisposable
 
         logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId})...");
 
-        // 人型モデルの場合は ObjectKind.Player を担保（Penumbra Identifier 解決の生命線）
+        // 人型モデルの場合は ObjectKind.Pc を担保（Penumbra Identifier 解決の生命線）
         if (template.ModelCharaId == 0)
         {
-            chara->GameObject.ObjectKind = ObjectKind.Player;
+            chara->GameObject.ObjectKind = ObjectKind.Pc;
         }
 
         // 1. MCDF の場合: AQR / Mare 準拠（内包 Mod ファイルのキャッシュ展開 + Penumbra Temporary Collection + Glamourer）
