@@ -671,6 +671,8 @@ public class CharacterLibraryTab
                 }
             }
             ImGui.EndCombo();
+        }
+
         ImGui.Spacing();
 
         // Penumbra Collection Combo
