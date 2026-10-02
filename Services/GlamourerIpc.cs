@@ -336,8 +336,7 @@ public class GlamourerIpc
                 ForceAllApply(targetDesignObj);
                 customizeBytes = ExtractCustomizeBytes(targetDesignObj);
 
-                // ForceAllApply した JObject から ApplyState を優先実行（Apply: false スロットのスキップを防止）
-                string jsonString = targetDesignObj.ToString(Formatting.None);
+                string jsonString = targetDesignObj.ToString(Newtonsoft.Json.Formatting.None);
                 if (applyStateV2Ulong != null)
                 {
                     try
