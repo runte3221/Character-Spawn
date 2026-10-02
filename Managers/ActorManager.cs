@@ -185,9 +185,17 @@ public unsafe class ActorManager : IDisposable
             nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
             nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-            // クラス分類: 非ターゲット・プレイヤー骨格 BattleNpc
-            nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc;
-            nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
+            // クラス分類: 人型は Player (Penumbra IPC/Glamourer での Player 認識を保証), モンスターモデルは BattleNpc
+            if (template.ModelCharaId > 0)
+            {
+                nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc;
+                nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Enemy;
+            }
+            else
+            {
+                nativeChara->GameObject.ObjectKind = ObjectKind.Player;
+                nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
+            }
             nativeChara->GameObject.TargetableStatus &= ~ObjectTargetableFlags.IsTargetable;
 
             // Glamourer & Penumbra Identity のスタンプ (The 0.8.44 Bug & Penumbra ec=16 対策)

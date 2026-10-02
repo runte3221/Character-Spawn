@@ -1,20 +1,23 @@
-# 実装計画: AQR完全準拠のMCDF Mod展開＆Penumbra一時コレクション連携
+# 実装計画: PenumbraコレクションおよびMCDF一時コレクションの正常適用 (v0.1.16)
 
-## 目的
-1. **MCDF完全互換**: 他ユーザーから受け取ったMCDF（自環境にModが未インストールの状態）でも、MCDF内に同梱されている3Dモデル、テクスチャ、マテリアル、FileSwap、MetaManipulationをローカルキャッシュに抽出し、Penumbraの一時コレクション（Temporary Collection）に登録することで100%外見を再現する（A Quest Reborn完全準拠）。
-2. **Penumbra手動コレクションの排除（MCDF時）**: MCDF利用時にユーザーに手動でPenumbraコレクションを選ばせる方式を廃止し、AQRと同様に全自動で一時コレクションを生成・適用する。
-3. **リソースライフサイクル管理**: アクターのデスポーン時やエリア移動時に、Penumbraの一時コレクションを確実に解放・削除する。
-4. **バージョン管理の確実化**: XIVLauncherが古いv0.1.9フォルダ等を読み込むことによる不整合を防ぐ。
+## 1. 課題と原因分析
+### 課題
+- Penumbra Collectionを指定してスポーンさせても、コレクションが反映されない。
+- MCDFファイルを指定してスポーンさせても、内包されているMod（モデル・テクスチャ・マテリアル・FileSwaps・MetaManipulations）がアクターに反映されない。
 
-## 設計詳細
-- **McdfParser**:
-  - LZ4ストリーム解凍後、JSON内の `Files` 配列から各ファイルの実バイナリを `mcdf_cache` フォルダに展開。
-  - `FileSwaps` および `Files` のゲーム内パスとキャッシュファイルパスのマッピングテーブル（`ModPaths`）を構築。
-- **PenumbraIpc**:
-  - `Penumbra.CreateTemporaryCollection.V6`: 一時コレクション生成。
-  - `Penumbra.AssignTemporaryCollection.V5`: スポーンアクター（`globalIndex`）に一時コレクションを割り当て。
-  - `Penumbra.AddTemporaryMod.V5`: 抽出されたModファイル群および `ManipulationData` を一時Modとしてコレクションに登録。
-  - `Penumbra.DeleteTemporaryCollection.V5`: デスポーン時に一時コレクションを削除。
-- **ActorManager**:
-  - スポーン時に上記Penumbra一時コレクションサイクルを実行後、Glamourerデザインを適用し、Penumbra Redrawを実行。
-  - デスポーン時に `TemporaryCollectionGuid` を参照してコレクションを解放。
+### 原因 (Penumbra内部解析結果)
+- `Penumbra.GameData.dll` の `ActorIdentifierFactory.FromObject` において、`nativeChara->GameObject.ObjectKind` が評価される。
+- これまで全アクターに対して `ObjectKind = ObjectKind.BattleNpc` を設定していた。
+- コレクション割り当てIPC（`AssignTemporaryCollection` / `SetCollectionForObject`）は、内部で `CreateBNpcFromObject(allowPlayer: false)` を呼び出す。
+- `allowPlayer = false` であるため、アクター名や `OwnerId` が設定されていてもプレイヤーとして認識されず、存在しないモンスター `BNpc(DataId = 0)` として解決される。
+- これにより、コレクション登録時に Mod グループが 0件となり、`AssignTemporaryCollection` は `ec = 255`、`SetCollectionForObject` は `ec = 16` (`InvalidIdentifier`) で拒否されていた。
+
+## 2. 修正方針
+1. **`Managers/ActorManager.cs` の修正**:
+   - 人型アクター（`template.ModelCharaId == 0`）の場合は `nativeChara->GameObject.ObjectKind = ObjectKind.Player` に設定。
+   - モンスター（`template.ModelCharaId > 0`）の場合のみ `nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc` とする。
+   - `puppetName`（例: `"Cs Aa"`）は Penumbra の `VerifyPlayerName`（長さ5〜31文字、スペース1つ、各パート2〜15文字の英字）を満たす。
+   - これにより、Penumbra は `CreatePlayerFromObject` を実行し、正当な Player Identifier として認識され、`ec = 0` (Success) でコレクションが適用される。
+2. **バージョン更新 & 配布**:
+   - v0.1.16 / 0.1.16.0 に Bump。
+   - GitHub Actions でビルド後、XIVLauncher の `installedPlugins/CharacterSpawn` 配下の全バージョンフォルダに最新 DLL を配備。

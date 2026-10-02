@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.16] - 2026-10-02
+### Fixed
+- **Penumbra Collection & MCDF Temporary Collection Assignment via ObjectKind.Player**:
+  - Through comprehensive CIL reverse-engineering of `Penumbra.GameData.dll`'s `ActorIdentifierFactory.FromObject`, discovered the exact root cause of `AssignTemporaryCollection` failing with error code `255` and `SetCollectionForObject` failing with `ec = 16` (`InvalidIdentifier`).
+  - Previously, all spawned actors were assigned `ObjectKind = ObjectKind.BattleNpc`. When resolving collections, Penumbra's internal IPC methods invoke `CreateBNpcFromObject(allowPlayer: false)`. Because `allowPlayer` is hard-coded to `false` in collection assignment IPC, any non-Player object kind—regardless of its name or `OwnerId`—is strictly treated as a monster NPC. Since `DataId` was 0, it resolved to non-existent `BNpc(0)`, which has 0 mod collections, causing `Collections.Add` to reject assignment with error code 255 and `SetCollectionForObject` to return 16.
+  - Resolved this by setting `ObjectKind = ObjectKind.Player` (and `BattleNpcSubKind = BattleNpcSubKind.Player`) for all humanoid actors (`template.ModelCharaId == 0`), while keeping `ObjectKind = ObjectKind.BattleNpc` strictly for monster models (`template.ModelCharaId > 0`).
+  - With `ObjectKind.Player`, Penumbra directly routes to `CreatePlayerFromObject`, validating the character's name (`"Cs Aa"` format) and returning a 100% valid Player identifier. Both normal Penumbra collections and MCDF temporary collections now successfully bind (`ec = 0`) and apply all custom 3D models, textures, and manipulations to spawned actors.
+
 ## [0.1.15] - 2026-10-02
 ### Added
 - **Full AQR-Compliant MCDF Mod Extraction & Penumbra Temporary Collection Lifecycle**:
