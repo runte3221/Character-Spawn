@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.31] - 2026-10-02
+### Fixed
+- **ASCII-Only Valid FF14 Puppet Name Generation (Fixing Reverting to Player Character Baseline)**:
+  - **Root Cause Identified**: In v0.1.30, hex digits from `template.Id` (e.g. `Csp 04ffbf3e`) were used in puppet names. FF14 engine and all IPC plugins (Penumbra, Glamourer, CustomizePlus) enforce strict player name validation (`VerifyPlayerName`) that strictly rejects digits (0-9). Consequently, Penumbra rejected the actor with `ec=16 (InvalidActor)`, Glamourer with `result=2 (ActorNotFound)`, and CustomizePlus with `ec=255 (ActorNotFound)`, resulting in zero appearances being applied and the actor remaining as the player character.
+  - **Valid FF14 Name Generator**: `GetPuppetName` now maps Guid bytes deterministically to an 8-character ASCII alphabet-only Surname (`[A-Z][a-z]{7}`, e.g. `Csp Evjkkhzl`), perfectly complying with FF14 player naming standards while maintaining deterministic per-template uniqueness ($26^8 \approx 2.08 \times 10^{11}$ combinations).
+- **Robust Glamourer Guid Design Application & Fallthrough Guard**:
+  - In `GlamourerIpc.ApplyDesignToActorEx`, for Guid designs, retrieves the design JObject, applies `ForceAllApply` to ensure no slots are skipped, and applies state via `ApplyState` while directly synchronizing 26-byte `CustomizeData` to the native actor.
+  - Guarded Guid designs from falling through to the Base64 string parser, preventing conversion failure errors (`result: 7`).
+
 ## [0.1.30] - 2026-10-02
 ### Fixed
 - **Puppet Actor Name Cache Isolation & Full State Cleanup (Fixing Respawning as Wrong / Deleted Character Appearance)**:

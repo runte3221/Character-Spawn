@@ -326,16 +326,48 @@ public class GlamourerIpc
             }
         }
 
-        // A. Guid がある場合: ApplyDesign IPC を直接呼び出し、デザインファイルから CustomizeBytes を同期
+        // A. Guid がある場合: デザイン取得 -> ForceAllApply -> ApplyState または ApplyDesign
         if (targetGuid != Guid.Empty)
         {
             byte[]? customizeBytes = null;
             var targetDesignObj = GetDesign(targetGuid);
             if (targetDesignObj != null)
             {
+                ForceAllApply(targetDesignObj);
                 customizeBytes = ExtractCustomizeBytes(targetDesignObj);
+
+                // ForceAllApply した JObject から ApplyState を優先実行（Apply: false スロットのスキップを防止）
+                string jsonString = targetDesignObj.ToString(Formatting.None);
+                if (applyStateV2Ulong != null)
+                {
+                    try
+                    {
+                        int res = applyStateV2Ulong.InvokeFunc(jsonString, actorIndex, 0, 6UL);
+                        log.Information($"Glamourer ApplyState for Guid {targetGuid} (ulong flags=6) result: {res}");
+                        if (res == 0) return (true, customizeBytes);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Warning($"Glamourer ApplyState V2 (ulong) failed for Guid {targetGuid}: {ex.Message}");
+                    }
+                }
+
+                if (applyStateV2Uint != null)
+                {
+                    try
+                    {
+                        int res = applyStateV2Uint.InvokeFunc(jsonString, actorIndex, 0, 6U);
+                        log.Information($"Glamourer ApplyState for Guid {targetGuid} (uint flags=6) result: {res}");
+                        if (res == 0) return (true, customizeBytes);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Warning($"Glamourer ApplyState V2 (uint) failed for Guid {targetGuid}: {ex.Message}");
+                    }
+                }
             }
 
+            // フォールバック: ApplyDesign IPC を直接呼び出し
             if (applyDesignV2Ulong != null)
             {
                 try
@@ -364,19 +396,8 @@ public class GlamourerIpc
                 }
             }
 
-            if (applyByGuidLegacy != null)
-            {
-                try
-                {
-                    applyByGuidLegacy.InvokeAction(targetGuid, actorIndex);
-                    log.Information($"Glamourer ApplyByGuid Legacy executed for actor {actorIndex}.");
-                    return (true, customizeBytes);
-                }
-                catch (Exception ex)
-                {
-                    log.Warning($"Glamourer ApplyByGuid Legacy failed: {ex.Message}");
-                }
-            }
+            // Guid の場合は Base64 デコード処理にはフォールスルーしない
+            return (false, customizeBytes);
         }
 
         // B. Guid ではない場合 (MCDF 等の Base64 / JSON デザイン文字列): Parse して ApplyState を実行

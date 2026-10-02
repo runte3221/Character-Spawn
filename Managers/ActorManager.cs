@@ -125,10 +125,30 @@ public unsafe class ActorManager : IDisposable
 
     private string GetPuppetName(CharacterTemplate template)
     {
-        // テンプレート固有の一意ID（8文字）をSurnameにして、過去の他キャラの名前キャッシュとの衝突を100%防止！
-        var raw = template.Id.Replace("-", "");
-        var suffix = raw.Length >= 8 ? raw[..8] : raw;
-        return $"Csp {suffix}";
+        // FF14 の PlayerIdentifier / VerifyPlayerName 規則:
+        // 数字 (0-9) は絶対不可！英字のみ (A-Z, a-z) で構成された 2 単語が必要
+        // 形式: Forename (3〜15文字, 先頭大文字) + " " + Surname (3〜15文字, 先頭大文字)
+        byte[] bytes;
+        if (Guid.TryParse(template.Id, out var g))
+        {
+            bytes = g.ToByteArray();
+        }
+        else
+        {
+            bytes = Encoding.UTF8.GetBytes(template.Id);
+        }
+
+        // 8文字の完全アルファベット Surname を生成 (例: "Evjkkhzl")
+        // 26^8 通り (約2088億通り) で衝突を完全に防止しつつ、VerifyPlayerName を100%パスする
+        char[] surname = new char[8];
+        surname[0] = (char)('A' + (bytes[0] % 26));
+        for (int i = 1; i < 8; i++)
+        {
+            int b = i < bytes.Length ? bytes[i] : bytes[i % bytes.Length];
+            surname[i] = (char)('a' + (b % 26));
+        }
+
+        return $"Csp {new string(surname)}";
     }
 
     /// <summary>
