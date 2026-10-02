@@ -98,5 +98,17 @@ Character-Spawn/
 
 ---
 
+## ランチャー（/xlplugins）への登録手順
+
+1. ゲーム内で `/xlplugins` を開く
+2. 左下の **「設定（Settings）」** （歯車アイコン）をクリック
+3. **「実験的（Experimental）」** タブを開く
+4. **「カスタムプラグインリポジトリ（Custom Plugin Repositories）」** の入力欄に以下のURLを入力：
+   ```
+   https://raw.githubusercontent.com/runte3221/Character-Spawn/main/repo.json
+   ```
+5. 右側の **「＋」**（追加）ボタンを押し、下部の **「保存して閉じる（Save and Close）」** をクリック
+6. プラグイン一覧の検索欄で **`Character Spawn`** と検索すると表示され、ワンクリックでインストール可能です。
+
 ## 起動コマンド
 - `/charaspawn` または `/cspawn` でメインウィンドウの開閉が可能です。
