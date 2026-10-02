@@ -476,15 +476,26 @@ public unsafe class ActorManager : IDisposable
                 }
             }
 
-            // CustomizePlus 一時プロファイルの完全クリーンアップ
+            // CustomizePlus プロファイル紐付けおよび一時プロファイルの完全クリーンアップ (AQR / Caraxi 準拠)
             if (customizePlusIpc != null && customizePlusIpc.IsAvailable)
             {
+                if (actor.AssignedCustomizePlusGuid.HasValue && !string.IsNullOrEmpty(actor.PuppetName))
+                {
+                    ushort worldId = 0;
+                    if (actor.NativeAddress != 0)
+                    {
+                        var c = (Character*)actor.NativeAddress;
+                        worldId = (ushort)c->HomeWorld;
+                    }
+                    customizePlusIpc.RemovePlayerCharacter(actor.AssignedCustomizePlusGuid.Value, actor.PuppetName, worldId);
+                    actor.AssignedCustomizePlusGuid = null;
+                }
+
                 if (actor.TemporaryCustomizePlusGuid.HasValue)
                 {
                     customizePlusIpc.DeleteTemporaryProfile(actor.TemporaryCustomizePlusGuid.Value);
                     actor.TemporaryCustomizePlusGuid = null;
                 }
-                customizePlusIpc.DeleteTemporaryProfileOnCharacter(actor.GlobalIndex);
             }
 
             if (actor.NativeAddress != 0)
@@ -492,9 +503,10 @@ public unsafe class ActorManager : IDisposable
                 var chara = (Character*)actor.NativeAddress;
                 try
                 {
-                    // 武器のグラフィックフラグを非表示に設定
+                    // 武器のグラフィックフラグを非表示にし、描画パイプラインから完全アンロード (孤立武器残留防止)
                     chara->DrawData.HideWeapons(true);
                     chara->DrawData.IsWeaponHidden = true;
+                    chara->GameObject.DisableDraw();
                 }
                 catch { }
 
@@ -502,7 +514,6 @@ public unsafe class ActorManager : IDisposable
                 if (com != null)
                 {
                     // ライブオブジェクトから最新の COM インデックスを解決して正規破棄
-                    // ※ DisableDraw() は呼ばない（呼ぶと描画ツリーから武器が切り離されてワールドに孤立するため）
                     var comIdx = com->GetIndexByObject((GameObject*)actor.NativeAddress);
                     if (comIdx != 0xFFFFFFFF)
                     {
@@ -883,6 +894,9 @@ public unsafe class ActorManager : IDisposable
 
         logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId})...");
 
+        // Fresh な ICharacter 参照を ObjectTable から解決 (AQuestReborn 準拠: 生ポインタに直接外見適用)
+        var charaObj = (globalIndex < objectTable.Length) ? objectTable[globalIndex] as ICharacter : null;
+
         // 前のキャラのステートや割り当てをリセット
         if (glamourerIpc != null && glamourerIpc.IsAvailable)
         {
@@ -896,11 +910,6 @@ public unsafe class ActorManager : IDisposable
         if (penumbraIpc.IsAvailable)
         {
             penumbraIpc.UnassignCollectionForActor(actorIndex);
-        }
-
-        if (customizePlusIpc != null && customizePlusIpc.IsAvailable)
-        {
-            customizePlusIpc.DeleteTemporaryProfileOnCharacter((ushort)actorIndex);
         }
 
         // 人型モデルの場合は ObjectKind.Pc を担保（Penumbra Identifier 解決の生命線）
@@ -948,13 +957,21 @@ public unsafe class ActorManager : IDisposable
                             }
                         }
 
-                        // Glamourer デザインの適用 (PuppetName 名前指定を優先して自キャラ誤爆を 100% 根絶)
+                        // Glamourer デザインの適用 (ICharacter ポインタ直接適用で自キャラ誤爆を 100% 根絶)
                         string? designString = bundle.GlamourerDesign;
                         if (string.IsNullOrWhiteSpace(designString)) designString = template.GlamourerDesignString;
 
                         if (glamourerIpc.IsAvailable && !string.IsNullOrWhiteSpace(designString))
                         {
-                            bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
+                            bool glamSuccess = false;
+                            if (charaObj != null && charaObj.Address != nint.Zero)
+                            {
+                                glamSuccess = glamourerIpc.ApplyDesignToCharacter(charaObj, designString);
+                            }
+                            if (!glamSuccess)
+                            {
+                                glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
+                            }
                             logManager?.Info($"MCDF Glamourer ApplyDesign result on Global#{actorIndex} ('{spawned?.PuppetName}'): {glamSuccess}");
                         }
 
@@ -970,7 +987,7 @@ public unsafe class ActorManager : IDisposable
                         }
 
                         // Customize+ Profile の適用 (テンプレート指定 または MCDF内包データ)
-                        ApplyCustomizePlusProfile(actorIndex, template, spawned, bundle.CustomizePlusData);
+                        ApplyCustomizePlusProfile(chara, actorIndex, template, spawned, bundle.CustomizePlusData);
 
                         if (spawned != null) spawned.IsReady = true;
                         return;
@@ -1027,14 +1044,22 @@ public unsafe class ActorManager : IDisposable
             return;
         }
 
-        // 5. Glamourer / PlayerClone の適用 (PuppetName 名前指定を優先して自キャラ誤爆を 100% 根絶)
+        // 5. Glamourer / PlayerClone の適用 (ICharacter ポインタ直接適用で自キャラ誤爆を 100% 根絶)
         if (glamourerIpc.IsAvailable)
         {
             string? designString = template.GlamourerDesignString;
 
             if (!string.IsNullOrWhiteSpace(designString))
             {
-                bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
+                bool glamSuccess = false;
+                if (charaObj != null && charaObj.Address != nint.Zero)
+                {
+                    glamSuccess = glamourerIpc.ApplyDesignToCharacter(charaObj, designString);
+                }
+                if (!glamSuccess)
+                {
+                    glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
+                }
                 logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex} ('{spawned?.PuppetName}'): {glamSuccess}");
             }
             else if (template.SourceType == CharacterSourceType.PlayerClone)
@@ -1042,8 +1067,16 @@ public unsafe class ActorManager : IDisposable
                 var playerDesign = glamourerIpc.GetCustomization(0);
                 if (!string.IsNullOrWhiteSpace(playerDesign))
                 {
-                    glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex, spawned?.PuppetName);
-                    logManager?.Info($"Applied player customization clone via Glamourer to Global#{actorIndex} ('{spawned?.PuppetName}').");
+                    bool glamSuccess = false;
+                    if (charaObj != null && charaObj.Address != nint.Zero)
+                    {
+                        glamSuccess = glamourerIpc.ApplyDesignToCharacter(charaObj, playerDesign);
+                    }
+                    if (!glamSuccess)
+                    {
+                        glamSuccess = glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex, spawned?.PuppetName);
+                    }
+                    logManager?.Info($"Applied player customization clone via Glamourer to Global#{actorIndex} ('{spawned?.PuppetName}'): {glamSuccess}");
                 }
                 else
                 {
@@ -1070,38 +1103,47 @@ public unsafe class ActorManager : IDisposable
             logManager?.Info($"Triggered Penumbra Redraw for Global#{actorIndex}.");
         }
 
-        // 7. Customize+ Profile の適用
-        ApplyCustomizePlusProfile(actorIndex, template, spawned);
+        // 7. Customize+ Profile の適用 (AQR / Caraxi 準拠: PuppetName と WorldId によるプロファイル紐付け)
+        ApplyCustomizePlusProfile(chara, actorIndex, template, spawned);
         if (spawned != null) spawned.IsReady = true;
     }
 
     /// <summary>
-    /// Customize+ Profile (テンプレート指定 または MCDF内包) をアクターに一時適用
+    /// Customize+ Profile (テンプレート指定 または MCDF内包) をパペット名とワールドIDで紐付け (Caraxi / AQR 準拠)
+    /// インデックス指定を行わないため、自キャラ(LocalPlayer Index 0)への誤爆は物理的に完全不可能
     /// </summary>
-    private void ApplyCustomizePlusProfile(int actorIndex, CharacterTemplate template, SpawnedActorData? spawned, string? fallbackMcdfCPlusData = null)
+    private void ApplyCustomizePlusProfile(Character* chara, int actorIndex, CharacterTemplate template, SpawnedActorData? spawned, string? fallbackMcdfCPlusData = null)
     {
         if (customizePlusIpc == null || !customizePlusIpc.IsAvailable) return;
 
         try
         {
-            // 既存の一時プロファイルがあれば削除
-            if (spawned?.TemporaryCustomizePlusGuid.HasValue == true)
-            {
-                customizePlusIpc.DeleteTemporaryProfile(spawned.TemporaryCustomizePlusGuid.Value);
-                spawned.TemporaryCustomizePlusGuid = null;
-            }
-            customizePlusIpc.DeleteTemporaryProfileOnCharacter((ushort)actorIndex);
+            ushort worldId = chara != null ? (ushort)chara->HomeWorld : (ushort)0;
+            string puppetName = spawned?.PuppetName ?? string.Empty;
 
-            Guid? assignedGuid = null;
+            // 既存の紐付け解除
+            if (spawned?.AssignedCustomizePlusGuid.HasValue == true && !string.IsNullOrEmpty(puppetName))
+            {
+                customizePlusIpc.RemovePlayerCharacter(spawned.AssignedCustomizePlusGuid.Value, puppetName, worldId);
+                spawned.AssignedCustomizePlusGuid = null;
+            }
 
             // 1. テンプレートで明示指定された CustomizePlus プロファイル
             if (!string.IsNullOrWhiteSpace(template.CustomizePlusProfileGuid) &&
                 Guid.TryParse(template.CustomizePlusProfileGuid, out var profileGuid))
             {
-                assignedGuid = customizePlusIpc.SetTemporaryProfileByGuid((ushort)actorIndex, profileGuid);
-                if (assignedGuid.HasValue)
+                if (!string.IsNullOrEmpty(puppetName))
                 {
-                    logManager?.Info($"CustomizePlus: Applied profile '{template.CustomizePlusProfileName ?? profileGuid.ToString()}' ({assignedGuid.Value}) to Global#{actorIndex}.");
+                    bool ok = customizePlusIpc.AddPlayerCharacter(profileGuid, puppetName, worldId);
+                    if (ok && spawned != null)
+                    {
+                        spawned.AssignedCustomizePlusGuid = profileGuid;
+                        logManager?.Info($"CustomizePlus: Mapped profile '{template.CustomizePlusProfileName ?? profileGuid.ToString()}' ({profileGuid}) to puppet '{puppetName}' (World: {worldId}).");
+                    }
+                    else
+                    {
+                        logManager?.Warning($"CustomizePlus: Failed to map profile '{profileGuid}' to puppet '{puppetName}'.");
+                    }
                 }
             }
             // 2. MCDF に内包された CustomizePlus データ
@@ -1121,16 +1163,27 @@ public unsafe class ActorManager : IDisposable
                     }
                 }
 
-                assignedGuid = customizePlusIpc.SetTemporaryProfile((ushort)actorIndex, cPlusJson);
-                if (assignedGuid.HasValue)
+                // MCDF のプロファイル JSON から Guid を取得して紐付け試行
+                try
                 {
-                    logManager?.Info($"CustomizePlus: Applied embedded MCDF profile ({assignedGuid.Value}) to Global#{actorIndex}.");
+                    var parsed = Newtonsoft.Json.Linq.JObject.Parse(cPlusJson);
+                    if (parsed["UniqueId"] != null && Guid.TryParse(parsed["UniqueId"]!.ToString(), out var mcdfProfileGuid))
+                    {
+                        if (!string.IsNullOrEmpty(puppetName))
+                        {
+                            bool ok = customizePlusIpc.AddPlayerCharacter(mcdfProfileGuid, puppetName, worldId);
+                            if (ok && spawned != null)
+                            {
+                                spawned.AssignedCustomizePlusGuid = mcdfProfileGuid;
+                                logManager?.Info($"CustomizePlus: Mapped MCDF profile {mcdfProfileGuid} to puppet '{puppetName}'.");
+                            }
+                        }
+                    }
                 }
-            }
-
-            if (assignedGuid.HasValue && spawned != null)
-            {
-                spawned.TemporaryCustomizePlusGuid = assignedGuid.Value;
+                catch (Exception ex)
+                {
+                    logManager?.Warning($"Could not map MCDF CustomizePlus profile: {ex.Message}");
+                }
             }
         }
         catch (Exception ex)

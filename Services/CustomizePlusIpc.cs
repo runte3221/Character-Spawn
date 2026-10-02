@@ -38,6 +38,10 @@ public class CustomizePlusIpc
     private readonly ICallGateSubscriber<Guid, int>? deleteTemporaryProfileByUniqueId;
     private readonly ICallGateSubscriber<ushort, int>? deleteTemporaryProfileOnCharacter;
 
+    // Character mapping subscribers (Caraxi / AQR 準拠: 名前+ワールド紐付けで自キャラ誤爆を 100% 根絶)
+    private readonly ICallGateSubscriber<Guid, string, ushort, int>? addPlayerCharacter;
+    private readonly ICallGateSubscriber<Guid, string, ushort, int>? removePlayerCharacter;
+
     private bool isAvailable = false;
     private DateTime lastAvailabilityCheck = DateTime.MinValue;
 
@@ -70,6 +74,8 @@ public class CustomizePlusIpc
             setTemporaryProfileOnCharacter = pi.GetIpcSubscriber<ushort, string, (int, Guid?)>("CustomizePlus.Profile.SetTemporaryProfileOnCharacter");
             deleteTemporaryProfileByUniqueId = pi.GetIpcSubscriber<Guid, int>("CustomizePlus.Profile.DeleteTemporaryProfileByUniqueId");
             deleteTemporaryProfileOnCharacter = pi.GetIpcSubscriber<ushort, int>("CustomizePlus.Profile.DeleteTemporaryProfileOnCharacter");
+            addPlayerCharacter = pi.GetIpcSubscriber<Guid, string, ushort, int>("CustomizePlus.Profile.AddPlayerCharacter");
+            removePlayerCharacter = pi.GetIpcSubscriber<Guid, string, ushort, int>("CustomizePlus.Profile.RemovePlayerCharacter");
         }
         catch (Exception ex)
         {
@@ -205,6 +211,45 @@ public class CustomizePlusIpc
         catch (Exception ex)
         {
             log.Warning($"Error deleting CustomizePlus temporary profile on actor index {gameObjectIndex}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// パペットの名前とワールドIDを正規プロファイルに紐付け (Caraxi / AQR 準拠)
+    /// インデックス指定を行わないため、自キャラ(LocalPlayer Index 0)への誤爆は物理的に完全不可能
+    /// </summary>
+    public bool AddPlayerCharacter(Guid profileGuid, string characterName, ushort worldId)
+    {
+        if (!IsAvailable || addPlayerCharacter == null || string.IsNullOrWhiteSpace(characterName)) return false;
+        try
+        {
+            int ec = addPlayerCharacter.InvokeFunc(profileGuid, characterName, worldId);
+            log.Information($"CustomizePlus AddPlayerCharacter '{characterName}' (World: {worldId}) to Profile {profileGuid}: ec={ec}");
+            return ec == 0;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Error calling CustomizePlus AddPlayerCharacter: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// パペットの名前とワールドIDのプロファイル紐付けを解除 (Caraxi / AQR 準拠)
+    /// </summary>
+    public bool RemovePlayerCharacter(Guid profileGuid, string characterName, ushort worldId)
+    {
+        if (!IsAvailable || removePlayerCharacter == null || string.IsNullOrWhiteSpace(characterName)) return false;
+        try
+        {
+            int ec = removePlayerCharacter.InvokeFunc(profileGuid, characterName, worldId);
+            log.Information($"CustomizePlus RemovePlayerCharacter '{characterName}' (World: {worldId}) from Profile {profileGuid}: ec={ec}");
+            return ec == 0;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Error calling CustomizePlus RemovePlayerCharacter: {ex.Message}");
             return false;
         }
     }

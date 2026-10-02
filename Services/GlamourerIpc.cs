@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
@@ -9,6 +10,12 @@ public class GlamourerIpc
 {
     private readonly IDalamudPluginInterface pi;
     private readonly IPluginLog log;
+
+    // Direct Character Pointer Subscribers (AQuestReborn / Mare 準拠: 自キャラ誤爆完全根絶)
+    private readonly ICallGateSubscriber<ICharacter, string, object?>? applyAllToCharacter;
+    private readonly ICallGateSubscriber<Guid, ICharacter, object?>? applyByGuidToCharacter;
+    private readonly ICallGateSubscriber<ICharacter, object?>? revertCharacter;
+    private readonly ICallGateSubscriber<Guid, string>? getDesignBase64;
 
     // V2 IPC Subscribers
     private readonly ICallGateSubscriber<(int, int)>? apiVersionV2;
@@ -91,6 +98,12 @@ public class GlamourerIpc
             getDesignListLegacy = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList");
             applyByGuidLegacy = pi.GetIpcSubscriber<Guid, int, object?>("Glamourer.ApplyByGuid");
             applyByStringLegacy = pi.GetIpcSubscriber<string, int, object?>("Glamourer.ApplyByString");
+
+            // Direct Character Pointer Subscribers (AQuestReborn / Mare 準拠)
+            applyAllToCharacter = pi.GetIpcSubscriber<ICharacter, string, object?>("Glamourer.ApplyAllToCharacter");
+            applyByGuidToCharacter = pi.GetIpcSubscriber<Guid, ICharacter, object?>("Glamourer.ApplyByGuidToCharacter");
+            revertCharacter = pi.GetIpcSubscriber<ICharacter, object?>("Glamourer.RevertCharacter");
+            getDesignBase64 = pi.GetIpcSubscriber<Guid, string>("Glamourer.GetDesignBase64");
 
             CheckAvailability();
         }
@@ -313,6 +326,123 @@ public class GlamourerIpc
                     slotObj["Apply"] = true;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// アクターの生ポインタ (ICharacter) に対して直接外見を適用 (AQuestReborn / Mare 準拠)
+    /// IndexSorted 検索を一切行わないため、Index 0 (自キャラ) への誤爆は物理的に完全不可能
+    /// </summary>
+    public bool ApplyDesignToCharacter(ICharacter character, string designString)
+    {
+        if (!IsAvailable || character == null || character.Address == nint.Zero || string.IsNullOrWhiteSpace(designString))
+            return false;
+
+        try
+        {
+            // 1. Guid 文字列かどうか判定、あるいは名前から Guid を解決
+            Guid targetGuid = Guid.Empty;
+            if (Guid.TryParse(designString, out var parsedGuid))
+            {
+                targetGuid = parsedGuid;
+            }
+            else if (!designString.StartsWith("{") && !designString.StartsWith("[") && designString.Length < 100)
+            {
+                var designs = GetDesigns();
+                foreach (var kvp in designs)
+                {
+                    if (string.Equals(kvp.Value, designString, StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetGuid = kvp.Key;
+                        break;
+                    }
+                }
+            }
+
+            // 2. Guid が特定できた場合
+            if (targetGuid != Guid.Empty)
+            {
+                // A. Base64 を取得して全パーツ強制適用(ForceAllApply)の上で ApplyAllToCharacter を実行
+                string? base64 = null;
+                if (getDesignBase64 != null)
+                {
+                    try { base64 = getDesignBase64.InvokeFunc(targetGuid); } catch { }
+                }
+
+                if (!string.IsNullOrEmpty(base64))
+                {
+                    var jobj = ParseDesignString(base64);
+                    if (jobj != null)
+                    {
+                        ForceAllApply(jobj);
+                        string forcedBase64 = CompressToBase64(jobj);
+                        if (applyAllToCharacter != null)
+                        {
+                            applyAllToCharacter.InvokeAction(character, forcedBase64);
+                            log.Information($"Glamourer ApplyAllToCharacter (ForceAllApply) succeeded for '{character.Name}' (Guid {targetGuid}).");
+                            return true;
+                        }
+                    }
+                    else if (applyAllToCharacter != null)
+                    {
+                        applyAllToCharacter.InvokeAction(character, base64);
+                        log.Information($"Glamourer ApplyAllToCharacter (raw Base64) succeeded for '{character.Name}' (Guid {targetGuid}).");
+                        return true;
+                    }
+                }
+
+                // B. ApplyByGuidToCharacter にフォールバック
+                if (applyByGuidToCharacter != null)
+                {
+                    applyByGuidToCharacter.InvokeAction(targetGuid, character);
+                    log.Information($"Glamourer ApplyByGuidToCharacter succeeded for '{character.Name}' (Guid {targetGuid}).");
+                    return true;
+                }
+            }
+            else
+            {
+                // 3. MCDF 内包の Base64 / JSON などの場合
+                var jobj = ParseDesignString(designString);
+                string base64ToSend = designString;
+                if (jobj != null)
+                {
+                    ForceAllApply(jobj);
+                    try { base64ToSend = CompressToBase64(jobj); } catch { }
+                }
+
+                if (applyAllToCharacter != null)
+                {
+                    applyAllToCharacter.InvokeAction(character, base64ToSend);
+                    log.Information($"Glamourer ApplyAllToCharacter succeeded for '{character.Name}' with custom design data.");
+                    return true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Glamourer ApplyDesignToCharacter failed for '{character.Name}': {ex.Message}");
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// アクターの生ポインタ (ICharacter) に対して外見をリバート (AQuestReborn 準拠)
+    /// </summary>
+    public bool RevertCharacterDirect(ICharacter character)
+    {
+        if (!IsAvailable || character == null || character.Address == nint.Zero || revertCharacter == null)
+            return false;
+        try
+        {
+            revertCharacter.InvokeAction(character);
+            log.Information($"Glamourer RevertCharacterDirect succeeded for '{character.Name}'.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Glamourer RevertCharacterDirect failed for '{character.Name}': {ex.Message}");
+            return false;
         }
     }
 

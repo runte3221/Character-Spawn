@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.37] - 2026-10-03
+### Fixed
+- **AQuestReborn (AQR) / Caraxi 公式 IPC アーキテクチャへの全面移行による外見・Customize+誤爆・武器残留の完全解決**:
+  - **Glamourer 自キャラ誤爆および素体スポーンの完全根絶**:
+    - 通常ワールド（非GPose）において ClientObjectManager パペットはゲーム内部の描画ソート配列 `IndexSorted` に登録されないため、インデックス（200）指定や名前指定（`ApplyDesignName`）では `ActorNotFound` となり、Glamourer 内部で Index 0（自キャラ）にフォールバックして自キャラが変身していた。
+    - AQR 準拠の `Glamourer.ApplyAllToCharacter` (`Action<ICharacter, string>`) および `Glamourer.ApplyByGuidToCharacter` (`Action<Guid, ICharacter>`) を採用。
+    - パペットの `ICharacter` 生ポインタに対して直接外見を適用するため、インデックス検索を完全バイパスし、自キャラ（LocalPlayer）への誤爆は物理的に完全不可能。
+    - GUID 指定時も `Glamourer.GetDesignBase64` で Base64 を取得し、`ForceAllApply` で全スロット（性別・種族・顔・髪型・全装備）を強制適用した上でパペットに流し込むため、素体（女性ミコッテ）のままスポーンする現象を根絶。
+  - **Customize+ 自キャラ誤爆バグの完全根絶**:
+    - `SetTemporaryProfileOnCharacter(200, ...)` によるインデックス指定が自キャラ（Index 0）にフォールバックしていた問題を完全解消。
+    - Caraxi 公式の `CustomizePlus.Profile.AddPlayerCharacter` (`Func<Guid, string, ushort, int>`) を採用し、パペットの `PuppetName` と `HomeWorld` でプロファイルに正規紐付け。自キャラには一切プロファイルが適用されない。
+    - デスポーン時は `CustomizePlus.Profile.RemovePlayerCharacter` で安全に紐付け解除。
+  - **デスポーン時の武器孤立残留バグの完全解消**:
+    - `chara->DrawData.HideWeapons(true)` + `chara->GameObject.DisableDraw()` を実行し、描画パイプラインから全メッシュ・ボーンをアンロードした上で `ClientObjectManager.DeleteObjectByIndex` を実行。マップ上に武器だけが取り残される現象を完全根絶。
+
 ## [0.1.36] - 2026-10-02
 ### Fixed
 - **操作自キャラとスポーンパペットの外見入れ替わりバグの完全根絶**:
