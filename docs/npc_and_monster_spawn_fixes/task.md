@@ -1,34 +1,37 @@
-# タスクリスト: NPC および モンスター/MOB スポーンの描画不具合修正 (HDM準拠)
+# タスクリスト: モンスター・NPCスポーン不具合の完全修正 (v0.1.23)
 
-## 概要
-NPC および モンスター / MOB を選択してスポーンさせた際に、3Dモデルが表示されずギズモしか表示されない問題を解消する。
-HDM (https://github.com/Enceladeum/HDM) の実装を徹底調査した結果判明した、人間ベースライン描画オブジェクトの確立、段階的再描画（Draw-when-ready / RedrawJob）、および Glamourer 経由の人型NPC容姿注入を実装する。
+## 課題概要
+1. **モンスター（モブ）モデル不一致**:
+   - ルーインランナーをスポーンすると別のモブが出現する問題（推測用 `BNpcLink.csv` の不正確さが原因）。
+2. **人型NPC（ゴントラン、ミューヌ等）の外見反映失敗**:
+   - NPCを選択してスポーンしても自キャラの姿（Ruma / testruma）で表示されてしまう問題（Dalamud ログ調査で `ApplyNpcAppearance: GetState returned null for actor #200` が判明。メインスレッドでの `Thread.Sleep(16)` によるゲームループ停止が原因）。
+3. **非人型NPC（レターモーグリ等）の透明化**:
+   - Demihuman（McType 2）のNPCでギズモしか表示されない問題（`NpcEquip` 由来のモデルIDの未適用が原因）。
 
-## タスク項目
+---
 
-- [x] 1. 設計ドキュメントの作成 (`task.md`, `implementation_plan.md`, `walkthrough.md`) <!-- id: 0 -->
-- [x] 2. `GlamourerIpc.cs` の拡張 <!-- id: 1 -->
-  - `GetState` (`Glamourer.GetState`, `(int ec, JObject? state)`) の追加
-  - `ApplyNpcAppearance(int actorIndex, byte[] customizeData, ulong[]? equipmentModelIds)` の実装 (HDM の `HumanGuise` 準拠)
-  - `CustomItemId` ビット計算と `CustomizeMap` による 26バイト CustomizeData の JObject マッピング
-  - `Parameters` / `Materials` 除去によるプレイヤー肌色オーバーライド防止
-- [x] 3. `ActorManager.cs` のモンスタースポーン処理を HDM 準拠に改修 <!-- id: 2 -->
-  - 初期スポーン時は常に人間クローン（`ModelCharaId = 0`, `Scale = 1.0f`）として生成
-  - Phase 1: `IsReadyToDraw()` -> `EnableDraw()`
-  - Phase 2: `DrawObject != null && DrawObject->IsVisible`（人間ベースラインの実体化）を確認
-  - 実体化後にモンスターモデルへ切り替え：`ModelCharaId` と `Scale` を書き込み
-  - `DisableDraw()` -> `MonsterRedrawJob`（待機 + `IsReadyToDraw()` -> `EnableDraw()`）でモンスターを確実にロード
-  - モンスター時は Penumbra Redraw や Glamourer の呼び出しを完全抑止（DrawObject の消滅防止）
-- [x] 4. `ActorManager.cs` の人型 NPC スポーン処理を HDM 準拠に改修 <!-- id: 3 -->
-  - 人型 NPC 実体化時に `GlamourerIpc.ApplyNpcAppearance` を適用
-  - 骨格再構築のための安全な Redraw フローを適用
-- [x] 5. テンプレート保存・復元処理の確認・強化 (`CharacterLibraryTab.cs` & `GameDataService.cs`) <!-- id: 4 -->
-  - モンスター・NPC の ID, ModelCharaId, CustomizeData, NpcEquipmentModelIds の保存と読み込み確認
-  - `GameDataService.GetMonsterModelCharaId` によるモデル未紐付けモンスターの補完
-- [x] 6. バージョン更新 & ビルド & 全バージョンフォルダ配置 <!-- id: 5 -->
-  - `package.json` を `0.1.22` に更新
-  - `CharacterSpawn.json`, `CharacterSpawn.csproj`, `repo.json` を `0.1.22.0` に更新
-  - `CHANGELOG.md` 追記
-  - `docs` フォルダ同期
-  - GitHub Actions ビルド & 最新 DLL を全バージョンフォルダ（`0.1.22.0` を含む）へ配置
-- [x] 7. ユーザーへの完了報告と確認依頼 <!-- id: 6 -->
+## タスク進捗
+
+- [x] **原因調査・ログ解析**
+  - [x] `dalamud.log` から Glamourer の `GetState` が null になっている事実を特定
+  - [x] HDM (`Enceladeum/HDM`) の `HumanGuise.cs`, `MobIndex.cs`, `GuiseService.cs` を徹底分析
+  - [x] HDM 公式データ `Data/mob-model-index.csv` (16,243体) を入手
+
+- [x] **実装修正**
+  - [x] `Resources/mob-model-index.csv` をプロジェクトに配置
+  - [x] `GameDataService.cs` の `BuildMonsterCache` を `mob-model-index.csv` ベースに刷新（Lumina `BNpcName` から日本語名を解決、重複排除）
+  - [x] `CharacterModels.cs` の `CharacterTemplate` に `McType` を追加
+  - [x] `GlamourerIpc.cs` のブロッキングスリープを撤廃し、非ブロッキング `TryApplyNpcAppearance` を実装
+  - [x] `ActorManager.cs` に HDM 準拠の非同期フレームポーリングキュー `PendingNpcJob` を実装（最大 120 フレーム）
+  - [x] Demihuman NPC（レターモーグリ等）の `EquipmentModelIds` 適用と `IsHatHidden = false` 設定
+  - [x] スポーン時のデータ自動補完強化
+
+- [x] **バージョン更新 & デプロイ準備**
+  - [x] `package.json` -> 0.1.23
+  - [x] `CharacterSpawn.csproj` -> 0.1.23.0
+  - [x] `CharacterSpawn.json` -> 0.1.23.0
+  - [x] `repo.json` -> 0.1.23.0
+  - [x] `CHANGELOG.md` 追記
+  - [x] `docs/npc_and_monster_spawn_fixes` ドキュメント同期
+  - [ ] GitHub リモートへコミット & プッシュ
+  - [ ] GitHub Actions ビルド成果物を全バージョンフォルダに同期

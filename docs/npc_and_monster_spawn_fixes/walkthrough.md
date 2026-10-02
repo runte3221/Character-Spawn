@@ -1,40 +1,29 @@
-# 変更内容の確認 (Walkthrough): NPC および モンスター/MOB スポーンの描画不具合修正 (HDM準拠)
+# 修正内容の確認 (Walkthrough): モンスター・NPCスポーン不具合の完全修正 (v0.1.23)
 
-## 実施した変更の概要
+## 実施した変更内容
 
-### 1. `Services/GlamourerIpc.cs`
-- **`Glamourer.GetState` IPC の追加**:
-  - `(int ec, JObject? state)` のタプルを受け取る V2 IPC Subscriber を購読。
-- **`ApplyNpcAppearance` の実装 (HDM `HumanGuise.cs` 準拠)**:
-  - `CustomizeMap`（36項目）を用いた 26バイト `CustomizeData` の JObject への安全なマッピング。
-  - `CustomItemId` ビット演算（`model | (variant << 32) | (equipType << 40) | CustomFlag`）による NPC 装備 ID の構築。
-  - 武器スロットの `Apply = false` 化（自キャラ武器の上書き防止）。
-  - `Parameters` および `Materials` ブロックの完全除去（プレイヤーの肌色やシェーダーパラメータが NPC に混入するのを防止）。
-  - `ApplyState` による一括容姿適用。
+### 1. HDM 公式 `mob-model-index.csv` (16,243体) の統合
+- **ファイル**: `Services/GameDataService.cs`, `Resources/mob-model-index.csv`
+- HDM 公式の網羅的カタログを採用し、`BaseId`, `NameId`, `ModelCharaId`, `McType`, `Scale` を正確に保持。
+- ルーインランナーは `ModelCharaId: 1281`（正解モデル）として解決。
+- Lumina の `BNpcName` シートから日本語名を抽出し、同一名称・モデルの冗長な重複を排除してリスト化。
 
-### 2. `Managers/ActorManager.cs`
-- **HDM 黄金パターンのスポーンフロー**:
-  - スポーン時は常に人間ベースライン（`ModelCharaId = 0`, `Scale = 1.0f`）のクローンとして生成し、即座に `DisableDraw()`。
-  - `readyJobs`（Phase 1）で `IsReadyToDraw()` を待って `EnableDraw()`。
-  - `readyJobs`（Phase 2）で `DrawObject != null && DrawObject->IsVisible`（人間ベースラインの完全な実体化）を確認。
-- **モンスターモデル（`ModelCharaId > 0`）の段階的再描画**:
-  - 実体化確認後に `native->ModelContainer.ModelCharaId` と `Scale` を設定。
-  - Demihuman 装備があればスロットに書き込み、`IsHatHidden = false` を設定。
-  - `DisableDraw()` -> `monsterRedrawJobs`（2フレーム待機後、`IsReadyToDraw()` を待って `EnableDraw()`）でモンスターモデルをロード。
-  - モンスター描画時には Penumbra Redraw や Glamourer の呼び出しを完全に抑止（描画オブジェクトの消滅・破損を防止）。
-- **人型 NPC（`SourceType == Npc`）の適用**:
-  - 実体化確認後に `glamourerIpc.ApplyNpcAppearance` を実行。
-  - 骨格再構築を確定させるための安全な Redraw シーケンスを実行。
-- **テンプレート ID からの自動補完**:
-  - モンスターの `ModelCharaId == 0` や NPC の `CustomizeData` 未ロード時、`GameDataService` から自動補完するセーフティネットを追加。
+### 2. Glamourer IPC 非同期フレームポーリング (`PendingNpcJob`) の導入
+- **ファイル**: `Services/GlamourerIpc.cs`, `Managers/ActorManager.cs`
+- `GlamourerIpc.cs` の `ApplyNpcAppearance` 内にあった `Thread.Sleep(16)` を撤廃し、非ブロッキングな `TryApplyNpcAppearance` を実装。
+- `ActorManager.cs` に `PendingNpcJob` キューを追加。人型NPCスポーン時、人間ベースラインの可視化完了後にキューへ登録し、毎フレームの `UpdateFrame` で Glamourer が認識するまでポーリング（最大 120 フレーム）。
+- Glamourer 側でアクターが認識された瞬間に、NPC固有の顔・髪・肌・装備を適用し、自キャラの肌色・パラメータ汚染をクリアして Penumbra Redraw を発行。
+- ゴントランやミューヌが自キャラの姿にならず、本人の姿で確実に実体化。
 
-### 3. `Services/GameDataService.cs`
-- `GetMonsterModelCharaId(uint bnpcNameId)` の追加。
-- `BuildMonsterCache` においてモデルが有効に解決できるモンスターのみをリスト化。
+### 3. Demihuman NPC（レターモーグリ等）の透明化防止
+- **ファイル**: `Services/GameDataService.cs`, `Managers/ActorManager.cs`
+- レターモーグリ等の特殊NPCについて、`NpcEquip` シートからパーツデータを取得し、`chara->DrawData.EquipmentModelIds` に注入、さらに `chara->DrawData.IsHatHidden = false` を設定。
+- 単なる ModelCharaId スワップでは透明になっていた Demihuman が、正常にモーグリ等の体・帽子付きで表示される。
 
-### 4. バージョン更新
-- `package.json`: `0.1.22`
-- `CharacterSpawn.json`: `0.1.22.0`
-- `CharacterSpawn.csproj`: `0.1.22.0`
-- `repo.json`: `0.1.22.0`
-- `CHANGELOG.md`: リリースノート追記
+---
+
+## 検証手順
+1. プラグインをリロード。
+2. モンスター検索で「ルーインランナー」を選択してスポーンし、正しいモブモデルが表示されることを確認。
+3. NPC検索で「ゴントラン」「ミューヌ」を選択してスポーンし、自キャラ（Ruma / testruma）ではなく本人の外見・衣装で出現することを確認。
+4. NPC検索で「レターモーグリ」を選択してスポーンし、ギズモだけでなくモーグリの体が表示されることを確認。

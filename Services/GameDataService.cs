@@ -11,13 +11,14 @@ public class GameDataService
     private readonly LogManager? logManager;
 
     public record NpcEntry(uint Id, string Name, uint ModelCharaId);
-    public record MonsterEntry(uint Id, string Name, uint ModelCharaId);
+    public record MonsterEntry(uint Id, string Name, uint ModelCharaId, uint BaseId = 0, int McType = 3, float Scale = 1.0f);
     public record TimelineEntry(ushort Id, string Key, string Description, bool IsEmote);
 
     public record NpcAppearanceData(
         uint ModelCharaId,
         byte[]? CustomizeData,
-        ulong[]? EquipmentModelIds
+        ulong[]? EquipmentModelIds,
+        int McType = 1
     );
 
     private List<NpcEntry>? cachedNpcs;
@@ -60,23 +61,10 @@ public class GameDataService
     public uint GetMonsterModelCharaId(uint bnpcNameId)
     {
         cachedMonsters ??= BuildMonsterCache();
-        var match = cachedMonsters.FirstOrDefault(m => m.Id == bnpcNameId);
+        var match = cachedMonsters.FirstOrDefault(m => m.Id == bnpcNameId || m.BaseId == bnpcNameId);
         if (match != null && match.ModelCharaId > 0)
             return match.ModelCharaId;
 
-        var map = LoadBNpcLinks();
-        if (map.TryGetValue(bnpcNameId, out var baseIds))
-        {
-            var baseSheet = dataManager.GetExcelSheet<BNpcBase>();
-            if (baseSheet != null)
-            {
-                foreach (var bId in baseIds)
-                {
-                    if (baseSheet.TryGetRow(bId, out var baseRow) && baseRow.ModelChara.RowId > 0)
-                        return baseRow.ModelChara.RowId;
-                }
-            }
-        }
         return 0;
     }
 
@@ -86,11 +74,26 @@ public class GameDataService
         if (baseSheet == null || !baseSheet.TryGetRow(enpcId, out var baseRow))
             return null;
 
+        var modelChara = baseRow.ModelChara.ValueNullable;
+        int mcType = modelChara != null ? (int)modelChara.Value.Type : 1;
         var modelCharaId = baseRow.ModelChara.RowId;
-        if (modelCharaId > 0)
+
+        // 非人型NPC（モーグリ等の特殊モデル / Demihuman）
+        if (modelCharaId > 0 && mcType != 1)
         {
-            // 非人型NPC（モーグリ等の特殊モデル）
-            return new NpcAppearanceData(modelCharaId, null, null);
+            ulong[]? demiEquip = null;
+            if (baseRow.NpcEquip.RowId != 0)
+            {
+                var npcEquipSheet = dataManager.GetExcelSheet<NpcEquip>();
+                if (npcEquipSheet != null && npcEquipSheet.TryGetRow(baseRow.NpcEquip.RowId, out var eqRow))
+                {
+                    demiEquip = [
+                        eqRow.ModelHead, eqRow.ModelBody, eqRow.ModelHands, eqRow.ModelLegs, eqRow.ModelFeet,
+                        eqRow.ModelEars, eqRow.ModelNeck, eqRow.ModelWrists, eqRow.ModelRightRing, eqRow.ModelLeftRing
+                    ];
+                }
+            }
+            return new NpcAppearanceData(modelCharaId, null, demiEquip, mcType);
         }
 
         // 人型NPC（ミューヌ等のHumanモデル）
@@ -207,73 +210,22 @@ public class GameDataService
     {
         var list = new List<MonsterEntry>();
         var nameSheet = dataManager.GetExcelSheet<BNpcName>();
-        var baseSheet = dataManager.GetExcelSheet<BNpcBase>();
 
-        if (nameSheet == null) return list;
-
-        // Load BNpcLink mappings (BNpcNameId -> BNpcBaseId)
-        var nameToBaseMap = LoadBNpcLinks();
-
-        foreach (var row in nameSheet)
-        {
-            var name = row.Singular.ExtractText();
-            if (string.IsNullOrWhiteSpace(name)) continue;
-
-            uint modelChara = 0;
-
-            // 1. Try BNpcLink mapping
-            if (nameToBaseMap.TryGetValue(row.RowId, out var baseIds) && baseSheet != null)
-            {
-                foreach (var bId in baseIds)
-                {
-                    if (baseSheet.TryGetRow(bId, out var baseRow))
-                    {
-                        var mId = baseRow.ModelChara.RowId;
-                        if (mId > 0)
-                        {
-                            modelChara = mId;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            // 2. Fallback: try row.RowId directly if not found
-            if (modelChara == 0 && baseSheet != null && baseSheet.TryGetRow(row.RowId, out var fallbackRow))
-            {
-                modelChara = fallbackRow.ModelChara.RowId;
-            }
-
-            if (modelChara == 0) continue;
-
-            list.Add(new MonsterEntry(row.RowId, name, modelChara));
-        }
-
-        logManager?.Info($"Built BNpc cache: {list.Count} monsters loaded (mapped with BNpcLink).");
-        return list;
-    }
-
-    private Dictionary<uint, List<uint>> LoadBNpcLinks()
-    {
-        var map = new Dictionary<uint, List<uint>>();
-
+        Stream? stream = null;
         try
         {
-            // 1. Try Embedded Resource
             var assembly = Assembly.GetExecutingAssembly();
             var resourceName = assembly.GetManifestResourceNames()
-                .FirstOrDefault(n => n.EndsWith("BNpcLink.csv", StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(n => n.EndsWith("mob-model-index.csv", StringComparison.OrdinalIgnoreCase));
 
-            Stream? stream = null;
             if (resourceName != null)
             {
                 stream = assembly.GetManifestResourceStream(resourceName);
             }
 
-            // 2. Fallback to local file if not embedded
             if (stream == null)
             {
-                var localPath = Path.Combine(AppContext.BaseDirectory, "Resources", "BNpcLink.csv");
+                var localPath = Path.Combine(AppContext.BaseDirectory, "Resources", "mob-model-index.csv");
                 if (File.Exists(localPath))
                 {
                     stream = File.OpenRead(localPath);
@@ -282,34 +234,91 @@ public class GameDataService
 
             if (stream != null)
             {
-                using var reader = new StreamReader(stream);
+                using var reader = new StreamReader(stream, Encoding.UTF8);
+                reader.ReadLine(); // header
                 string? line;
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
                 while ((line = reader.ReadLine()) != null)
                 {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
                     var parts = line.Split(',');
-                    if (parts.Length >= 2 && uint.TryParse(parts[0], out var nameId) && uint.TryParse(parts[1], out var baseId))
+                    if (parts.Length < 9) continue;
+
+                    if (!uint.TryParse(parts[0], out var baseId)) continue;
+                    uint.TryParse(parts[1], out var nameId);
+                    var csvName = parts[2].Trim();
+                    if (!uint.TryParse(parts[3], out var modelCharaId) || modelCharaId == 0) continue;
+                    int.TryParse(parts[4], out var mcType);
+                    float.TryParse(parts[8], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var scale);
+                    if (scale <= 0.01f) scale = 1.0f;
+
+                    // 日本語名解決: BNpcName シートから優先取得
+                    string displayName = "";
+                    if (nameSheet != null && nameId > 0 && nameSheet.TryGetRow(nameId, out var nameRow))
                     {
-                        if (!map.TryGetValue(nameId, out var list))
-                        {
-                            list = new List<uint>();
-                            map[nameId] = list;
-                        }
-                        list.Add(baseId);
+                        var jp = nameRow.Singular.ExtractText();
+                        if (!string.IsNullOrWhiteSpace(jp))
+                            displayName = jp;
                     }
+                    if (string.IsNullOrWhiteSpace(displayName))
+                        displayName = csvName;
+                    if (string.IsNullOrWhiteSpace(displayName))
+                        displayName = $"Monster #{baseId}";
+
+                    // (DisplayName, ModelCharaId, McType) の重複排除
+                    string dedupKey = $"{displayName}_{modelCharaId}_{mcType}";
+                    if (!seen.Add(dedupKey)) continue;
+
+                    list.Add(new MonsterEntry(
+                        nameId > 0 ? nameId : baseId,
+                        displayName,
+                        modelCharaId,
+                        baseId,
+                        mcType > 0 ? mcType : 3,
+                        scale
+                    ));
                 }
-                logManager?.Info($"Loaded {map.Count} BNpcLink mapping entries.");
+
+                logManager?.Info($"Built Monster cache: {list.Count} monsters loaded from mob-model-index.csv.");
+                return list;
             }
             else
             {
-                logManager?.Warning("BNpcLink.csv could not be loaded from embedded resources or local directory.");
+                logManager?.Warning("mob-model-index.csv could not be loaded from embedded resources or Resources directory.");
             }
         }
         catch (Exception ex)
         {
-            logManager?.Error($"Failed to load BNpcLinks: {ex.Message}");
+            logManager?.Error($"Failed to load mob-model-index.csv: {ex.Message}");
+        }
+        finally
+        {
+            stream?.Dispose();
         }
 
-        return map;
+        // フォールバック: BNpcName シートから直接スキャン
+        if (nameSheet != null)
+        {
+            var baseSheet = dataManager.GetExcelSheet<BNpcBase>();
+            foreach (var row in nameSheet)
+            {
+                var name = row.Singular.ExtractText();
+                if (string.IsNullOrWhiteSpace(name)) continue;
+
+                uint modelChara = 0;
+                if (baseSheet != null && baseSheet.TryGetRow(row.RowId, out var fallbackRow))
+                {
+                    modelChara = fallbackRow.ModelChara.RowId;
+                }
+
+                if (modelChara == 0) continue;
+                list.Add(new MonsterEntry(row.RowId, name, modelChara));
+            }
+        }
+
+        logManager?.Info($"Built Monster fallback cache: {list.Count} monsters loaded.");
+        return list;
     }
 
     private List<TimelineEntry> BuildTimelineCache()

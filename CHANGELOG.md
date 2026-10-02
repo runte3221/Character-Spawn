@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.23] - 2026-10-02
+### Fixed
+- **HDM Official `mob-model-index.csv` Integration (Accurate Monster / Mob Spawning)**:
+  - Replaced heuristic `BNpcLink.csv` mapping with HDM's authoritative `mob-model-index.csv` (16,243 rows).
+  - Resolved model mismatch issues where spawning monsters like Ruins Runner resulted in incorrect models (Ruins Runner correctly resolves to ModelChara 1281, McType 3, Scale 1.1).
+  - Japanese monster names resolved directly from Lumina `BNpcName` sheet with duplicate deduplication for a clean search experience.
+- **Humanoid NPC Appearance Synchronization (Resolved Player Clone / testruma / Ruma Fallback)**:
+  - Identified root cause in `dalamud.log`: synchronous `Thread.Sleep(16)` blocked the main framework thread, preventing Glamourer from registering newly spawned actors and causing `GetState` to return null.
+  - Implemented non-blocking per-frame polling queue (`PendingNpcJob`) conforming to HDM's `HumanGuise.cs`.
+  - Polled each frame up to 120 frames without blocking; as soon as `GetState` resolves, mapped 26-byte NPC customization and 10-slot equipment, stripped `Parameters` and `Materials` to eliminate player skin/shader pollution, and executed `Penumbra.Redraw` to finalize the NPC skeleton and gear.
+  - NPCs like Gontran and Miounne now render with 100% faithful face, hair, and gear instead of falling back to player clones.
+- **Demihuman NPC Spawning (Resolved Invisible Letter Moogle / Gizmo-Only Bug)**:
+  - Resolved issue where Demihuman NPCs (McType 2, e.g. Letter Moogle, Namazu) rendered invisible with only gizmos.
+  - Ensured `NpcEquip` parts are extracted and written directly into `DrawData.EquipmentModelIds`, and `DrawData.IsHatHidden = false` is maintained so Demihuman bodies and equipment render reliably.
+
 ## [0.1.22] - 2026-10-02
 ### Fixed
 - **HDM-Compliant Monster & Mob Spawning (Resolved Invisible 3D Model / Gizmo-Only Bug)**:

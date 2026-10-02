@@ -27,6 +27,7 @@ public class CharacterTemplate
     public uint ModelCharaId { get; set; } = 0;
 
     // Appearance / Customization
+    public int McType { get; set; } = 1; // 1=Human, 2=Demihuman, 3=Monster
     public float Scale { get; set; } = 1.0f;
     public bool WeaponVisible { get; set; } = true;
     public byte[]? CustomizeData { get; set; }

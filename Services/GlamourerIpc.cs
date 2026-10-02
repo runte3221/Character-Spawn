@@ -355,28 +355,24 @@ public class GlamourerIpc
         return null;
     }
 
+    public enum NpcApplyResult
+    {
+        Applied,
+        StateNull,
+        Failed
+    }
+
     /// <summary>
-    /// HDM (HumanGuise.cs) 準拠の NPC 外見直接適用
+    /// HDM (HumanGuise.cs) 準拠の 1 フレーム非ブロッキング NPC 外見適用試行
     /// 26バイト CustomizeData と 10スロットの EquipmentModelIds を Glamourer JObject にマッピングして適用
     /// </summary>
-    public bool ApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true)
+    public NpcApplyResult TryApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true)
     {
-        if (!IsAvailable) return false;
+        if (!IsAvailable) return NpcApplyResult.Failed;
 
-        // 最大数回リトライ（スポーン直後のラグ対策）
-        JObject? state = null;
-        for (int attempt = 0; attempt < 10; attempt++)
-        {
-            state = GetState(actorIndex);
-            if (state != null) break;
-            Thread.Sleep(16);
-        }
-
+        var state = GetState(actorIndex);
         if (state == null)
-        {
-            log.Warning($"ApplyNpcAppearance: GetState returned null for actor #{actorIndex}.");
-            return false;
-        }
+            return NpcApplyResult.StateNull;
 
         // 1. CustomizeData (26バイト) の適用
         if (customizeData != null && customizeData.Length >= 26 && state["Customize"] is JObject custObj)
@@ -406,8 +402,13 @@ public class GlamourerIpc
         // 5. ApplyState で一括適用
         string stateJson = state.ToString(Newtonsoft.Json.Formatting.None);
         bool success = ApplyDesignToActor(stateJson, actorIndex);
-        log.Information($"Glamourer ApplyNpcAppearance on actor #{actorIndex} result: {success}");
-        return success;
+        log.Information($"Glamourer TryApplyNpcAppearance on actor #{actorIndex} result: {success}");
+        return success ? NpcApplyResult.Applied : NpcApplyResult.Failed;
+    }
+
+    public bool ApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true)
+    {
+        return TryApplyNpcAppearance(actorIndex, customizeData, equipmentModelIds, showHeadgear) == NpcApplyResult.Applied;
     }
 
     private static readonly (string Key, ulong EquipType)[] Slots =

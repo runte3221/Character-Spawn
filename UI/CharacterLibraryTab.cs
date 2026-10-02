@@ -933,6 +933,8 @@ public class CharacterLibraryTab
         {
             target.DataId = modalSelectedMonster.Id;
             target.ModelCharaId = modalSelectedMonster.ModelCharaId;
+            target.Scale = modalSelectedMonster.Scale > 0 ? modalSelectedMonster.Scale : 1.0f;
+            target.McType = modalSelectedMonster.McType;
             target.CustomizeData = null;
             target.NpcEquipmentModelIds = null;
             target.WeaponVisible = false; // モンスターはデフォルトで武器非表示
@@ -947,6 +949,7 @@ public class CharacterLibraryTab
             {
                 target.CustomizeData = cachedNpcAppearance.CustomizeData;
                 target.NpcEquipmentModelIds = cachedNpcAppearance.EquipmentModelIds;
+                target.McType = cachedNpcAppearance.McType;
             }
             target.WeaponVisible = false; // NPCはデフォルトで武器非表示（自キャラの武器が表示されるのを防ぐ）
         }
