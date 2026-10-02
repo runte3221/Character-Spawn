@@ -1,0 +1,21 @@
+# タスクリスト: AQR 依存脱却 & スポーン不具合修正
+
+- [x] AQR 無効化時における MCDF の Penumbra コレクション未反映（`ec=255`）の原因調査と修正
+  - [x] `Penumbra.GameData.dll` / `Penumbra.dll` の IL 逆アセンブルによる解析
+  - [x] `nativeChara->GameObject.OwnerId = 0xE000_0000;` による ActorIdentifier 解決失敗の特定と削除（0の維持）
+  - [x] スポーン直後フライング呼び出しの排除と、Phase 2 描画完了時への外見適用一本化
+  - [x] パペット名の FFXIV / Penumbra 命名規則準拠化（`Csp {hi}{lo}`）
+  - [x] 一時コレクションへの Mod 登録先行化（`AddTemporaryMod` -> `AssignTemporaryCollection`）
+- [x] 人型 NPC（ミューヌ、ゴントラン等）が自キャラになる問題の修正
+  - [x] Glamourer `GetState` が null となり 120 フレームでタイムアウトしていた原因（`OwnerId` 汚染）の解消
+  - [x] HDM `HumanGuise.cs` 準拠の非同期ポーリングによる本人の容姿・装備の確実な同期
+- [x] モブスポーン時のモデル不一致（ルーインランナーがラプターになる等）の修正
+  - [x] `BNpcNameId` と `BaseId` の混同による ID 衝突の特定
+  - [x] モンスターカタログの主キーを一意な `BaseId` に固定
+  - [x] 既存の `ModelCharaId` が存在する場合の不要な上書き防止
+- [x] Demihuman NPC（レターモーグリ等）が透明になりギズモのみ表示される問題の修正
+  - [x] `NpcEquip.RowId == 0` 時のインライン装備フォールバックの実装
+  - [x] `IsHatHidden = false` の維持
+- [x] バージョン更新 (0.1.24 / 0.1.24.0) と CHANGELOG 追記
+- [x] GitHub へのプッシュと GitHub Actions ビルド監視
+- [x] XIVLauncher の `installedPlugins\CharacterSpawn` へのバイナリ配置

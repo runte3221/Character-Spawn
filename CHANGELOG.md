@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.24] - 2026-10-02
+### Fixed
+- **AQR Independent Spawn & MCDF Temporary Collection Application**:
+  - Eliminated `nativeChara->GameObject.OwnerId = 0xE000_0000;` override (preserved default 0). Discovered through IL disassembly of `Penumbra.GameData.dll` that a non-zero `OwnerId` caused `CreateBNpcFromObject` to attempt resolving a non-existent parent GameObject in `ObjectTable`, yielding invalid identifiers and failing with `ec=255 (UnknownError)`.
+  - Re-ordered MCDF loading pipeline to add temporary mod files (`AddTemporaryMod`) before actor assignment (`AssignTemporaryCollection`), ensuring seamless mod registration without AQR dependency.
+  - Formatted puppet names as `"Csp {hi}{lo}"` to strictly satisfy Penumbra's `VerifyPlayerName` player naming validation.
+  - Eliminated premature `ApplyAppearanceDirect` invocation in `SpawnCharacter`, executing appearance resolution exclusively after Phase 2 humanoid baseline draw verification.
+- **Humanoid NPC True Appearance Synchronization (Mionne, Gontran)**:
+  - By restoring `OwnerId = 0`, Glamourer's `GetState` now resolves immediately within 1-2 frames instead of timing out at 120 frames, successfully applying genuine NPC facial customizations and equipment without player clone fallbacks.
+- **Monster Model Accuracy (Ruins Runner)**:
+  - Fixed issue where Ruins Runner spawned as an unintended monster (Raptor). Switched monster cache indexing to use unique `BaseId` instead of shared `BNpcNameId`, preventing ID collisions, and restricted `ModelCharaId` auto-resolution to unassigned models only.
+- **Demihuman NPC Rendering (Letter Moogle)**:
+  - Added fallback to `baseRow` inline equipment fields in `GameDataService.GetNpcAppearanceData` when `NpcEquip.RowId == 0`, ensuring Demihuman body/head equipment slots are correctly populated and rendered rather than showing an invisible body with gizmo only.
+
 ## [0.1.23] - 2026-10-02
 ### Fixed
 - **HDM Official `mob-model-index.csv` Integration (Accurate Monster / Mob Spawning)**:

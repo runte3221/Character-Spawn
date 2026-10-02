@@ -130,7 +130,7 @@ public unsafe class ActorManager : IDisposable
         var n = nameSerial++;
         var hi = (char)('A' + (n / 26) % 26);
         var lo = (char)('a' + n % 26);
-        return $"Cs {hi}{lo}";
+        return $"Csp {hi}{lo}";
     }
 
     /// <summary>
@@ -206,13 +206,13 @@ public unsafe class ActorManager : IDisposable
             var pos = spawnPosition ?? GetDefaultSpawnPosition();
             var rot = spawnRotation ?? localPlayer.Rotation;
 
-            // モンスターモデルIDの補完・最新化 (mob-model-index.csv から解決)
-            if (template.SourceType == CharacterSourceType.Monster && template.DataId > 0 && gameDataService != null)
+            // モンスターモデルIDの補完 (未設定の場合のみ補完)
+            if (template.SourceType == CharacterSourceType.Monster && template.ModelCharaId == 0 && template.DataId > 0 && gameDataService != null)
             {
                 var resolvedId = gameDataService.GetMonsterModelCharaId(template.DataId);
-                if (resolvedId > 0 && template.ModelCharaId != resolvedId)
+                if (resolvedId > 0)
                 {
-                    logManager?.Info($"Updated Monster ModelCharaId for '{template.Name}' from {template.ModelCharaId} to {resolvedId} (DataId: {template.DataId}).");
+                    logManager?.Info($"Resolved Monster ModelCharaId for '{template.Name}' to {resolvedId} (DataId: {template.DataId}).");
                     template.ModelCharaId = resolvedId;
                 }
             }
@@ -236,7 +236,7 @@ public unsafe class ActorManager : IDisposable
 
             logManager?.Info($"Spawning '{template.Name}' (Source: {template.SourceType}, ModelChara: {template.ModelCharaId}, Weapon: {template.WeaponVisible}) at COM#{comIdx}...");
 
-            // HDM & AQR 黄金パターン:
+            // HDM 黄金パターン:
             // 1. スポーン直後に描画を無効化（自キャラの姿が一瞬でも表示されるのを防ぐ）
             nativeChara->GameObject.DisableDraw();
 
@@ -250,16 +250,16 @@ public unsafe class ActorManager : IDisposable
             nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
             nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-            // クラス分類: HDM & AQR 準拠 (BattleNpc + Player: Glamourer の Player 救援ブランチに乗せつつセットピースとして管理)
+            // クラス分類: HDM 準拠 (BattleNpc + Player: Glamourer / Penumbra の Player 救援ブランチに乗せる)
             nativeChara->GameObject.ObjectKind = ObjectKind.BattleNpc;
             nativeChara->GameObject.BattleNpcSubKind = BattleNpcSubKind.Player;
             nativeChara->GameObject.TargetableStatus = 0;
             nativeChara->GameObject.EventId = 0;
 
-            // Glamourer & Penumbra Identity のスタンプ (The 0.8.44 Bug & Penumbra ec=16 対策)
-            // Penumbra の ActorIdentifierFactory は OwnerId == 0xE000_0000 かつ NameId == 0 かつ Player名 を
-            // 有効な Player Identifier として解決する（OwnerId が 0 だと存在しない親を探して InvalidIdentifier 16 となる）
-            nativeChara->GameObject.OwnerId = 0xE000_0000;
+            // Glamourer & Penumbra Identity のスタンプ (HDM The 0.8.44 Bug対策)
+            // OwnerId は触らない (デフォルト 0)。OwnerId != 0 だと Penumbra が存在しない親を探して ec=255 となり Glamourer も GetState null になる
+            // NameId == 0 かつ HomeWorld == プレイヤーのワールド かつ 有効な名前 の組み合わせで、
+            // Penumbra/Glamourer は独立した有効な Player Identifier として解決する
             nativeChara->NameId = 0;
             nativeChara->HomeWorld = meNative->HomeWorld;
             string puppetName = NextPuppetName();
@@ -310,13 +310,6 @@ public unsafe class ActorManager : IDisposable
                 },
                 IsTargetable = false
             };
-
-            // 4. MCDF や 通常Penumbraコレクションの初期事前適用 (人型プレイヤー/Glamourer/MCDFのみ)
-            // ※ モンスター (ModelCharaId > 0) や NPC は、人間ベースラインの可視化 (Phase 2) 後に HDM 方式で確定させる
-            if (template.ModelCharaId == 0 && template.SourceType != CharacterSourceType.Npc)
-            {
-                ApplyAppearanceDirect(nativeChara, globalIdx, template, spawned);
-            }
 
             // 5. 描画準備完了待機ジョブにエンキュー（IsReadyToDraw() を待って EnableDraw() を実行）
             readyJobs.Add(new ReadyJob
@@ -737,16 +730,16 @@ public unsafe class ActorManager : IDisposable
                             var tempGuid = penumbraIpc.CreateTemporaryCollection(template.Name);
                             if (tempGuid != Guid.Empty)
                             {
-                                penumbraIpc.AssignTemporaryCollection(tempGuid, actorIndex);
                                 if (bundle.ModPaths.Count > 0 || !string.IsNullOrEmpty(bundle.ManipulationData))
                                 {
                                     penumbraIpc.AddTemporaryMod(tempGuid, bundle.ModPaths, bundle.ManipulationData ?? string.Empty);
                                 }
+                                bool assignOk = penumbraIpc.AssignTemporaryCollection(tempGuid, actorIndex);
                                 if (spawned != null)
                                 {
                                     spawned.TemporaryCollectionGuid = tempGuid;
                                 }
-                                logManager?.Info($"MCDF: Assigned Penumbra temporary collection {tempGuid} to actor #{actorIndex} with {bundle.ModPaths.Count} mod files.");
+                                logManager?.Info($"MCDF: Assigned Penumbra temporary collection {tempGuid} to actor #{actorIndex} (Success: {assignOk}) with {bundle.ModPaths.Count} mod files.");
                             }
                         }
 

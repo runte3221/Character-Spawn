@@ -59,10 +59,10 @@ public class GameDataService
         return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
     }
 
-    public uint GetMonsterModelCharaId(uint bnpcNameId)
+    public uint GetMonsterModelCharaId(uint bnpcBaseId)
     {
         cachedMonsters ??= BuildMonsterCache();
-        var match = cachedMonsters.FirstOrDefault(m => m.Id == bnpcNameId || m.BaseId == bnpcNameId);
+        var match = cachedMonsters.FirstOrDefault(m => m.BaseId == bnpcBaseId || m.Id == bnpcBaseId);
         if (match != null && match.ModelCharaId > 0)
             return match.ModelCharaId;
 
@@ -93,6 +93,13 @@ public class GameDataService
                         eqRow.ModelEars, eqRow.ModelNeck, eqRow.ModelWrists, eqRow.ModelRightRing, eqRow.ModelLeftRing
                     ];
                 }
+            }
+            else
+            {
+                demiEquip = [
+                    baseRow.ModelHead, baseRow.ModelBody, baseRow.ModelHands, baseRow.ModelLegs, baseRow.ModelFeet,
+                    baseRow.ModelEars, baseRow.ModelNeck, baseRow.ModelWrists, baseRow.ModelRightRing, baseRow.ModelLeftRing
+                ];
             }
             return new NpcAppearanceData(modelCharaId, null, demiEquip, mcType);
         }
@@ -272,7 +279,7 @@ public class GameDataService
                     if (!seen.Add(dedupKey)) continue;
 
                     list.Add(new MonsterEntry(
-                        nameId > 0 ? nameId : baseId,
+                        baseId,
                         displayName,
                         modelCharaId,
                         baseId,
