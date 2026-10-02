@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using CharacterSpawn.Managers;
