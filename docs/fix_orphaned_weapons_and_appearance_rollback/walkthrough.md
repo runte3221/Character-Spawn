@@ -10,9 +10,11 @@
 - `ApplyAppearanceDirect` で実行されていた `chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None)` を完全削除。
 - Brio および HDM の標準設計に準拠し、Glamourer が注入したスケルトンとモデルをそのままゲームエンジンに描画させることで、自キャラへのロールバックを防止しました。
 
-### 3. Glamourer デザイン適用の最適化 (`Services/GlamourerIpc.cs`)
-- Guid 指定時に失敗していた JSON文字列による `ApplyState` の無理な呼び出しを廃止。
-- Brio 公式実装と同じく `ApplyDesign(targetGuid, actorIndex, 0, 7UL)`（Flags: 7 = `DesignDefault`: Once | Equipment | Customization）を直接最優先で実行するように修正。
+### 3. Glamourer デザイン適用の最適化 & GZip Base64 強制ステート注入 (`Services/GlamourerIpc.cs`)
+- **`Race: Apply = False` バグの解消**:
+  - `Chonk`（`Kimo-1-Default`）のデザインファイルでは `Race: Apply = False` に設定されており、Guid による通常適用では Race がミコッテ女性のまま維持され、Clan（ハイランダー）と Gender（男性）のみ適用されて種族不一致エラーとなり、ゲームエンジンが自キャラに巻き戻していました。
+  - デザイン JObject から `ForceAllApply` を実行し、`Race` を含む全スロットの `Apply` を強制的に `true` に書き換えた上で、Glamourer ネイティブ仕様の GZip 圧縮 Base64 文字列（`H4sI...`）にエンコード。
+  - `Glamourer.ApplyState(compressedBase64, actorIndex, 0, 7UL)` を通じて全スロットを 100% 確実に強制注入・変身させるように根本改修しました。
 
 ### 4. 前キャラの外見情報の残留防止
 - デスポーン時に GlobalIndex だけでなくアクター名（`actor.DisplayName`）でも Glamourer ステートを `RevertStateName` / `UnlockStateName` で解放し、同一インデックス再利用時のステート混ざりを解消。
