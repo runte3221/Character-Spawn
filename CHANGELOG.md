@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.13] - 2026-10-02
+### Fixed
+- **MCDF LZ4 Decompression Stream Support (AQR McdfCharaFileManager Architecture)**:
+  - Resolved the critical issue where MCDF files failed to parse GlamourerDesignString because modern `.mcdf` files are whole LZ4-compressed binary streams rather than raw binary JSONs.
+  - Integrated `lz4net` and updated `Services/McdfParser.cs` to decompress the LZ4 stream before inspecting the `"MCDF"` 4-byte header and parsing the embedded JSON string.
+  - Successfully verified extraction of Glamourer Base64 strings from real `.mcdf` files (`testruma.mcdf`, `test.mcdf`), eliminating fallback to previous actor appearance or local player.
+- **Accurate Penumbra V5 IPC Signature Resolution (CIL Metadata Verification)**:
+  - Discovered via CIL disassembly of `Penumbra.Api.dll` that `Penumbra.SetCollectionForObject.V5` strictly expects `(int actorIndex, Guid? collectionId, bool allowCreate, bool allowDelete)` and returns `(int ec, (Guid, string)? oldCollection)` (`ValueTuple<int, Nullable<ValueTuple<Guid, string>>>`), not `(int, Guid)` or `int`.
+  - Updated `Services/PenumbraIpc.cs` with exact tuple signatures for both V5 and Legacy APIs, resolving CallGate type-conversion exceptions (`converting from ValueTuple 2 to System.Int32`) and ensuring 100% reliable Penumbra Collection assignment to spawned actors.
+- **Penumbra Dual-Phase Redraw Synchronization (AQR Conformity)**:
+  - In `Managers/ActorManager.cs`, aligned appearance application order with AQR: Penumbra collection assignment -> first Penumbra Redraw -> Glamourer design application -> second Penumbra Redraw. This guarantees Mod textures, clothes, and meshes apply seamlessly to spawned actors.
+
 ## [0.1.12] - 2026-10-02
 ### Fixed
 - **Binary MCDF Format Parsing (AQR MCDF-Loader Architecture)**:

@@ -451,11 +451,15 @@ public unsafe class ActorManager : IDisposable
 
         logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId})...");
 
-        // 1. Penumbra コレクションの適用 (AQuestReborn 方式: コレクションを先に設定)
+        // 1. Penumbra コレクションの適用 (AQuestReborn 方式: コレクションを先に設定して Redraw)
         if (penumbraIpc.IsAvailable && !string.IsNullOrWhiteSpace(template.PenumbraCollectionName))
         {
             bool penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
             logManager?.Info($"Penumbra SetCollection '{template.PenumbraCollectionName}' on Global#{actorIndex}: {penSuccess}");
+            if (penSuccess && template.ModelCharaId == 0)
+            {
+                penumbraIpc.Redraw(actorIndex);
+            }
         }
 
         // 2. モンスター / 非人型アクターの場合 (HDM GuiseService 方式)
