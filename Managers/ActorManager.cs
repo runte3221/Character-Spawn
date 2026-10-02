@@ -125,12 +125,11 @@ public unsafe class ActorManager : IDisposable
         CurrentPreviewActor = null;
     }
 
-    private string NextPuppetName()
+    private string GetPuppetName(CharacterTemplate template)
     {
-        var n = nameSerial++;
-        var hi = (char)('A' + (n / 26) % 26);
-        var lo = (char)('a' + n % 26);
-        return $"Csp {hi}{lo}";
+        // テンプレート固有の一意ID（8文字）をSurnameにして、過去の他キャラの名前キャッシュとの衝突を100%防止！
+        var suffix = template.Id.ToString("N")[..8];
+        return $"Csp {suffix}";
     }
 
     /// <summary>
@@ -268,7 +267,7 @@ public unsafe class ActorManager : IDisposable
             // Penumbra/Glamourer は独立した有効な Player Identifier として解決する
             nativeChara->NameId = 0;
             nativeChara->HomeWorld = meNative->HomeWorld;
-            string puppetName = NextPuppetName();
+            string puppetName = GetPuppetName(template);
             nativeChara->GameObject.SetName(puppetName);
 
             // 位置・回転・透明度の設定
@@ -448,11 +447,22 @@ public unsafe class ActorManager : IDisposable
                 penumbraIpc.UnassignCollectionForActor(actor.GlobalIndex);
             }
 
-            // CustomizePlus 一時プロファイルのクリーンアップ
-            if (actor.TemporaryCustomizePlusGuid.HasValue && customizePlusIpc != null)
+            // Glamourer ステートのリセット & ロック解除
+            if (glamourerIpc != null && glamourerIpc.IsAvailable)
             {
-                customizePlusIpc.DeleteTemporaryProfile(actor.TemporaryCustomizePlusGuid.Value);
-                actor.TemporaryCustomizePlusGuid = null;
+                glamourerIpc.UnlockState(actor.GlobalIndex);
+                glamourerIpc.RevertState(actor.GlobalIndex);
+            }
+
+            // CustomizePlus 一時プロファイルの完全クリーンアップ
+            if (customizePlusIpc != null && customizePlusIpc.IsAvailable)
+            {
+                if (actor.TemporaryCustomizePlusGuid.HasValue)
+                {
+                    customizePlusIpc.DeleteTemporaryProfile(actor.TemporaryCustomizePlusGuid.Value);
+                    actor.TemporaryCustomizePlusGuid = null;
+                }
+                customizePlusIpc.DeleteTemporaryProfileOnCharacter(actor.GlobalIndex);
             }
 
             if (actor.NativeAddress != 0)
@@ -841,10 +851,20 @@ public unsafe class ActorManager : IDisposable
 
         logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId})...");
 
-        // 前のキャラの Penumbra コレクション割り当て（通常・一時）を完全にクリア
+        // 前のキャラのステートや割り当てをリセット
+        if (glamourerIpc != null && glamourerIpc.IsAvailable)
+        {
+            glamourerIpc.UnlockState(actorIndex);
+        }
+
         if (penumbraIpc.IsAvailable)
         {
             penumbraIpc.UnassignCollectionForActor(actorIndex);
+        }
+
+        if (customizePlusIpc != null && customizePlusIpc.IsAvailable)
+        {
+            customizePlusIpc.DeleteTemporaryProfileOnCharacter(actorIndex);
         }
 
         // 人型モデルの場合は ObjectKind.Pc を担保（Penumbra Identifier 解決の生命線）
@@ -1052,6 +1072,7 @@ public unsafe class ActorManager : IDisposable
                 customizePlusIpc.DeleteTemporaryProfile(spawned.TemporaryCustomizePlusGuid.Value);
                 spawned.TemporaryCustomizePlusGuid = null;
             }
+            customizePlusIpc.DeleteTemporaryProfileOnCharacter(actorIndex);
 
             Guid? assignedGuid = null;
 

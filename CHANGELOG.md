@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.30] - 2026-10-02
+### Fixed
+- **Puppet Actor Name Cache Isolation & Full State Cleanup (Fixing Respawning as Wrong / Deleted Character Appearance)**:
+  - **Root Cause 1 (Actor Name Cache Collision)**: `NextPuppetName()` generated sequential names (`Csp Aa`, `Csp Ab`, ...). Upon plugin reload or serial rollover, names assigned to previous characters (such as `Chonk` or `Lyle`) were recycled for new characters (`Ruma`). Glamourer and Penumbra automatically cache and restore states by actor GameObject name (`Csp Ac`), causing past appearances and mod collections to automatically override the new character immediately upon entering the world.
+  - **Deterministic Unique Puppet Identity**: Changed actor naming strategy to `GetPuppetName(CharacterTemplate)` (`Csp {template.Id:N8}`). Each character template now maintains a completely unique and deterministic puppet name, mathematically guaranteeing zero name collision with other or deleted characters across sessions.
+  - **Root Cause 2 (Profile Bleed in User Config)**: Cleaned up accidentally persisted `CustomizePlusProfileName: "Chonk"` inside `CharacterSpawn.json` for template `Ruma` caused by modal field retention. Added automatic actor-level profile detachment (`DeleteTemporaryProfileOnCharacter`) when no profile is configured.
+  - **Full Glamourer & CustomizePlus State Reset on Despawn & Apply**:
+    - Integrated `Glamourer.UnlockState` and `Glamourer.RevertState` / `RevertToAutomation` into `ActorManager.DespawnCharacter` and before applying appearances in `ApplyAppearanceDirect`.
+    - Integrated `CustomizePlus.DeleteTemporaryProfileOnCharacter` on despawn and template load to guarantee clean actor state.
+
 ## [0.1.29] - 2026-10-02
 ### Fixed
 - **Penumbra Collection Isolation & Unassignment on Despawn/Appearance (Fixing Wrong Collection Pulled on Spawn)**:

@@ -23,6 +23,12 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<int, uint, (int, JObject?)>? getStateV2;
     private readonly ICallGateSubscriber<int, (int, JObject?)>? getStateLegacy;
     private readonly ICallGateSubscriber<Guid, JObject?>? getDesignJObject;
+    private readonly ICallGateSubscriber<int, uint, ulong, int>? revertStateV2Ulong;
+    private readonly ICallGateSubscriber<int, uint, uint, int>? revertStateV2Uint;
+    private readonly ICallGateSubscriber<int, uint, ulong, int>? revertToAutomationV2Ulong;
+    private readonly ICallGateSubscriber<int, uint, uint, int>? revertToAutomationV2Uint;
+    private readonly ICallGateSubscriber<int, uint, int>? unlockStateV2;
+    private readonly ICallGateSubscriber<int, object?>? revertLegacy;
 
     // Fallback Subscribers
     private readonly ICallGateSubscriber<int, (int, int)>? apiVersionsLegacy;
@@ -64,6 +70,12 @@ public class GlamourerIpc
             getCustomizationFromActor = pi.GetIpcSubscriber<int, string?>("Glamourer.GetCustomizationFromActor");
             getStateV2 = pi.GetIpcSubscriber<int, uint, (int, JObject?)>("Glamourer.GetState");
             getStateLegacy = pi.GetIpcSubscriber<int, (int, JObject?)>("Glamourer.GetState");
+            revertStateV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
+            revertStateV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.RevertState");
+            revertToAutomationV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertToAutomation");
+            revertToAutomationV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.RevertToAutomation");
+            unlockStateV2 = pi.GetIpcSubscriber<int, uint, int>("Glamourer.UnlockState");
+            revertLegacy = pi.GetIpcSubscriber<int, object?>("Glamourer.Revert");
 
             apiVersionsLegacy = pi.GetIpcSubscriber<int, (int, int)>("Glamourer.ApiVersions");
             getDesignListLegacy = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList");
@@ -662,6 +674,72 @@ public class GlamourerIpc
             if (cust[key] is not JObject field) continue;
             field["Value"] = (byte)(c[byteIdx] & mask);
             field["Apply"] = true;
+        }
+    }
+
+    /// <summary>
+    /// アクターの Glamourer ステートをリセット・初期状態に戻す
+    /// </summary>
+    public bool RevertState(int actorIndex)
+    {
+        if (!IsAvailable) return false;
+        bool ok = false;
+        try
+        {
+            if (revertStateV2Ulong != null)
+            {
+                int ec = revertStateV2Ulong.InvokeFunc(actorIndex, 0, 6UL);
+                log.Information($"Glamourer RevertState (ulong) for actor #{actorIndex} result: ec={ec}");
+                if (ec == 0) ok = true;
+            }
+            else if (revertStateV2Uint != null)
+            {
+                int ec = revertStateV2Uint.InvokeFunc(actorIndex, 0, 6U);
+                log.Information($"Glamourer RevertState (uint) for actor #{actorIndex} result: ec={ec}");
+                if (ec == 0) ok = true;
+            }
+            else if (revertLegacy != null)
+            {
+                revertLegacy.InvokeAction(actorIndex);
+                ok = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Debug($"Glamourer RevertState failed: {ex.Message}");
+        }
+
+        try
+        {
+            if (revertToAutomationV2Ulong != null)
+            {
+                revertToAutomationV2Ulong.InvokeFunc(actorIndex, 0, 6UL);
+            }
+            else if (revertToAutomationV2Uint != null)
+            {
+                revertToAutomationV2Uint.InvokeFunc(actorIndex, 0, 6U);
+            }
+        }
+        catch { }
+
+        return ok;
+    }
+
+    /// <summary>
+    /// アクターのステートロックを解除する
+    /// </summary>
+    public bool UnlockState(int actorIndex)
+    {
+        if (!IsAvailable || unlockStateV2 == null) return false;
+        try
+        {
+            int ec = unlockStateV2.InvokeFunc(actorIndex, 0);
+            return ec == 0;
+        }
+        catch (Exception ex)
+        {
+            log.Debug($"Glamourer UnlockState failed: {ex.Message}");
+            return false;
         }
     }
 }
