@@ -7,5 +7,5 @@
 - [x] MCDF一時コレクションおよび通常Penumbraコレクションの適用フロー完全同期 <!-- id: 4 -->
 - [x] v0.1.40.0へのバージョン更新（package.json, repo.json, CharacterSpawn.json, CharacterSpawn.csproj） <!-- id: 5 -->
 - [x] CHANGELOG.mdの追記 <!-- id: 6 -->
-- [ ] ビルド・GitHub Actionsへのプッシュおよびローカルインストール環境同期 <!-- id: 7 -->
-- [ ] walkthrough.mdの作成とユーザーへの報告 <!-- id: 8 -->
+- [x] ビルド・GitHub Actionsへのプッシュおよびローカルインストール環境同期 <!-- id: 7 -->
+- [x] walkthrough.mdの作成とユーザーへの報告 <!-- id: 8 -->
