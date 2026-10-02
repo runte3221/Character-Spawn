@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.32] - 2026-10-02
+### Fixed
+- **Orphaned Weapon残存バグの完全根絶 (Fixing Detached Weapons Remaining on Ground After Despawn)**:
+  - **根本原因の特定**: FF14の描画エンジン（Render/DrawObject）では、子描画オブジェクト（武器モデルなど）を保持したまま `ClientObjectManager.DeleteObjectByIndex` で親GameObjectのみを直接削除すると、シーングラフから切り離された武器の DrawObject が解放されず、ワールド座標に取り残される現象（Orphaned Weapon Bug）が発生していた（ユーザー添付のマンダヴィル・ガンブレードが地面に残る現象で確認）。
+  - **DisableDraw() 先行解放 (Brio DestroyObject パターン準拠)**: `ActorManager.DespawnCharacter` のオブジェクト削除処理の直前で必ず `chara->GameObject.DisableDraw()` を呼び出し、描画ツリー全体および武器オブジェクトを完全にアンロードしてからCOM削除を実行するように修正。
+- **男性キャラ／異種族キャラが自キャラ（女性ミコッテ）の姿に戻る問題の完全解消 (Fixing Character Rollback to Player Baseline)**:
+  - **根本原因の特定**: `ApplyAppearanceDirect` 内で、Glamourer IPC 呼び出し後に `chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None)` を実行していた。`CopyFromCharacter(chara, None)` はアクター自身の現在の素体（自キャラ女性ミコッテ）からモデルを再初期化するため、Glamourer が注入したスケルトンとモデル状態をエンジンレベルで自キャラに強制上書きリセットしてしまっていた。
+  - **有害な自己コピー処理の撤廃**: Brio および HDM の標準アーキテクチャに準拠し、`CharacterSetup.CopyFromCharacter(chara, None)` を完全削除。Glamourer のネイティブフックと Penumbra Redraw が提供する正確なモデル構造をそのまま描画させることで、男性ハイランダー（Chonk 等）や異種族・異性別のキャラクターが 100% 確実に反映されるように修正。
+- **Glamourer デザイン適用の最適化 (Brio SetDesign パターン)**:
+  - `GlamourerIpc.ApplyDesignToActorEx` において、Guid 指定時に失敗していた JSON文字列による `ApplyState` の無理な呼び出しを廃止し、Brio と同じく `ApplyDesign(targetGuid, actorIndex, 0, 7UL)`（Flags: 7 = `DesignDefault` : Once | Equipment | Customization）を直接最優先で実行。
+- **デスポーン時・スポーン時のステート完全クリーンアップの強化**:
+  - `ActorManager.DespawnCharacter` 時に、GlobalIndex だけでなくアクター名（`actor.DisplayName`）でも Glamourer ステートを `RevertStateName` / `UnlockStateName` で解放し、スロット再利用時の外見情報の混ざり・残留を完全に防止。
+
 ## [0.1.31] - 2026-10-02
 ### Fixed
 - **ASCII-Only Valid FF14 Puppet Name Generation (Fixing Reverting to Player Character Baseline)**:

@@ -28,6 +28,8 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<int, uint, ulong, int>? revertToAutomationV2Ulong;
     private readonly ICallGateSubscriber<int, uint, uint, int>? revertToAutomationV2Uint;
     private readonly ICallGateSubscriber<int, uint, int>? unlockStateV2;
+    private readonly ICallGateSubscriber<string, uint, ulong, int>? revertStateNameV2Ulong;
+    private readonly ICallGateSubscriber<string, uint, int>? unlockStateNameV2;
 
     // Fallback Subscribers
     private readonly ICallGateSubscriber<int, (int, int)>? apiVersionsLegacy;
@@ -74,6 +76,8 @@ public class GlamourerIpc
             revertToAutomationV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertToAutomation");
             revertToAutomationV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.RevertToAutomation");
             unlockStateV2 = pi.GetIpcSubscriber<int, uint, int>("Glamourer.UnlockState");
+            revertStateNameV2Ulong = pi.GetIpcSubscriber<string, uint, ulong, int>("Glamourer.RevertStateName");
+            unlockStateNameV2 = pi.GetIpcSubscriber<string, uint, int>("Glamourer.UnlockStateName");
 
             apiVersionsLegacy = pi.GetIpcSubscriber<int, (int, int)>("Glamourer.ApiVersions");
             getDesignListLegacy = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList");
@@ -326,53 +330,27 @@ public class GlamourerIpc
             }
         }
 
-        // A. Guid がある場合: デザイン取得 -> ForceAllApply -> ApplyState または ApplyDesign
+        // A. Guid がある場合: Brio公式準拠で ApplyDesign(targetGuid, actorIndex, 0, 7UL) を最優先実行
         if (targetGuid != Guid.Empty)
         {
             byte[]? customizeBytes = null;
-            var targetDesignObj = GetDesign(targetGuid);
-            if (targetDesignObj != null)
+            try
             {
-                ForceAllApply(targetDesignObj);
-                customizeBytes = ExtractCustomizeBytes(targetDesignObj);
-
-                string jsonString = targetDesignObj.ToString(Newtonsoft.Json.Formatting.None);
-                if (applyStateV2Ulong != null)
+                var targetDesignObj = GetDesign(targetGuid);
+                if (targetDesignObj != null)
                 {
-                    try
-                    {
-                        int res = applyStateV2Ulong.InvokeFunc(jsonString, actorIndex, 0, 6UL);
-                        log.Information($"Glamourer ApplyState for Guid {targetGuid} (ulong flags=6) result: {res}");
-                        if (res == 0) return (true, customizeBytes);
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Warning($"Glamourer ApplyState V2 (ulong) failed for Guid {targetGuid}: {ex.Message}");
-                    }
-                }
-
-                if (applyStateV2Uint != null)
-                {
-                    try
-                    {
-                        int res = applyStateV2Uint.InvokeFunc(jsonString, actorIndex, 0, 6U);
-                        log.Information($"Glamourer ApplyState for Guid {targetGuid} (uint flags=6) result: {res}");
-                        if (res == 0) return (true, customizeBytes);
-                    }
-                    catch (Exception ex)
-                    {
-                        log.Warning($"Glamourer ApplyState V2 (uint) failed for Guid {targetGuid}: {ex.Message}");
-                    }
+                    customizeBytes = ExtractCustomizeBytes(targetDesignObj);
                 }
             }
+            catch { }
 
-            // フォールバック: ApplyDesign IPC を直接呼び出し
+            // 1. V2 ApplyDesign (flags = 7UL: Once | Equipment | Customization = DesignDefault)
             if (applyDesignV2Ulong != null)
             {
                 try
                 {
-                    int res = applyDesignV2Ulong.InvokeFunc(targetGuid, actorIndex, 0, 6UL);
-                    log.Information($"Glamourer ApplyDesign (Guid: {targetGuid}, Flags: 6UL) result: {res}");
+                    int res = applyDesignV2Ulong.InvokeFunc(targetGuid, actorIndex, 0, 7UL);
+                    log.Information($"Glamourer ApplyDesign (Guid: {targetGuid}, Flags: 7UL) result: {res}");
                     if (res == 0) return (true, customizeBytes);
                 }
                 catch (Exception ex)
@@ -385,13 +363,28 @@ public class GlamourerIpc
             {
                 try
                 {
-                    int res = applyDesignV2Uint.InvokeFunc(targetGuid, actorIndex, 0, 6U);
-                    log.Information($"Glamourer ApplyDesign (Guid: {targetGuid}, Flags: 6U) result: {res}");
+                    int res = applyDesignV2Uint.InvokeFunc(targetGuid, actorIndex, 0, 7U);
+                    log.Information($"Glamourer ApplyDesign (Guid: {targetGuid}, Flags: 7U) result: {res}");
                     if (res == 0) return (true, customizeBytes);
                 }
                 catch (Exception ex)
                 {
                     log.Warning($"Glamourer ApplyDesign V2 (uint) failed: {ex.Message}");
+                }
+            }
+
+            // 2. Legacy ApplyByGuid
+            if (applyByGuidLegacy != null)
+            {
+                try
+                {
+                    applyByGuidLegacy.InvokeFunc(targetGuid, actorIndex);
+                    log.Information($"Glamourer ApplyByGuid (Legacy) executed for Guid {targetGuid}.");
+                    return (true, customizeBytes);
+                }
+                catch (Exception ex)
+                {
+                    log.Warning($"Glamourer ApplyByGuid Legacy failed: {ex.Message}");
                 }
             }
 
@@ -696,23 +689,39 @@ public class GlamourerIpc
     }
 
     /// <summary>
-    /// アクターの Glamourer ステートをリセット・初期状態に戻す
+    /// アクターの Glamourer ステートをリセット・初期状態に戻す (Brio UnlockAndRevertCharacter 準拠)
     /// </summary>
-    public bool RevertState(int actorIndex)
+    public bool RevertState(int actorIndex, string? actorName = null)
     {
         if (!IsAvailable) return false;
         bool ok = false;
+
+        // 名前による Revert (Brio 準拠)
+        if (!string.IsNullOrWhiteSpace(actorName) && revertStateNameV2Ulong != null)
+        {
+            try
+            {
+                int ecName = revertStateNameV2Ulong.InvokeFunc(actorName, 0, 7UL);
+                log.Information($"Glamourer RevertStateName for '{actorName}' result: ec={ecName}");
+                if (ecName == 0) ok = true;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer RevertStateName failed: {ex.Message}");
+            }
+        }
+
         try
         {
             if (revertStateV2Ulong != null)
             {
-                int ec = revertStateV2Ulong.InvokeFunc(actorIndex, 0, 6UL);
+                int ec = revertStateV2Ulong.InvokeFunc(actorIndex, 0, 7UL);
                 log.Information($"Glamourer RevertState (ulong) for actor #{actorIndex} result: ec={ec}");
                 if (ec == 0) ok = true;
             }
             else if (revertStateV2Uint != null)
             {
-                int ec = revertStateV2Uint.InvokeFunc(actorIndex, 0, 6U);
+                int ec = revertStateV2Uint.InvokeFunc(actorIndex, 0, 7U);
                 log.Information($"Glamourer RevertState (uint) for actor #{actorIndex} result: ec={ec}");
                 if (ec == 0) ok = true;
             }
@@ -726,11 +735,11 @@ public class GlamourerIpc
         {
             if (revertToAutomationV2Ulong != null)
             {
-                revertToAutomationV2Ulong.InvokeFunc(actorIndex, 0, 6UL);
+                revertToAutomationV2Ulong.InvokeFunc(actorIndex, 0, 7UL);
             }
             else if (revertToAutomationV2Uint != null)
             {
-                revertToAutomationV2Uint.InvokeFunc(actorIndex, 0, 6U);
+                revertToAutomationV2Uint.InvokeFunc(actorIndex, 0, 7U);
             }
         }
         catch { }
@@ -741,18 +750,33 @@ public class GlamourerIpc
     /// <summary>
     /// アクターのステートロックを解除する
     /// </summary>
-    public bool UnlockState(int actorIndex)
+    public bool UnlockState(int actorIndex, string? actorName = null)
     {
-        if (!IsAvailable || unlockStateV2 == null) return false;
-        try
+        if (!IsAvailable) return false;
+
+        if (!string.IsNullOrWhiteSpace(actorName) && unlockStateNameV2 != null)
         {
-            int ec = unlockStateV2.InvokeFunc(actorIndex, 0);
-            return ec == 0;
+            try
+            {
+                unlockStateNameV2.InvokeFunc(actorName, 0);
+            }
+            catch { }
         }
-        catch (Exception ex)
+
+        if (unlockStateV2 != null)
         {
-            log.Debug($"Glamourer UnlockState failed: {ex.Message}");
-            return false;
+            try
+            {
+                int ec = unlockStateV2.InvokeFunc(actorIndex, 0);
+                return ec == 0;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer UnlockState failed: {ex.Message}");
+                return false;
+            }
         }
+
+        return false;
     }
 }

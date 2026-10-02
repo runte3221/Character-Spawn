@@ -466,11 +466,11 @@ public unsafe class ActorManager : IDisposable
                 penumbraIpc.UnassignCollectionForActor(actor.GlobalIndex);
             }
 
-            // Glamourer ステートのリセット & ロック解除
+            // Glamourer ステートのリセット & ロック解除 (インデックス + 名前の両方で解除)
             if (glamourerIpc != null && glamourerIpc.IsAvailable)
             {
-                glamourerIpc.UnlockState(actor.GlobalIndex);
-                glamourerIpc.RevertState(actor.GlobalIndex);
+                glamourerIpc.UnlockState(actor.GlobalIndex, actor.DisplayName);
+                glamourerIpc.RevertState(actor.GlobalIndex, actor.DisplayName);
             }
 
             // CustomizePlus 一時プロファイルの完全クリーンアップ
@@ -486,6 +486,18 @@ public unsafe class ActorManager : IDisposable
 
             if (actor.NativeAddress != 0)
             {
+                var chara = (Character*)actor.NativeAddress;
+                try
+                {
+                    // 武器モデルや子オブジェクトがワールドに取り残される(Orphaned Weapon Bug)のを防ぐため、
+                    // COM削除前に必ず描画ツリーを無効化・アンロードする (Brio DestroyObject パターン)
+                    chara->GameObject.DisableDraw();
+                }
+                catch (Exception exDraw)
+                {
+                    logManager?.Warning($"DisableDraw failed during despawn for '{actor.DisplayName}': {exDraw.Message}");
+                }
+
                 var com = ClientObjectManager.Instance();
                 if (com != null)
                 {
@@ -945,7 +957,6 @@ public unsafe class ActorManager : IDisposable
                                 {
                                     Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
                                 }
-                                chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
                                 logManager?.Info($"MCDF: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
                             }
                         }
@@ -1019,7 +1030,7 @@ public unsafe class ActorManager : IDisposable
             return;
         }
 
-        // 5. Glamourer / PlayerClone の適用 (AQR 方式)
+        // 5. Glamourer / PlayerClone の適用 (AQR & Brio 方式)
         if (glamourerIpc.IsAvailable)
         {
             string? designString = template.GlamourerDesignString;
@@ -1034,7 +1045,6 @@ public unsafe class ActorManager : IDisposable
                     {
                         Buffer.MemoryCopy(pCust, &chara->DrawData.CustomizeData, 26, 26);
                     }
-                    chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
                     logManager?.Info($"Glamourer: Synchronized 26 CustomizeData bytes directly to native actor #{actorIndex}.");
                 }
             }
