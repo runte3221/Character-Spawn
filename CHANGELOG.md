@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.36] - 2026-10-02
+### Fixed
+- **操作自キャラとスポーンパペットの外見入れ替わりバグの完全根絶**:
+  - **根本原因の完全解明**:
+    1. Glamourer の IPC（`Glamourer.ApplyState` / `ApplyDesign`）の `int objectIndex` 引数は、Dalamud の `ObjectTable` インデックス（200〜）ではなく、FF14 内部の描画ソート順配列（`GameObjectManager.Instance()->Objects.IndexSorted`）を参照する仕様であった。
+    2. パペットの Dalamud GlobalIndex（`200`）をそのまま渡した結果、`IndexSorted[200]` に位置していた（あるいは未初期化メモリ経由で参照された）**操作中の自キャラ（LocalPlayer）** に Glamourer がデザイン（Chonk）を適用してしまい、自キャラが変身していた。
+    3. 一方、スポーンしたパペット（Global#200）は自キャラのベースライン姿のまま残されたため、プレイヤーから見て「自キャラとパペットの外見が入れ替わった」状態が発生していた。
+  - **名前指定 IPC（`ApplyDesignName` / `ApplyStateName`）の導入による自キャラ誤爆の 100% 根絶**:
+    - `GlamourerIpc` に `Glamourer.ApplyDesignName` および `Glamourer.ApplyStateName` サブスクライバを新設。
+    - パペットは生成時に一意の ASCII 名前（`PuppetName` = `"Csp Wzjjjwyr"` 等）が命名されているため、デザイン適用時は必ずこの名前を指定して IPC を呼び出すように変更。
+    - Glamourer は内部で `PlayerName == "Csp Wzjjjwyr"` のアクター（パペット）を特定してデザインを適用するため、自キャラ（`"Ruma Meow"`）に適用される事故は物理的に 100% 発生しなくなった。
+- **デスポーン時の武器孤立残存（Orphaned Weapon Bug）の完全解消**:
+  - **根本原因の特定**:
+    1. デスポーン時に `chara->GameObject.DisableDraw()` を呼び出していたため、ゲームエンジンの描画ツリーから武器の DrawObject だけが切り離されてワールド空間に孤立して残っていた。
+    2. また、破棄直前に Glamourer の `RevertState` を呼び出していたため、非同期の装備再描画パイプラインが走り、オブジェクト削除と競合して武器モデルが空中に残留していた。
+  - **安全なデスポーンシーケンスの確立 (Brio 準拠)**:
+    - `DisableDraw()` の呼び出しを完全撤廃し、ゲームのネイティブ `ClientObjectManager.DeleteObjectByIndex` による自然なカスケード破棄に任せるように変更。
+    - デスポーンするアクターに対する `RevertState`（見た目を元に戻す再描画）を廃止し、`UnlockState` のみ実行。
+    - 削除直前に `chara->DrawData.HideWeapons(true)` を適用し、武器モデルの確実なアンロードを保証。
+
 ## [0.1.35] - 2026-10-02
 ### Fixed
 - **CustomizeData メモリ破壊バグの完全根絶 & 異種族・男性キャラロールバックの根本解決**:

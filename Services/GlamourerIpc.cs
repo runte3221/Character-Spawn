@@ -13,6 +13,10 @@ public class GlamourerIpc
     // V2 IPC Subscribers
     private readonly ICallGateSubscriber<(int, int)>? apiVersionV2;
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getDesignListV2;
+    private readonly ICallGateSubscriber<Guid, string, uint, ulong, int>? applyDesignNameV2Ulong;
+    private readonly ICallGateSubscriber<Guid, string, uint, uint, int>? applyDesignNameV2Uint;
+    private readonly ICallGateSubscriber<string, string, uint, ulong, int>? applyStateNameV2Ulong;
+    private readonly ICallGateSubscriber<string, string, uint, uint, int>? applyStateNameV2Uint;
     private readonly ICallGateSubscriber<Guid, int, uint, ulong, int>? applyDesignV2Ulong;
     private readonly ICallGateSubscriber<Guid, int, uint, uint, int>? applyDesignV2Uint;
     private readonly ICallGateSubscriber<string, int, uint, ulong, int>? applyStateV2Ulong;
@@ -62,6 +66,10 @@ public class GlamourerIpc
             apiVersionV2 = pi.GetIpcSubscriber<(int, int)>("Glamourer.ApiVersion.V2");
             getDesignListV2 = pi.GetIpcSubscriber<Dictionary<Guid, string>>("Glamourer.GetDesignList.V2");
             getDesignJObject = pi.GetIpcSubscriber<Guid, JObject?>("Glamourer.GetDesignJObject");
+            applyDesignNameV2Ulong = pi.GetIpcSubscriber<Guid, string, uint, ulong, int>("Glamourer.ApplyDesignName");
+            applyDesignNameV2Uint = pi.GetIpcSubscriber<Guid, string, uint, uint, int>("Glamourer.ApplyDesignName");
+            applyStateNameV2Ulong = pi.GetIpcSubscriber<string, string, uint, ulong, int>("Glamourer.ApplyStateName");
+            applyStateNameV2Uint = pi.GetIpcSubscriber<string, string, uint, uint, int>("Glamourer.ApplyStateName");
             applyDesignV2Ulong = pi.GetIpcSubscriber<Guid, int, uint, ulong, int>("Glamourer.ApplyDesign");
             applyDesignV2Uint = pi.GetIpcSubscriber<Guid, int, uint, uint, int>("Glamourer.ApplyDesign");
             applyStateV2Ulong = pi.GetIpcSubscriber<string, int, uint, ulong, int>("Glamourer.ApplyState");
@@ -312,7 +320,7 @@ public class GlamourerIpc
     /// Guid、名前、または State 文字列（MCDF Base64 / JSON）を全スロット強制適用(ForceAllApply)し、
     /// GZip圧縮Base64を通じて Glamourer.ApplyState または ApplyDesign で確実にアクターを変身させる
     /// </summary>
-    public bool ApplyDesignToActor(string designString, int actorIndex)
+    public bool ApplyDesignToActor(string designString, int actorIndex, string? actorName = null)
     {
         if (!IsAvailable || string.IsNullOrWhiteSpace(designString)) return false;
 
@@ -336,7 +344,120 @@ public class GlamourerIpc
             }
         }
 
-        // A. Guid がある場合: デザイン取得 -> ForceAllApply -> GZip圧縮Base64で ApplyState (Race: Apply=falseバグを完全解消)
+        // A. 名前指定が可能な場合（パペットは一意の PuppetName を持つため、名前指定で自キャラ誤爆を 100% 根絶）
+        if (!string.IsNullOrWhiteSpace(actorName))
+        {
+            log.Information($"Glamourer ApplyDesignToActor targeting by name: '{actorName}' (Fallback Index: {actorIndex})...");
+
+            // A-1. Guid がある場合: デザイン取得 -> ForceAllApply -> GZip圧縮Base64で ApplyStateName
+            if (targetGuid != Guid.Empty)
+            {
+                var targetDesignObj = GetDesign(targetGuid);
+                if (targetDesignObj != null)
+                {
+                    ForceAllApply(targetDesignObj);
+                    try
+                    {
+                        string compressedBase64 = CompressToBase64(targetDesignObj);
+                        if (applyStateNameV2Ulong != null)
+                        {
+                            int res = applyStateNameV2Ulong.InvokeFunc(compressedBase64, actorName, 0, 7UL);
+                            log.Information($"Glamourer ApplyStateName (ForceAllApply compressed, Flags: 7UL) for '{actorName}' (Guid {targetGuid}) result: {res}");
+                            if (res == 0) return true;
+                        }
+                        else if (applyStateNameV2Uint != null)
+                        {
+                            int res = applyStateNameV2Uint.InvokeFunc(compressedBase64, actorName, 0, 7U);
+                            log.Information($"Glamourer ApplyStateName (ForceAllApply compressed, Flags: 7U) for '{actorName}' (Guid {targetGuid}) result: {res}");
+                            if (res == 0) return true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Warning($"Glamourer ApplyStateName with compressed base64 failed for '{actorName}': {ex.Message}");
+                    }
+                }
+
+                // ApplyDesignName IPC 直接呼び出し (flags = 7: Once | Equipment | Customization)
+                if (applyDesignNameV2Ulong != null)
+                {
+                    try
+                    {
+                        int res = applyDesignNameV2Ulong.InvokeFunc(targetGuid, actorName, 0, 7UL);
+                        log.Information($"Glamourer ApplyDesignName (Guid: {targetGuid}, Flags: 7UL) for '{actorName}' result: {res}");
+                        if (res == 0) return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Warning($"Glamourer ApplyDesignName V2 (ulong) failed for '{actorName}': {ex.Message}");
+                    }
+                }
+
+                if (applyDesignNameV2Uint != null)
+                {
+                    try
+                    {
+                        int res = applyDesignNameV2Uint.InvokeFunc(targetGuid, actorName, 0, 7U);
+                        log.Information($"Glamourer ApplyDesignName (Guid: {targetGuid}, Flags: 7U) for '{actorName}' result: {res}");
+                        if (res == 0) return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Warning($"Glamourer ApplyDesignName V2 (uint) failed for '{actorName}': {ex.Message}");
+                    }
+                }
+            }
+            else
+            {
+                // A-2. Guid ではない場合 (MCDF 等の Base64 / JSON デザイン文字列): Parse して ApplyStateName を実行
+                JObject? parsedObj = ParseDesignString(designString);
+                string targetStateString = designString;
+                if (parsedObj != null)
+                {
+                    ForceAllApply(parsedObj);
+                    try
+                    {
+                        targetStateString = CompressToBase64(parsedObj);
+                    }
+                    catch { }
+                }
+
+                if (applyStateNameV2Ulong != null)
+                {
+                    try
+                    {
+                        int res = applyStateNameV2Ulong.InvokeFunc(targetStateString, actorName, 0, 7UL);
+                        log.Information($"Glamourer ApplyStateName (ulong flags=7) for '{actorName}' result: {res}");
+                        if (res == 0) return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Warning($"Glamourer ApplyStateName V2 (ulong) failed for '{actorName}': {ex.Message}");
+                    }
+                }
+
+                if (applyStateNameV2Uint != null)
+                {
+                    try
+                    {
+                        int res = applyStateNameV2Uint.InvokeFunc(targetStateString, actorName, 0, 7U);
+                        log.Information($"Glamourer ApplyStateName (uint flags=7) for '{actorName}' result: {res}");
+                        if (res == 0) return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        log.Warning($"Glamourer ApplyStateName V2 (uint) failed for '{actorName}': {ex.Message}");
+                    }
+                }
+            }
+
+            // 重要: actorName が指定されている（パペットアクター）場合、
+            // インデックス指定(actorIndex)で呼ぶと Glamourer が IndexSorted から誤って LocalPlayer (自キャラ) を取得して
+            // 自キャラを変身させてしまう重大バグを避けるため、インデックス指定にはフォールスルーしない！
+            return false;
+        }
+
+        // B. actorName が指定されていない場合 (自キャラ Index 0 への直接適用など): インデックス指定 IPC
         if (targetGuid != Guid.Empty)
         {
             var targetDesignObj = GetDesign(targetGuid);
@@ -344,7 +465,6 @@ public class GlamourerIpc
             {
                 ForceAllApply(targetDesignObj);
 
-                // GZip圧縮Base64(Version 6 header)にエンコードして ApplyState に渡す
                 try
                 {
                     string compressedBase64 = CompressToBase64(targetDesignObj);
@@ -367,7 +487,6 @@ public class GlamourerIpc
                 }
             }
 
-            // フォールバック: ApplyDesign IPC を直接呼び出し (flags = 7UL: Once | Equipment | Customization)
             if (applyDesignV2Ulong != null)
             {
                 try
@@ -396,7 +515,6 @@ public class GlamourerIpc
                 }
             }
 
-            // 2. Legacy ApplyByGuid
             if (applyByGuidLegacy != null)
             {
                 try
@@ -411,19 +529,18 @@ public class GlamourerIpc
                 }
             }
 
-            // Guid の場合は Base64 デコード処理にはフォールスルーしない
             return false;
         }
 
-        // B. Guid ではない場合 (MCDF 等の Base64 / JSON デザイン文字列): Parse して ApplyState を実行
-        JObject? parsedObj = ParseDesignString(designString);
-        string targetStateString = designString;
-        if (parsedObj != null)
+        // B-2. 非Guid (MCDF 等) のインデックス指定
+        JObject? parsedNonGuidObj = ParseDesignString(designString);
+        string targetStateStringIndex = designString;
+        if (parsedNonGuidObj != null)
         {
-            ForceAllApply(parsedObj);
+            ForceAllApply(parsedNonGuidObj);
             try
             {
-                targetStateString = CompressToBase64(parsedObj);
+                targetStateStringIndex = CompressToBase64(parsedNonGuidObj);
             }
             catch { }
         }
@@ -432,7 +549,7 @@ public class GlamourerIpc
         {
             try
             {
-                int res = applyStateV2Ulong.InvokeFunc(targetStateString, actorIndex, 0, 7UL);
+                int res = applyStateV2Ulong.InvokeFunc(targetStateStringIndex, actorIndex, 0, 7UL);
                 log.Information($"Glamourer ApplyState (ulong flags=7) result: {res}");
                 if (res == 0) return true;
             }
@@ -446,7 +563,7 @@ public class GlamourerIpc
         {
             try
             {
-                int res = applyStateV2Uint.InvokeFunc(targetStateString, actorIndex, 0, 7U);
+                int res = applyStateV2Uint.InvokeFunc(targetStateStringIndex, actorIndex, 0, 7U);
                 log.Information($"Glamourer ApplyState (uint flags=7) result: {res}");
                 if (res == 0) return true;
             }

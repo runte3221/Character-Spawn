@@ -466,15 +466,13 @@ public unsafe class ActorManager : IDisposable
                 penumbraIpc.UnassignCollectionForActor(actor.GlobalIndex);
             }
 
-            // Glamourer ステートのリセット & ロック解除 (インデックス + GameObject名 + 表示名で完全解除)
+            // Glamourer ロック解除 (削除するアクターに対して RevertState は非同期再描画を誘発して武器残存の原因になるため呼ばない)
             if (glamourerIpc != null && glamourerIpc.IsAvailable)
             {
                 glamourerIpc.UnlockState(actor.GlobalIndex, actor.PuppetName);
-                glamourerIpc.RevertState(actor.GlobalIndex, actor.PuppetName);
                 if (!string.IsNullOrEmpty(actor.DisplayName) && actor.DisplayName != actor.PuppetName)
                 {
                     glamourerIpc.UnlockState(actor.GlobalIndex, actor.DisplayName);
-                    glamourerIpc.RevertState(actor.GlobalIndex, actor.DisplayName);
                 }
             }
 
@@ -494,19 +492,17 @@ public unsafe class ActorManager : IDisposable
                 var chara = (Character*)actor.NativeAddress;
                 try
                 {
-                    // 武器モデルや子オブジェクトがワールドに取り残される(Orphaned Weapon Bug)のを防ぐため、
-                    // COM削除前に必ず描画ツリーを無効化・アンロードする (Brio DestroyObject パターン)
-                    chara->GameObject.DisableDraw();
+                    // 武器のグラフィックフラグを非表示に設定
+                    chara->DrawData.HideWeapons(true);
+                    chara->DrawData.IsWeaponHidden = true;
                 }
-                catch (Exception exDraw)
-                {
-                    logManager?.Warning($"DisableDraw failed during despawn for '{actor.DisplayName}': {exDraw.Message}");
-                }
+                catch { }
 
                 var com = ClientObjectManager.Instance();
                 if (com != null)
                 {
-                    // ライブオブジェクトから最新の COM インデックスを解決
+                    // ライブオブジェクトから最新の COM インデックスを解決して正規破棄
+                    // ※ DisableDraw() は呼ばない（呼ぶと描画ツリーから武器が切り離されてワールドに孤立するため）
                     var comIdx = com->GetIndexByObject((GameObject*)actor.NativeAddress);
                     if (comIdx != 0xFFFFFFFF)
                     {
@@ -890,7 +886,11 @@ public unsafe class ActorManager : IDisposable
         // 前のキャラのステートや割り当てをリセット
         if (glamourerIpc != null && glamourerIpc.IsAvailable)
         {
-            glamourerIpc.UnlockState(actorIndex);
+            glamourerIpc.UnlockState(actorIndex, spawned?.PuppetName);
+            if (!string.IsNullOrEmpty(spawned?.DisplayName) && spawned.DisplayName != spawned.PuppetName)
+            {
+                glamourerIpc.UnlockState(actorIndex, spawned.DisplayName);
+            }
         }
 
         if (penumbraIpc.IsAvailable)
@@ -948,14 +948,14 @@ public unsafe class ActorManager : IDisposable
                             }
                         }
 
-                        // Glamourer デザインの適用
+                        // Glamourer デザインの適用 (PuppetName 名前指定を優先して自キャラ誤爆を 100% 根絶)
                         string? designString = bundle.GlamourerDesign;
                         if (string.IsNullOrWhiteSpace(designString)) designString = template.GlamourerDesignString;
 
                         if (glamourerIpc.IsAvailable && !string.IsNullOrWhiteSpace(designString))
                         {
-                            bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
-                            logManager?.Info($"MCDF Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
+                            bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
+                            logManager?.Info($"MCDF Glamourer ApplyDesign result on Global#{actorIndex} ('{spawned?.PuppetName}'): {glamSuccess}");
                         }
 
                         // 武器の表示・非表示
@@ -1027,23 +1027,23 @@ public unsafe class ActorManager : IDisposable
             return;
         }
 
-        // 5. Glamourer / PlayerClone の適用 (AQR & Brio 方式)
+        // 5. Glamourer / PlayerClone の適用 (PuppetName 名前指定を優先して自キャラ誤爆を 100% 根絶)
         if (glamourerIpc.IsAvailable)
         {
             string? designString = template.GlamourerDesignString;
 
             if (!string.IsNullOrWhiteSpace(designString))
             {
-                bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex);
-                logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex}: {glamSuccess}");
+                bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
+                logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex} ('{spawned?.PuppetName}'): {glamSuccess}");
             }
             else if (template.SourceType == CharacterSourceType.PlayerClone)
             {
                 var playerDesign = glamourerIpc.GetCustomization(0);
                 if (!string.IsNullOrWhiteSpace(playerDesign))
                 {
-                    glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex);
-                    logManager?.Info($"Applied player customization clone via Glamourer to Global#{actorIndex}.");
+                    glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex, spawned?.PuppetName);
+                    logManager?.Info($"Applied player customization clone via Glamourer to Global#{actorIndex} ('{spawned?.PuppetName}').");
                 }
                 else
                 {
