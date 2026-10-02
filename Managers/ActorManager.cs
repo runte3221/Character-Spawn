@@ -442,6 +442,12 @@ public unsafe class ActorManager : IDisposable
                 actor.TemporaryCollectionGuid = null;
             }
 
+            // Penumbra コレクション割り当ての完全解除 (通常 & 一時)
+            if (penumbraIpc.IsAvailable)
+            {
+                penumbraIpc.UnassignCollectionForActor(actor.GlobalIndex);
+            }
+
             // CustomizePlus 一時プロファイルのクリーンアップ
             if (actor.TemporaryCustomizePlusGuid.HasValue && customizePlusIpc != null)
             {
@@ -834,6 +840,12 @@ public unsafe class ActorManager : IDisposable
         int actorIndex = (int)globalIndex;
 
         logManager?.Info($"ApplyAppearanceDirect: '{template.Name}' (GlobalIndex: {actorIndex}, Source: {template.SourceType}, ModelChara: {template.ModelCharaId})...");
+
+        // 前のキャラの Penumbra コレクション割り当て（通常・一時）を完全にクリア
+        if (penumbraIpc.IsAvailable)
+        {
+            penumbraIpc.UnassignCollectionForActor(actorIndex);
+        }
 
         // 人型モデルの場合は ObjectKind.Pc を担保（Penumbra Identifier 解決の生命線）
         if (template.ModelCharaId == 0)

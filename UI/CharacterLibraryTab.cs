@@ -55,6 +55,7 @@ public class CharacterLibraryTab
 
     // MCDF modal fields
     private string modalMcdfPath = string.Empty;
+    private string modalMcdfGlamourerDesign = string.Empty;
 
     // Customize+ modal fields
     private string customizePlusSearch = string.Empty;
@@ -424,6 +425,7 @@ public class CharacterLibraryTab
         cachedNpcAppearance = null;
 
         modalMcdfPath = string.Empty;
+        modalMcdfGlamourerDesign = string.Empty;
 
         customizePlusSearch = string.Empty;
         selectedCustomizePlusProfileGuid = string.Empty;
@@ -440,7 +442,8 @@ public class CharacterLibraryTab
         modalFolder = template.FolderPath;
         modalSourceType = template.SourceType;
 
-        customGlamourerString = template.GlamourerDesignString ?? string.Empty;
+        customGlamourerString = template.SourceType == CharacterSourceType.Glamourer ? (template.GlamourerDesignString ?? string.Empty) : string.Empty;
+        modalMcdfGlamourerDesign = template.SourceType == CharacterSourceType.Mcdf ? (template.GlamourerDesignString ?? string.Empty) : string.Empty;
         selectedPenumbraCollection = template.PenumbraCollectionName ?? string.Empty;
         modalMcdfPath = template.McdfFilePath ?? string.Empty;
 
@@ -711,7 +714,7 @@ public class CharacterLibraryTab
                         var parsed = mcdfParser.ParseMcdf(path);
                         if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
                         {
-                            customGlamourerString = parsed.GlamourerDesign;
+                            modalMcdfGlamourerDesign = parsed.GlamourerDesign;
                             logManager?.Info($"Parsed Glamourer design from selected MCDF: {fileName}");
                         }
                     }
@@ -727,7 +730,7 @@ public class CharacterLibraryTab
                 var parsed = mcdfParser.ParseMcdf(modalMcdfPath);
                 if (parsed != null && !string.IsNullOrEmpty(parsed.GlamourerDesign))
                 {
-                    customGlamourerString = parsed.GlamourerDesign;
+                    modalMcdfGlamourerDesign = parsed.GlamourerDesign;
                     logManager?.Info("Reloaded Glamourer design from MCDF archive.");
                 }
             }
@@ -894,25 +897,33 @@ public class CharacterLibraryTab
         target.Name = string.IsNullOrWhiteSpace(modalName) ? "Character" : modalName;
         target.FolderPath = modalFolder;
         target.SourceType = modalSourceType;
-        target.PenumbraCollectionName = selectedPenumbraCollection;
-        target.McdfFilePath = modalMcdfPath;
         target.CustomizePlusProfileGuid = string.IsNullOrWhiteSpace(selectedCustomizePlusProfileGuid) ? null : selectedCustomizePlusProfileGuid;
         target.CustomizePlusProfileName = string.IsNullOrWhiteSpace(selectedCustomizePlusProfileName) ? null : selectedCustomizePlusProfileName;
 
-        string design = customGlamourerString;
         if (modalSourceType == CharacterSourceType.Glamourer)
         {
-            if (string.IsNullOrWhiteSpace(design))
-            {
-                design = !string.IsNullOrWhiteSpace(selectedGlamourerDesignGuid) 
-                    ? selectedGlamourerDesignGuid 
-                    : selectedGlamourerDesignName;
-            }
+            // Guidが選択されていればそれを最優先、なければデザイン名または手動入力文字列
+            string design = !string.IsNullOrWhiteSpace(selectedGlamourerDesignGuid)
+                ? selectedGlamourerDesignGuid
+                : (!string.IsNullOrWhiteSpace(selectedGlamourerDesignName) ? selectedGlamourerDesignName : customGlamourerString);
+            target.GlamourerDesignString = design;
+            target.PenumbraCollectionName = selectedPenumbraCollection ?? string.Empty;
+            target.McdfFilePath = string.Empty;
+            target.ModelCharaId = 0;
+            target.DataId = 0;
+            target.CustomizeData = null;
+            target.NpcEquipmentModelIds = null;
         }
         else if (modalSourceType == CharacterSourceType.Mcdf)
         {
-            target.ModelCharaId = 0;
+            target.McdfFilePath = modalMcdfPath;
             target.PenumbraCollectionName = string.Empty; // MCDF uses automatic temporary collection
+            target.ModelCharaId = 0;
+            target.DataId = 0;
+            target.CustomizeData = null;
+            target.NpcEquipmentModelIds = null;
+
+            string design = modalMcdfGlamourerDesign;
             if (string.IsNullOrWhiteSpace(design) && !string.IsNullOrWhiteSpace(modalMcdfPath))
             {
                 var parsed = mcdfParser.ParseMcdf(modalMcdfPath);
@@ -921,28 +932,15 @@ public class CharacterLibraryTab
                     design = parsed.GlamourerDesign;
                 }
             }
-        }
-        else if (modalSourceType == CharacterSourceType.PlayerClone && string.IsNullOrWhiteSpace(design) && glamourerIpc.IsAvailable)
-        {
-            design = glamourerIpc.GetCustomization(0) ?? string.Empty;
-        }
-
-        target.GlamourerDesignString = design;
-
-        if (modalSourceType == CharacterSourceType.Monster && modalSelectedMonster != null)
-        {
-            target.DataId = modalSelectedMonster.Id;
-            target.ModelCharaId = modalSelectedMonster.ModelCharaId;
-            target.Scale = modalSelectedMonster.Scale > 0 ? modalSelectedMonster.Scale : 1.0f;
-            target.McType = modalSelectedMonster.McType;
-            target.CustomizeData = null;
-            target.NpcEquipmentModelIds = null;
-            target.WeaponVisible = false; // モンスターはデフォルトで武器非表示
+            target.GlamourerDesignString = design;
         }
         else if (modalSourceType == CharacterSourceType.Npc && modalSelectedNpc != null)
         {
             target.DataId = modalSelectedNpc.Id;
             target.ModelCharaId = modalSelectedNpc.ModelCharaId;
+            target.GlamourerDesignString = string.Empty;
+            target.PenumbraCollectionName = string.Empty;
+            target.McdfFilePath = string.Empty;
 
             cachedNpcAppearance ??= gameDataService.GetNpcAppearanceData(modalSelectedNpc.Id);
             if (cachedNpcAppearance != null)
@@ -951,11 +949,30 @@ public class CharacterLibraryTab
                 target.NpcEquipmentModelIds = cachedNpcAppearance.EquipmentModelIds;
                 target.McType = cachedNpcAppearance.McType;
             }
-            target.WeaponVisible = false; // NPCはデフォルトで武器非表示（自キャラの武器が表示されるのを防ぐ）
+            target.WeaponVisible = false; // NPCはデフォルトで武器非表示
         }
-        else if (modalSourceType == CharacterSourceType.Mcdf)
+        else if (modalSourceType == CharacterSourceType.Monster && modalSelectedMonster != null)
         {
+            target.DataId = modalSelectedMonster.Id;
+            target.ModelCharaId = modalSelectedMonster.ModelCharaId;
+            target.Scale = modalSelectedMonster.Scale > 0 ? modalSelectedMonster.Scale : 1.0f;
+            target.McType = modalSelectedMonster.McType;
+            target.GlamourerDesignString = string.Empty;
+            target.PenumbraCollectionName = string.Empty;
+            target.McdfFilePath = string.Empty;
+            target.CustomizeData = null;
+            target.NpcEquipmentModelIds = null;
+            target.WeaponVisible = false; // モンスターはデフォルトで武器非表示
+        }
+        else if (modalSourceType == CharacterSourceType.PlayerClone)
+        {
+            target.GlamourerDesignString = glamourerIpc.IsAvailable ? (glamourerIpc.GetCustomization(0) ?? string.Empty) : string.Empty;
+            target.PenumbraCollectionName = selectedPenumbraCollection ?? string.Empty;
+            target.McdfFilePath = string.Empty;
             target.ModelCharaId = 0;
+            target.DataId = 0;
+            target.CustomizeData = null;
+            target.NpcEquipmentModelIds = null;
         }
 
         if (!isEditing)

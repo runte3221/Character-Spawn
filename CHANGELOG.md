@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.29] - 2026-10-02
+### Fixed
+- **Penumbra Collection Isolation & Unassignment on Despawn/Appearance (Fixing Wrong Collection Pulled on Spawn)**:
+  - **Root Cause Identified**: Previous character collections and temporary collections remained registered to actor slots (`Global#200`) without explicit unassignment upon despawning. Spawning a new character with no collection or switching between MCDF and Glamourer presets resulted in previous Penumbra collections persisting or overriding the new actor's appearance.
+  - **UnassignCollectionForActor**: Introduced dedicated IPC subscriber in `PenumbraIpc` to unassign both temporary collections (`AssignTemporaryCollection.V5(Guid.Empty, actorIndex, false)`) and standard object collections (`SetCollectionForObject.V5(actorIndex, null / Guid.Empty, true, true)`).
+  - Called `UnassignCollectionForActor` inside `ActorManager.DespawnCharacter` and at the start of `ActorManager.ApplyAppearanceDirect`, guaranteeing a clean slate before any appearance is loaded.
+  - Corrected `PenumbraIpc.SetCollectionForActor` to treat `PenumbraApiEc.NothingChanged (1)` as success alongside `ec=0`.
+- **Character Modal State Pollution & Cross-Contamination**:
+  - Separated MCDF parsed Glamourer design strings (`modalMcdfGlamourerDesign`) from standard Glamourer design inputs (`customGlamourerString`).
+  - Completely isolated saved properties per `CharacterSourceType` inside `CharacterLibraryTab.SaveModalTemplate`, ensuring MCDF archive data never overwrites or bleeds into standard Glamourer & Penumbra character definitions.
+- **Direct Glamourer Guid Application & Native Synchronization**:
+  - In `GlamourerIpc.ApplyDesignToActorEx`, prioritized direct invocation of `ApplyDesign(Guid, actorIndex, 0, 6UL)` when a valid Guid is present, eliminating Base64 parse errors (`result: 7`) while synchronizing 26-byte `CustomizeData` directly to native engine structs.
+
 ## [0.1.28] - 2026-10-02
 ### Fixed
 - **Force All Apply Flags & Direct Native `CustomizeData` Synchronization (Fixing Male/Different Race Character Spawning)**:

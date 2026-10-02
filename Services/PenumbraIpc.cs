@@ -182,7 +182,7 @@ public class PenumbraIpc
             {
                 var res = setCollectionForObjectV5NullableGuid.InvokeFunc(actorIndex, collGuid, true, true);
                 log.Information($"Penumbra SetCollectionForObject.V5 (Guid?:{collGuid}) result: ec={res.Item1}");
-                if (res.Item1 == 0) return true;
+                if (res.Item1 == 0 || res.Item1 == 1) return true;
             }
             catch (Exception ex)
             {
@@ -197,7 +197,7 @@ public class PenumbraIpc
             {
                 var res = setCollectionForObjectV5Guid.InvokeFunc(actorIndex, collGuid, true, true);
                 log.Information($"Penumbra SetCollectionForObject.V5 (Guid:{collGuid}) result: ec={res.Item1}");
-                if (res.Item1 == 0) return true;
+                if (res.Item1 == 0 || res.Item1 == 1) return true;
             }
             catch (Exception ex)
             {
@@ -212,7 +212,7 @@ public class PenumbraIpc
             {
                 var res = setCollectionForObjectLegacyStringTuple.InvokeFunc(actorIndex, collectionIdentifier, true, true);
                 log.Information($"Penumbra SetCollectionForObject Legacy (Name:{collectionIdentifier}) result: ec={res.Item1}");
-                if (res.Item1 == 0) return true;
+                if (res.Item1 == 0 || res.Item1 == 1) return true;
             }
             catch (Exception ex)
             {
@@ -227,7 +227,7 @@ public class PenumbraIpc
             {
                 var res = setCollectionForObjectV5GuidTuple.InvokeFunc(actorIndex, collGuid, true, true);
                 log.Information($"Penumbra SetCollectionForObject.V5 Tuple(Guid:{collGuid}) result: ec={res.Item1}");
-                if (res.Item1 == 0) return true;
+                if (res.Item1 == 0 || res.Item1 == 1) return true;
             }
             catch (Exception ex)
             {
@@ -242,7 +242,7 @@ public class PenumbraIpc
             {
                 var res = setCollectionForObjectLegacyGuidTuple.InvokeFunc(actorIndex, collGuid, true, true);
                 log.Information($"Penumbra SetCollectionForObject Legacy Tuple(Guid:{collGuid}) result: ec={res.Item1}");
-                if (res.Item1 == 0) return true;
+                if (res.Item1 == 0 || res.Item1 == 1) return true;
             }
             catch (Exception ex)
             {
@@ -257,7 +257,7 @@ public class PenumbraIpc
             {
                 int res = setCollectionForObjectV5Int.InvokeFunc(actorIndex, collGuid, true, true);
                 log.Information($"Penumbra SetCollectionForObject.V5 Int(Guid:{collGuid}) result: {res}");
-                if (res == 0) return true;
+                if (res == 0 || res == 1) return true;
             }
             catch (Exception ex)
             {
@@ -272,7 +272,7 @@ public class PenumbraIpc
             {
                 int res = setCollectionForObjectLegacyStringInt.InvokeFunc(actorIndex, collectionIdentifier, true, true);
                 log.Information($"Penumbra SetCollectionForObject String Int(Name:{collectionIdentifier}) result: {res}");
-                if (res == 0) return true;
+                if (res == 0 || res == 1) return true;
             }
             catch (Exception ex)
             {
@@ -287,7 +287,7 @@ public class PenumbraIpc
             {
                 var res = setCollectionForObjectOldLegacy.InvokeFunc(collectionIdentifier, actorIndex);
                 log.Information($"Penumbra SetCollectionForObject Old Legacy(Name:{collectionIdentifier}) result: {res}");
-                if (res == 0) return true;
+                if (res == 0 || res == 1) return true;
             }
             catch (Exception ex)
             {
@@ -297,6 +297,62 @@ public class PenumbraIpc
 
         log.Warning($"All SetCollectionForObject attempts failed for collection '{collectionIdentifier}' on actor #{actorIndex}.");
         return false;
+    }
+
+    /// <summary>
+    /// アクターに対する Penumbra コレクション（通常および一時）の割り当てを完全解除・リセットする
+    /// </summary>
+    public bool UnassignCollectionForActor(int actorIndex)
+    {
+        if (!IsAvailable) return false;
+
+        bool success = false;
+
+        // 1. 一時コレクションの割り当て解除 (Guid.Empty)
+        if (assignTemporaryCollectionV5 != null)
+        {
+            try
+            {
+                int ec = assignTemporaryCollectionV5.InvokeFunc(Guid.Empty, actorIndex, false);
+                log.Information($"Penumbra Unassign temporary collection from actor #{actorIndex}: ec={ec}");
+                if (ec == 0 || ec == 1) success = true;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Unassign temporary collection failed: {ex.Message}");
+            }
+        }
+
+        // 2. 通常コレクションの割り当て解除 (null / Guid.Empty)
+        if (setCollectionForObjectV5NullableGuid != null)
+        {
+            try
+            {
+                var res = setCollectionForObjectV5NullableGuid.InvokeFunc(actorIndex, null, true, true);
+                log.Information($"Penumbra Unassign SetCollectionForObject.V5 (null) from actor #{actorIndex}: ec={res.Item1}");
+                if (res.Item1 == 0 || res.Item1 == 1) success = true;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Unassign SetCollection nullable failed: {ex.Message}");
+            }
+        }
+
+        if (setCollectionForObjectV5Guid != null)
+        {
+            try
+            {
+                var res = setCollectionForObjectV5Guid.InvokeFunc(actorIndex, Guid.Empty, true, true);
+                log.Information($"Penumbra Unassign SetCollectionForObject.V5 (Guid.Empty) from actor #{actorIndex}: ec={res.Item1}");
+                if (res.Item1 == 0 || res.Item1 == 1) success = true;
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Unassign SetCollection Guid.Empty failed: {ex.Message}");
+            }
+        }
+
+        return success;
     }
 
     /// <summary>

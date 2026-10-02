@@ -316,64 +316,23 @@ public class GlamourerIpc
             }
         }
 
-        JObject? targetDesignObj = null;
+        // A. Guid がある場合: ApplyDesign IPC を直接呼び出し、デザインファイルから CustomizeBytes を同期
         if (targetGuid != Guid.Empty)
         {
-            targetDesignObj = GetDesign(targetGuid);
-        }
-        else
-        {
-            targetDesignObj = ParseDesignString(designString);
-        }
-
-        byte[]? customizeBytes = null;
-        if (targetDesignObj != null)
-        {
-            // 全スロットの Apply を強制 true にして Race の抜けや装備の不整合を撲滅！
-            ForceAllApply(targetDesignObj);
-            customizeBytes = ExtractCustomizeBytes(targetDesignObj);
-
-            string stateJson = targetDesignObj.ToString(Newtonsoft.Json.Formatting.None);
-
-            if (applyStateV2Ulong != null)
+            byte[]? customizeBytes = null;
+            var targetDesignObj = GetDesign(targetGuid);
+            if (targetDesignObj != null)
             {
-                try
-                {
-                    int res = applyStateV2Ulong.InvokeFunc(stateJson, actorIndex, 0, 6UL);
-                    log.Information($"Glamourer ApplyState (ForceAllApply ulong flags=6) result: {res}");
-                    if (res == 0) return (true, customizeBytes);
-                }
-                catch (Exception ex)
-                {
-                    log.Warning($"Glamourer ApplyState V2 (ulong) failed: {ex.Message}");
-                }
+                customizeBytes = ExtractCustomizeBytes(targetDesignObj);
             }
 
-            if (applyStateV2Uint != null)
-            {
-                try
-                {
-                    int res = applyStateV2Uint.InvokeFunc(stateJson, actorIndex, 0, 6U);
-                    log.Information($"Glamourer ApplyState (ForceAllApply uint flags=6) result: {res}");
-                    if (res == 0) return (true, customizeBytes);
-                }
-                catch (Exception ex)
-                {
-                    log.Warning($"Glamourer ApplyState V2 (uint) failed: {ex.Message}");
-                }
-            }
-        }
-
-        // フォールバック: 生の Guid または文字列で Apply
-        if (targetGuid != Guid.Empty)
-        {
             if (applyDesignV2Ulong != null)
             {
                 try
                 {
                     int res = applyDesignV2Ulong.InvokeFunc(targetGuid, actorIndex, 0, 6UL);
-                    log.Information($"Glamourer ApplyDesign fallback (Guid: {targetGuid}, Flags: 6UL) result: {res}");
-                    if (res == 0) return (true, null);
+                    log.Information($"Glamourer ApplyDesign (Guid: {targetGuid}, Flags: 6UL) result: {res}");
+                    if (res == 0) return (true, customizeBytes);
                 }
                 catch (Exception ex)
                 {
@@ -386,8 +345,8 @@ public class GlamourerIpc
                 try
                 {
                     int res = applyDesignV2Uint.InvokeFunc(targetGuid, actorIndex, 0, 6U);
-                    log.Information($"Glamourer ApplyDesign fallback (Guid: {targetGuid}, Flags: 6U) result: {res}");
-                    if (res == 0) return (true, null);
+                    log.Information($"Glamourer ApplyDesign (Guid: {targetGuid}, Flags: 6U) result: {res}");
+                    if (res == 0) return (true, customizeBytes);
                 }
                 catch (Exception ex)
                 {
@@ -401,7 +360,7 @@ public class GlamourerIpc
                 {
                     applyByGuidLegacy.InvokeAction(targetGuid, actorIndex);
                     log.Information($"Glamourer ApplyByGuid Legacy executed for actor {actorIndex}.");
-                    return (true, null);
+                    return (true, customizeBytes);
                 }
                 catch (Exception ex)
                 {
@@ -409,51 +368,43 @@ public class GlamourerIpc
                 }
             }
         }
-        else
+
+        // B. Guid ではない場合 (MCDF 等の Base64 / JSON デザイン文字列): Parse して ApplyState を実行
+        JObject? parsedObj = ParseDesignString(designString);
+        byte[]? parsedCustBytes = null;
+        if (parsedObj != null)
         {
-            if (applyStateV2Ulong != null)
-            {
-                try
-                {
-                    int res = applyStateV2Ulong.InvokeFunc(designString, actorIndex, 0, 6UL);
-                    log.Information($"Glamourer ApplyState raw (ulong flags=6) result: {res}");
-                    if (res == 0) return (true, null);
-                }
-                catch (Exception ex)
-                {
-                    log.Warning($"Glamourer ApplyState V2 raw (ulong) failed: {ex.Message}");
-                }
-            }
+            ForceAllApply(parsedObj);
+            parsedCustBytes = ExtractCustomizeBytes(parsedObj);
+        }
 
-            if (applyStateV2Uint != null)
+        if (applyStateV2Ulong != null)
+        {
+            try
             {
-                try
-                {
-                    int res = applyStateV2Uint.InvokeFunc(designString, actorIndex, 0, 6U);
-                    log.Information($"Glamourer ApplyState raw (uint flags=6) result: {res}");
-                    if (res == 0) return (true, null);
-                }
-                catch (Exception ex)
-                {
-                    log.Warning($"Glamourer ApplyState V2 raw (uint) failed: {ex.Message}");
-                }
+                int res = applyStateV2Ulong.InvokeFunc(designString, actorIndex, 0, 6UL);
+                log.Information($"Glamourer ApplyState raw (ulong flags=6) result: {res}");
+                if (res == 0) return (true, parsedCustBytes);
             }
-
-            if (applyByStringLegacy != null)
+            catch (Exception ex)
             {
-                try
-                {
-                    applyByStringLegacy.InvokeAction(designString, actorIndex);
-                    log.Information($"Glamourer ApplyByString Legacy executed for actor {actorIndex}.");
-                    return (true, null);
-                }
-                catch (Exception ex)
-                {
-                    log.Warning($"Glamourer ApplyByString Legacy failed: {ex.Message}");
-                }
+                log.Warning($"Glamourer ApplyState V2 raw (ulong) failed: {ex.Message}");
             }
         }
 
+        if (applyStateV2Uint != null)
+        {
+            try
+            {
+                int res = applyStateV2Uint.InvokeFunc(designString, actorIndex, 0, 6U);
+                log.Information($"Glamourer ApplyState raw (uint flags=6) result: {res}");
+                if (res == 0) return (true, parsedCustBytes);
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Glamourer ApplyState V2 raw (uint) failed: {ex.Message}");
+            }
+        }
         return (false, null);
     }
 
