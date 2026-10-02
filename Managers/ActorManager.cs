@@ -278,7 +278,7 @@ public unsafe class ActorManager : IDisposable
             nativeChara->GameObject.TargetableStatus = 0;
             nativeChara->GameObject.EventId = 0;
 
-            string puppetName = NextPuppetName();
+            string puppetName = GetPuppetName(template);
             nativeChara->GameObject.SetName(puppetName);
 
             // 位置・回転・透明度の設定
