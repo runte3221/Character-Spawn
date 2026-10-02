@@ -119,6 +119,9 @@ public class SpawnedActorData
     public bool IsSpawned => NativeAddress != 0;
 
     [JsonIgnore]
+    public bool IsReady { get; set; } = false;
+
+    [JsonIgnore]
     public Guid? TemporaryCollectionGuid { get; set; }
 
     [JsonIgnore]

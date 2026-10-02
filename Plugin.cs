@@ -114,30 +114,44 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawUI()
     {
-        WindowSystem.Draw();
-
-        // 3D Gizmo Overlay 描画 (Stagehand 準拠: 全画面オーバーレイで確実にマウス操作をキャプチャ)
-        if (Configuration.CurrentGizmoMode != GizmoMode.Select)
+        try
         {
-            var targetActor = stageTab.SelectedActor;
-            if (targetActor == null || !targetActor.IsSpawned)
-            {
-                targetActor = actorManager.CurrentPreviewActor;
-            }
+            WindowSystem.Draw();
 
-            if (targetActor != null && targetActor.IsSpawned)
+            // 3D Gizmo Overlay 描画 (Stagehand 準拠: 全画面オーバーレイで確実にマウス操作をキャプチャ)
+            if (Configuration.CurrentGizmoMode != GizmoMode.Select)
             {
-                gizmoRenderer.Render(targetActor, (newPos, newRot) =>
+                var targetActor = stageTab.SelectedActor;
+                if (targetActor == null || !targetActor.IsSpawned || !targetActor.IsReady)
                 {
-                    actorManager.UpdateActorTransform(targetActor, newPos, newRot);
-                });
+                    targetActor = actorManager.CurrentPreviewActor;
+                }
+
+                if (targetActor != null && targetActor.IsSpawned && targetActor.IsReady)
+                {
+                    gizmoRenderer.Render(targetActor, (newPos, newRot) =>
+                    {
+                        actorManager.UpdateActorTransform(targetActor, newPos, newRot);
+                    });
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            logManager.Error($"DrawUI exception: {ex}");
         }
     }
 
     private void OnFrameworkUpdate(IFramework framework)
     {
-        actorManager.UpdateFrame();
+        try
+        {
+            actorManager.UpdateFrame();
+        }
+        catch (Exception ex)
+        {
+            logManager.Error($"OnFrameworkUpdate exception: {ex}");
+        }
     }
 
     private void OnTerritoryChanged(uint territoryType)

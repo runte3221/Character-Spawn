@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.26] - 2026-10-02
+### Fixed
+- **Actor Lifecycle Safety & Crash Prevention on Despawn/Respawn (HDM Compliance)**:
+  - Fixed critical CTD / unhandled exception (`0x12345679` via Dalamud Detour / `RaiseException`) occurring when despawning and respawning actors.
+  - Eliminated stale raw native pointer dereferences in `ActorManager.UpdateFrame()`. Fully transitioned to HDM's golden pattern: re-resolving actors every tick via `IObjectTable[GlobalIndex]` and verifying `chara.Address != nint.Zero` before accessing native structs.
+  - Wrapped `UpdateFrame()`, `DrawUI()`, `OnFrameworkUpdate()`, `UpdateActorTransform()`, and all job processing loops in structured `try-catch` exception blocks to prevent CLR unhandled exceptions from breaching native detour boundaries.
+  - Added `pendingNpcJobs.RemoveAll` to `DespawnCharacter` to prevent lingering jobs from polling deleted actors.
+  - Introduced `IsReady` lifecycle guard to `SpawnedActorData` ensuring 3D Gizmos and transform updates only activate once draw baseline and appearance customization are fully initialized.
+
 ## [0.1.25] - 2026-10-02
 ### Fixed
 - **Penumbra Collection & Mod Redirection for Humanoid Actors (`ec=16` InvalidActor Resolution)**:

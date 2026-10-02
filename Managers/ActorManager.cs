@@ -349,15 +349,27 @@ public unsafe class ActorManager : IDisposable
         actor.Transform.Position = newPosition;
         actor.Transform.Rotation = newRotation;
 
-        if (actor.NativeAddress == 0) return;
+        if (actor.NativeAddress == 0 || !actor.IsReady) return;
 
-        var chara = (Character*)actor.NativeAddress;
-        if (chara == null) return;
-
-        chara->GameObject.SetPosition(newPosition.X, newPosition.Y, newPosition.Z);
-        chara->GameObject.SetRotation(newRotation);
-        chara->GameObject.DefaultPosition = newPosition;
-        chara->GameObject.DefaultRotation = newRotation;
+        try
+        {
+            if (actor.GlobalIndex < objectTable.Length)
+            {
+                var obj = objectTable[actor.GlobalIndex];
+                if (obj is ICharacter charaObj && charaObj.Address != nint.Zero)
+                {
+                    var chara = (Character*)charaObj.Address;
+                    chara->GameObject.SetPosition(newPosition.X, newPosition.Y, newPosition.Z);
+                    chara->GameObject.SetRotation(newRotation);
+                    chara->GameObject.DefaultPosition = newPosition;
+                    chara->GameObject.DefaultRotation = newRotation;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logManager?.Warning($"UpdateActorTransform failed: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -366,10 +378,22 @@ public unsafe class ActorManager : IDisposable
     public void ApplyActorAnimation(SpawnedActorData actor)
     {
         if (actor.NativeAddress == 0) return;
-        var chara = (Character*)actor.NativeAddress;
-        if (chara == null) return;
-
-        timelineManager.ApplyTimeline(chara, actor.Animation);
+        try
+        {
+            if (actor.GlobalIndex < objectTable.Length)
+            {
+                var obj = objectTable[actor.GlobalIndex];
+                if (obj is ICharacter charaObj && charaObj.Address != nint.Zero)
+                {
+                    var chara = (Character*)charaObj.Address;
+                    timelineManager.ApplyTimeline(chara, actor.Animation);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logManager?.Warning($"ApplyActorAnimation failed: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -378,13 +402,25 @@ public unsafe class ActorManager : IDisposable
     public void ApplyTargetable(SpawnedActorData actor)
     {
         if (actor.NativeAddress == 0) return;
-        var obj = (GameObject*)actor.NativeAddress;
-        if (obj == null) return;
-
-        if (actor.IsTargetable)
-            obj->TargetableStatus |= ObjectTargetableFlags.IsTargetable;
-        else
-            obj->TargetableStatus &= ~ObjectTargetableFlags.IsTargetable;
+        try
+        {
+            if (actor.GlobalIndex < objectTable.Length)
+            {
+                var obj = objectTable[actor.GlobalIndex];
+                if (obj is ICharacter charaObj && charaObj.Address != nint.Zero)
+                {
+                    var go = (GameObject*)charaObj.Address;
+                    if (actor.IsTargetable)
+                        go->TargetableStatus |= ObjectTargetableFlags.IsTargetable;
+                    else
+                        go->TargetableStatus &= ~ObjectTargetableFlags.IsTargetable;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logManager?.Warning($"ApplyTargetable failed: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -394,8 +430,10 @@ public unsafe class ActorManager : IDisposable
     {
         try
         {
+            actor.IsReady = false;
             readyJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
             monsterRedrawJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
+            pendingNpcJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
 
             // Penumbra 一時コレクションのクリーンアップ (AQR / Mare 準拠)
             if (actor.TemporaryCollectionGuid.HasValue)
@@ -453,6 +491,7 @@ public unsafe class ActorManager : IDisposable
     {
         readyJobs.Clear();
         monsterRedrawJobs.Clear();
+        pendingNpcJobs.Clear();
         var list = activeActors.ToList();
         foreach (var actor in list)
         {
@@ -465,216 +504,301 @@ public unsafe class ActorManager : IDisposable
     }
 
     /// <summary>
-    /// 毎フレームの更新処理: HDM Draw-when-ready 2フェーズポーリング & 視線追従
-    /// <summary>
     /// 毎フレームの更新処理: HDM Draw-when-ready 2フェーズポーリング & 視線追従 & モンスターRedraw
     /// </summary>
     public void UpdateFrame()
     {
-        headTrackingManager.UpdateTracking(activeActors);
-
-        // 1. HDM Draw-when-ready 2フェーズポーリング (人間ベースラインの実体化待機)
-        if (readyJobs.Count > 0)
+        try
         {
-            for (int i = readyJobs.Count - 1; i >= 0; i--)
+            headTrackingManager.UpdateTracking(activeActors);
+
+            // 1. HDM Draw-when-ready 2フェーズポーリング (人間ベースラインの実体化待機)
+            if (readyJobs.Count > 0)
             {
-                var job = readyJobs[i];
-                job.Ticks++;
-
-                // 追跡解除されたアクターは除外
-                if (!activeActors.Contains(job.Spawned) || job.Spawned.NativeAddress == 0)
+                for (int i = readyJobs.Count - 1; i >= 0; i--)
                 {
-                    readyJobs.RemoveAt(i);
-                    continue;
-                }
-
-                // ウォームアップ待機（Brio dontStartFor: 2）
-                if (job.Ticks <= ReadyWarmupTicks) continue;
-
-                var chara = (Character*)job.Spawned.NativeAddress;
-
-                // Phase 1: IsReadyToDraw() を待って EnableDraw() を実行
-                if (!job.DrawEnabled)
-                {
-                    bool ready = chara->GameObject.IsReadyToDraw();
-                    if (!ready && job.Ticks < MaxReadyTicks) continue;
-
-                    chara->GameObject.EnableDraw();
-                    job.DrawEnabled = true;
-                    continue;
-                }
-
-                // Phase 2: 人間ベースライン描画オブジェクトの可視化待機
-                var draw = chara->GameObject.DrawObject;
-                bool visible = draw != null && draw->IsVisible;
-                if (!visible && job.Ticks < MaxReadyTicks) continue;
-
-                // 人間ベースラインが完全に描画実体化した！
-                readyJobs.RemoveAt(i);
-
-                // A. モンスター / 非人型モデル (ModelCharaId > 0) の場合: HDM GuiseService.cs 準拠
-                if (job.Template.ModelCharaId > 0)
-                {
-                    chara->GameObject.ObjectKind = ObjectKind.BattleNpc;
-                    chara->ModelContainer.ModelCharaId = (int)job.Template.ModelCharaId;
-                    chara->GameObject.Scale = job.Template.Scale > 0 ? job.Template.Scale : 1.0f;
-                    chara->DrawData.HideWeapons(true);
-                    chara->DrawData.IsWeaponHidden = true;
-
-                    // Demihuman 装備データの補完＆適用 (モーグリ・ナマズオ等の McType 2)
-                    if (job.Template.NpcEquipmentModelIds == null && job.Template.DataId > 0 && gameDataService != null)
+                    try
                     {
-                        var app = gameDataService.GetNpcAppearanceData(job.Template.DataId);
-                        if (app != null && app.EquipmentModelIds != null)
+                        var job = readyJobs[i];
+                        job.Ticks++;
+
+                        // 追跡解除されたアクターは除外
+                        if (!activeActors.Contains(job.Spawned))
                         {
-                            job.Template.NpcEquipmentModelIds = app.EquipmentModelIds;
+                            readyJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        // ウォームアップ待機（Brio dontStartFor: 2）
+                        if (job.Ticks <= ReadyWarmupTicks) continue;
+
+                        // HDM 黄金律: 生ポインタは決して信用しない！毎フレーム ObjectTable から新鮮に解決し直す
+                        if (job.GlobalIndex >= objectTable.Length)
+                        {
+                            if (job.Ticks >= MaxReadyTicks) readyJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        var obj = objectTable[job.GlobalIndex];
+                        if (obj is not ICharacter charaObj || charaObj.Address == nint.Zero)
+                        {
+                            if (job.Ticks >= MaxReadyTicks)
+                            {
+                                logManager?.Warning($"ReadyJob: Timed out waiting for ObjectTable entry at Global#{job.GlobalIndex}.");
+                                readyJobs.RemoveAt(i);
+                            }
+                            continue;
+                        }
+
+                        // 最新のネイティブアドレスを同期
+                        job.Spawned.NativeAddress = charaObj.Address;
+                        var chara = (Character*)charaObj.Address;
+
+                        // Phase 1: IsReadyToDraw() を待って EnableDraw() を実行
+                        if (!job.DrawEnabled)
+                        {
+                            bool ready = false;
+                            try { ready = chara->GameObject.IsReadyToDraw(); } catch { }
+                            if (!ready && job.Ticks < MaxReadyTicks) continue;
+
+                            try { chara->GameObject.EnableDraw(); } catch { }
+                            job.DrawEnabled = true;
+                            continue;
+                        }
+
+                        // Phase 2: 人間ベースライン描画オブジェクトの可視化待機
+                        var draw = chara->GameObject.DrawObject;
+                        bool visible = false;
+                        try { visible = draw != null && draw->IsVisible; } catch { }
+                        if (!visible && job.Ticks < MaxReadyTicks) continue;
+
+                        // 人間ベースラインが完全に描画実体化した！
+                        readyJobs.RemoveAt(i);
+
+                        // A. モンスター / 非人型モデル (ModelCharaId > 0) の場合: HDM GuiseService.cs 準拠
+                        if (job.Template.ModelCharaId > 0)
+                        {
+                            chara->GameObject.ObjectKind = ObjectKind.BattleNpc;
+                            chara->ModelContainer.ModelCharaId = (int)job.Template.ModelCharaId;
+                            chara->GameObject.Scale = job.Template.Scale > 0 ? job.Template.Scale : 1.0f;
+                            chara->DrawData.HideWeapons(true);
+                            chara->DrawData.IsWeaponHidden = true;
+
+                            // Demihuman 装備データの補完＆適用 (モーグリ・ナマズオ等の McType 2)
+                            if (job.Template.NpcEquipmentModelIds == null && job.Template.DataId > 0 && gameDataService != null)
+                            {
+                                var app = gameDataService.GetNpcAppearanceData(job.Template.DataId);
+                                if (app != null && app.EquipmentModelIds != null)
+                                {
+                                    job.Template.NpcEquipmentModelIds = app.EquipmentModelIds;
+                                }
+                            }
+
+                            if (job.Template.NpcEquipmentModelIds != null && job.Template.NpcEquipmentModelIds.Length > 0)
+                            {
+                                var equipSpan = chara->DrawData.EquipmentModelIds;
+                                for (int idx = 0; idx < job.Template.NpcEquipmentModelIds.Length && idx < equipSpan.Length; idx++)
+                                {
+                                    equipSpan[idx] = new EquipmentModelId { Value = job.Template.NpcEquipmentModelIds[idx] };
+                                }
+                                chara->DrawData.IsHatHidden = false;
+                            }
+
+                            chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
+
+                            // モンスターモデルへの再描画を開始: DisableDraw() して RedrawJob にエンキュー (HDM BeginRedraw 方式)
+                            chara->GameObject.DisableDraw();
+                            monsterRedrawJobs.Add(new MonsterRedrawJob
+                            {
+                                Spawned = job.Spawned,
+                                GlobalIndex = job.GlobalIndex,
+                                Ticks = 0
+                            });
+                            logManager?.Info($"Transitioning obj#{job.GlobalIndex} '{job.Spawned.DisplayName}' to Monster ModelCharaId {job.Template.ModelCharaId} via RedrawJob...");
+                            continue;
+                        }
+
+                        // B. 人型 NPC (SourceType == Npc かつ ModelCharaId == 0) の場合: HDM HumanGuise.cs 準拠 (非ブロッキングキュー)
+                        if (job.Template.SourceType == CharacterSourceType.Npc)
+                        {
+                            pendingNpcJobs.Add(new PendingNpcJob
+                            {
+                                Spawned = job.Spawned,
+                                Template = job.Template,
+                                GlobalIndex = job.GlobalIndex,
+                                Attempts = 0
+                            });
+                            logManager?.Info($"Enqueued obj#{job.GlobalIndex} '{job.Spawned.DisplayName}' to PendingNpcJob for non-blocking Glamourer appearance sync...");
+                            continue;
+                        }
+
+                        // C. その他の人型アクター (MCDF / Glamourer / PlayerClone) の最終確定
+                        try
+                        {
+                            ApplyAppearanceDirect(chara, job.GlobalIndex, job.Template, job.Spawned);
+                            job.Spawned.IsReady = true;
+                            logManager?.Info($"Appearance finalized for humanoid '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex}.");
+                        }
+                        catch (Exception ex)
+                        {
+                            logManager?.Error($"Error finalizing appearance for {job.Spawned.DisplayName}: {ex.Message}");
                         }
                     }
-
-                    if (job.Template.NpcEquipmentModelIds != null && job.Template.NpcEquipmentModelIds.Length > 0)
+                    catch (Exception ex)
                     {
-                        var equipSpan = chara->DrawData.EquipmentModelIds;
-                        for (int idx = 0; idx < job.Template.NpcEquipmentModelIds.Length && idx < equipSpan.Length; idx++)
-                        {
-                            equipSpan[idx] = new EquipmentModelId { Value = job.Template.NpcEquipmentModelIds[idx] };
-                        }
-                        chara->DrawData.IsHatHidden = false;
+                        logManager?.Error($"ReadyJob exception: {ex}");
+                        if (i < readyJobs.Count) readyJobs.RemoveAt(i);
                     }
-
-                    chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
-
-                    // モンスターモデルへの再描画を開始: DisableDraw() して RedrawJob にエンキュー (HDM BeginRedraw 方式)
-                    chara->GameObject.DisableDraw();
-                    monsterRedrawJobs.Add(new MonsterRedrawJob
-                    {
-                        Spawned = job.Spawned,
-                        GlobalIndex = job.GlobalIndex,
-                        Ticks = 0
-                    });
-                    logManager?.Info($"Transitioning obj#{job.GlobalIndex} '{job.Spawned.DisplayName}' to Monster ModelCharaId {job.Template.ModelCharaId} via RedrawJob...");
-                    continue;
-                }
-
-                // B. 人型 NPC (SourceType == Npc かつ ModelCharaId == 0) の場合: HDM HumanGuise.cs 準拠 (非ブロッキングキュー)
-                if (job.Template.SourceType == CharacterSourceType.Npc)
-                {
-                    pendingNpcJobs.Add(new PendingNpcJob
-                    {
-                        Spawned = job.Spawned,
-                        Template = job.Template,
-                        GlobalIndex = job.GlobalIndex,
-                        Attempts = 0
-                    });
-                    logManager?.Info($"Enqueued obj#{job.GlobalIndex} '{job.Spawned.DisplayName}' to PendingNpcJob for non-blocking Glamourer appearance sync...");
-                    continue;
-                }
-
-                // C. その他の人型アクター (MCDF / Glamourer / PlayerClone) の最終確定
-                try
-                {
-                    ApplyAppearanceDirect(chara, job.GlobalIndex, job.Template, job.Spawned);
-                    logManager?.Info($"Appearance finalized for humanoid '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex}.");
-                }
-                catch (Exception ex)
-                {
-                    logManager?.Error($"Error finalizing appearance for {job.Spawned.DisplayName}: {ex.Message}");
                 }
             }
-        }
 
-        // 2. 人型 NPC 非同期外見適用キュー (HDM HumanGuise.cs 準拠のフレームポーリング)
-        if (pendingNpcJobs.Count > 0)
-        {
-            for (int i = pendingNpcJobs.Count - 1; i >= 0; i--)
+            // 2. 人型 NPC 非同期外見適用キュー (HDM HumanGuise.cs 準拠のフレームポーリング)
+            if (pendingNpcJobs.Count > 0)
             {
-                var job = pendingNpcJobs[i];
-                job.Attempts++;
-
-                if (!activeActors.Contains(job.Spawned) || job.Spawned.NativeAddress == 0)
+                for (int i = pendingNpcJobs.Count - 1; i >= 0; i--)
                 {
-                    pendingNpcJobs.RemoveAt(i);
-                    continue;
-                }
-
-                if (!glamourerIpc.IsAvailable)
-                {
-                    // Glamourer が無い場合はダイレクトフォールバック
-                    var chara = (Character*)job.Spawned.NativeAddress;
-                    ApplyNpcAppearanceDirectFallback(chara, job.Template);
-                    pendingNpcJobs.RemoveAt(i);
-                    continue;
-                }
-
-                var outcome = glamourerIpc.TryApplyNpcAppearance(
-                    job.GlobalIndex,
-                    job.Template.CustomizeData,
-                    job.Template.NpcEquipmentModelIds,
-                    showHeadgear: true
-                );
-
-                if (outcome == GlamourerIpc.NpcApplyResult.StateNull)
-                {
-                    if (job.Attempts > 120) // 最大120フレーム（約2秒）待機
+                    try
                     {
+                        var job = pendingNpcJobs[i];
+                        job.Attempts++;
+
+                        if (!activeActors.Contains(job.Spawned))
+                        {
+                            pendingNpcJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        if (job.GlobalIndex >= objectTable.Length)
+                        {
+                            if (job.Attempts > 120) pendingNpcJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        var obj = objectTable[job.GlobalIndex];
+                        if (obj is not ICharacter charaObj || charaObj.Address == nint.Zero)
+                        {
+                            if (job.Attempts > 120) pendingNpcJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        job.Spawned.NativeAddress = charaObj.Address;
+                        var chara = (Character*)charaObj.Address;
+
+                        if (!glamourerIpc.IsAvailable)
+                        {
+                            // Glamourer が無い場合はダイレクトフォールバック
+                            ApplyNpcAppearanceDirectFallback(chara, job.Template);
+                            job.Spawned.IsReady = true;
+                            pendingNpcJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        var outcome = glamourerIpc.TryApplyNpcAppearance(
+                            job.GlobalIndex,
+                            job.Template.CustomizeData,
+                            job.Template.NpcEquipmentModelIds,
+                            showHeadgear: true
+                        );
+
+                        if (outcome == GlamourerIpc.NpcApplyResult.StateNull)
+                        {
+                            if (job.Attempts > 120) // 最大120フレーム（約2秒）待機
+                            {
+                                pendingNpcJobs.RemoveAt(i);
+                                logManager?.Warning($"PendingNpcJob: Glamourer state timeout after 120 frames for obj#{job.GlobalIndex} '{job.Spawned.DisplayName}'. Falling back to direct appearance.");
+                                ApplyNpcAppearanceDirectFallback(chara, job.Template);
+                                job.Spawned.IsReady = true;
+                            }
+                            continue;
+                        }
+
+                        // 適用完了（Applied または Failed）
                         pendingNpcJobs.RemoveAt(i);
-                        logManager?.Warning($"PendingNpcJob: Glamourer state timeout after 120 frames for obj#{job.GlobalIndex} '{job.Spawned.DisplayName}'. Falling back to direct appearance.");
-                        var chara = (Character*)job.Spawned.NativeAddress;
-                        ApplyNpcAppearanceDirectFallback(chara, job.Template);
+                        job.Spawned.IsReady = true;
+                        logManager?.Info($"PendingNpcJob: Applied NPC appearance for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex} after {job.Attempts} frame(s) ({outcome}).");
+
+                        chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
+                        chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
+
+                        // HDM RedrawGuise 準拠: スケルトン再構築と外見確定
+                        if (penumbraIpc.IsAvailable)
+                        {
+                            penumbraIpc.Redraw(job.GlobalIndex);
+                        }
+                        else
+                        {
+                            chara->GameObject.DisableDraw();
+                            monsterRedrawJobs.Add(new MonsterRedrawJob
+                            {
+                                Spawned = job.Spawned,
+                                GlobalIndex = job.GlobalIndex,
+                                Ticks = 0
+                            });
+                        }
                     }
-                    continue;
-                }
-
-                // 適用完了（Applied または Failed）
-                pendingNpcJobs.RemoveAt(i);
-                logManager?.Info($"PendingNpcJob: Applied NPC appearance for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex} after {job.Attempts} frame(s) ({outcome}).");
-
-                var c = (Character*)job.Spawned.NativeAddress;
-                c->DrawData.HideWeapons(!job.Template.WeaponVisible);
-                c->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
-
-                // HDM RedrawGuise 準拠: スケルトン再構築と外見確定
-                if (penumbraIpc.IsAvailable)
-                {
-                    penumbraIpc.Redraw(job.GlobalIndex);
-                }
-                else
-                {
-                    c->GameObject.DisableDraw();
-                    monsterRedrawJobs.Add(new MonsterRedrawJob
+                    catch (Exception ex)
                     {
-                        Spawned = job.Spawned,
-                        GlobalIndex = job.GlobalIndex,
-                        Ticks = 0
-                    });
+                        logManager?.Error($"PendingNpcJob exception: {ex}");
+                        if (i < pendingNpcJobs.Count) pendingNpcJobs.RemoveAt(i);
+                    }
+                }
+            }
+
+            // 3. モンスター / 再描画待機キュー (HDM GuiseService RedrawPhase.WaitEnable 方式)
+            if (monsterRedrawJobs.Count > 0)
+            {
+                for (int i = monsterRedrawJobs.Count - 1; i >= 0; i--)
+                {
+                    try
+                    {
+                        var job = monsterRedrawJobs[i];
+                        job.Ticks++;
+
+                        if (!activeActors.Contains(job.Spawned))
+                        {
+                            monsterRedrawJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        // 最低 2 フレーム待機 (DisableDraw がゲームエンジンに反映されるのを待つ)
+                        if (job.Ticks < 2) continue;
+
+                        if (job.GlobalIndex >= objectTable.Length)
+                        {
+                            if (job.Ticks >= MaxReadyTicks) monsterRedrawJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        var obj = objectTable[job.GlobalIndex];
+                        if (obj is not ICharacter charaObj || charaObj.Address == nint.Zero)
+                        {
+                            if (job.Ticks >= MaxReadyTicks) monsterRedrawJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        job.Spawned.NativeAddress = charaObj.Address;
+                        var chara = (Character*)charaObj.Address;
+
+                        bool ready = false;
+                        try { ready = chara->GameObject.IsReadyToDraw(); } catch { }
+                        if (!ready && job.Ticks < MaxReadyTicks) continue;
+
+                        try { chara->GameObject.EnableDraw(); } catch { }
+                        job.Spawned.IsReady = true;
+                        monsterRedrawJobs.RemoveAt(i);
+                        logManager?.Info($"Monster/Actor redraw complete for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex} after {job.Ticks} ticks.");
+                    }
+                    catch (Exception ex)
+                    {
+                        logManager?.Error($"MonsterRedrawJob exception: {ex}");
+                        if (i < monsterRedrawJobs.Count) monsterRedrawJobs.RemoveAt(i);
+                    }
                 }
             }
         }
-
-        // 3. モンスター / 再描画待機キュー (HDM GuiseService RedrawPhase.WaitEnable 方式)
-        if (monsterRedrawJobs.Count > 0)
+        catch (Exception ex)
         {
-            for (int i = monsterRedrawJobs.Count - 1; i >= 0; i--)
-            {
-                var job = monsterRedrawJobs[i];
-                job.Ticks++;
-
-                if (!activeActors.Contains(job.Spawned) || job.Spawned.NativeAddress == 0)
-                {
-                    monsterRedrawJobs.RemoveAt(i);
-                    continue;
-                }
-
-                // 最低 2 フレーム待機 (DisableDraw がゲームエンジンに反映されるのを待つ)
-                if (job.Ticks < 2) continue;
-
-                var chara = (Character*)job.Spawned.NativeAddress;
-                bool ready = chara->GameObject.IsReadyToDraw();
-                if (!ready && job.Ticks < MaxReadyTicks) continue;
-
-                chara->GameObject.EnableDraw();
-                monsterRedrawJobs.RemoveAt(i);
-                logManager?.Info($"Monster/Actor redraw complete for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex} after {job.Ticks} ticks.");
-            }
+            logManager?.Error($"ActorManager.UpdateFrame outer exception: {ex}");
         }
     }
 
@@ -780,6 +904,7 @@ public unsafe class ActorManager : IDisposable
                         // Customize+ Profile の適用 (テンプレート指定 または MCDF内包データ)
                         ApplyCustomizePlusProfile(actorIndex, template, spawned, bundle.CustomizePlusData);
 
+                        if (spawned != null) spawned.IsReady = true;
                         return;
                     }
                 }
@@ -883,6 +1008,7 @@ public unsafe class ActorManager : IDisposable
 
         // 7. Customize+ Profile の適用
         ApplyCustomizePlusProfile(actorIndex, template, spawned);
+        if (spawned != null) spawned.IsReady = true;
     }
 
     /// <summary>
