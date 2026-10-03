@@ -35,6 +35,7 @@ public class SceneEditWindow : Window, IDisposable
     private int selectedMotionCategoryIndex = 0;
     private static readonly string[] MotionCategories = { "All", "Favorite", "Emotes", "NPC", "Monster", "Battle", "General" };
     private bool onlyModelSpecificMotions = false;
+    private int selectedWpDetailIndex = -1;
 
     public SceneEditWindow(
         Configuration configuration,
@@ -1003,37 +1004,125 @@ public class SceneEditWindow : Window, IDisposable
             }
             if (ImGui.IsItemHovered()) ImGui.SetTooltip("プレイヤーがこの距離内に入ったら歩み寄りを開始します (デフォルト: 4.0m)");
 
-            float stopDist = move.FollowStopDistance;
-            ImGui.TextUnformatted("Stop Dist");
+            // 接近時リアクションの動作モード
+            int reactIdx = (int)move.ProximityReaction;
+            string[] reactLabels = { "Follow (プレイヤー追従)", "Stop & Look (その場停止・注視)", "Greet & Resume (挨拶エモート後に巡回再開)" };
+            ImGui.TextUnformatted("On Proximity");
             ImGui.SameLine(130);
-            ImGui.SetNextItemWidth(140);
-            if (ImGui.SliderFloat("##FollowStopDist", ref stopDist, 0.5f, 5.0f, "%.1f m"))
+            ImGui.SetNextItemWidth(240);
+            if (ImGui.Combo("##ProximityReactionCombo", ref reactIdx, reactLabels, reactLabels.Length))
             {
-                move.FollowStopDistance = stopDist;
+                move.ProximityReaction = (ProximityReactionType)reactIdx;
                 sceneManager.SaveScenes();
                 ApplyCurrentMovement(placement);
             }
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("プレイヤーの手前この距離で立ち止まります (デフォルト: 1.8m)");
-
-            float maxTerritory = move.MaxTerritoryDistance;
-            ImGui.TextUnformatted("Territory Limit");
-            ImGui.SameLine(130);
-            ImGui.SetNextItemWidth(140);
-            if (ImGui.SliderFloat("##MaxTerritoryDist", ref maxTerritory, 3.0f, 30.0f, "%.1f m"))
+            if (ImGui.IsItemHovered())
             {
-                move.MaxTerritoryDistance = maxTerritory;
-                sceneManager.SaveScenes();
-                ApplyCurrentMovement(placement);
+                ImGui.SetTooltip(
+                    "Follow: プレイヤーの手前まで歩み寄り追従します\n" +
+                    "Stop & Look: その場で立ち止まり、プレイヤーを見つめます (離脱で巡回再開)\n" +
+                    "Greet & Resume: 立ち止まって挨拶エモートを再生し、指定秒数後に元の巡回へ自動復帰します");
             }
-            if (ImGui.IsItemHovered()) ImGui.SetTooltip("初期配置（ホーム）からこの距離以上離れたら追従を中断して戻ります (デフォルト: 15.0m)");
 
-            bool retHome = move.ReturnToHome;
-            ImGui.SetCursorPosX(130);
-            if (ImGui.Checkbox("Return to Home upon loss (追従解除時にホームへ自律帰還)##RetHome", ref retHome))
+            // Greet & Resume の場合の追加設定
+            if (move.ProximityReaction == ProximityReactionType.GreetAndResume)
             {
-                move.ReturnToHome = retHome;
-                sceneManager.SaveScenes();
-                ApplyCurrentMovement(placement);
+                int greetTl = move.GreetTimelineId;
+                ImGui.TextUnformatted("Greet Motion ID");
+                ImGui.SameLine(130);
+                ImGui.SetNextItemWidth(90);
+                if (ImGui.InputInt("##GreetTimelineId", ref greetTl))
+                {
+                    move.GreetTimelineId = (ushort)Math.Max(0, greetTl);
+                    sceneManager.SaveScenes();
+                }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("挨拶時に再生する ActionTimeline ID (例: 52=お辞儀, 50=手を振る, 0=再生なし)");
+
+                ImGui.SameLine();
+                int greetFc = move.GreetFacialId;
+                ImGui.TextUnformatted("Facial ID");
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(70);
+                if (ImGui.InputInt("##GreetFacialId", ref greetFc))
+                {
+                    move.GreetFacialId = (ushort)Math.Max(0, greetFc);
+                    sceneManager.SaveScenes();
+                }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("挨拶時に固定する表情 ID (例: 501=笑顔, 0=変更なし)");
+
+                float greetDur = move.GreetDurationSeconds;
+                ImGui.TextUnformatted("Greet Duration");
+                ImGui.SameLine(130);
+                ImGui.SetNextItemWidth(140);
+                if (ImGui.SliderFloat("##GreetDurationSec", ref greetDur, 1.0f, 10.0f, "%.1f s"))
+                {
+                    move.GreetDurationSeconds = greetDur;
+                    sceneManager.SaveScenes();
+                }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("立ち止まって挨拶する待機秒数。終了後に自動で元の巡回ルートへ歩き出します。");
+
+                float cooldown = move.ReactionCooldownSeconds;
+                ImGui.TextUnformatted("Cooldown");
+                ImGui.SameLine(130);
+                ImGui.SetNextItemWidth(140);
+                if (ImGui.SliderFloat("##ReactionCooldownSec", ref cooldown, 3.0f, 60.0f, "%.1f s"))
+                {
+                    move.ReactionCooldownSeconds = cooldown;
+                    sceneManager.SaveScenes();
+                }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("一度挨拶した後の再反応クールダウン秒数。プレイヤーが範囲外に離脱してもこの時間は再挨拶しません。");
+            }
+
+            // 追従モード（Follow）の場合のパラメータ
+            if (move.ProximityReaction == ProximityReactionType.Follow)
+            {
+                float stopDist = move.FollowStopDistance;
+                ImGui.TextUnformatted("Stop Dist");
+                ImGui.SameLine(130);
+                ImGui.SetNextItemWidth(140);
+                if (ImGui.SliderFloat("##FollowStopDist", ref stopDist, 0.5f, 5.0f, "%.1f m"))
+                {
+                    move.FollowStopDistance = stopDist;
+                    sceneManager.SaveScenes();
+                    ApplyCurrentMovement(placement);
+                }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("プレイヤーの手前この距離で立ち止まります (デフォルト: 1.8m)");
+
+                float leash = move.LeashRange;
+                ImGui.TextUnformatted("Leash Range");
+                ImGui.SameLine(130);
+                ImGui.SetNextItemWidth(140);
+                if (ImGui.SliderFloat("##LeashRange", ref leash, 5.0f, 50.0f, "%.1f m"))
+                {
+                    move.LeashRange = leash;
+                    sceneManager.SaveScenes();
+                    ApplyCurrentMovement(placement);
+                }
+                if (ImGui.IsItemHovered()) ImGui.SetTooltip("巡回ルートまたは初期位置からこの距離以上離れたら追従を打ち切って帰還します (デフォルト: 15.0m)");
+
+                if (move.Mode == MovementMode.PatrolAndFollow)
+                {
+                    bool resumeNearest = move.ResumeNearestWaypoint;
+                    ImGui.SetCursorPosX(130);
+                    if (ImGui.Checkbox("Resume to Nearest WP (離脱時に直近のWPへ動的復帰)##ResumeNearest", ref resumeNearest))
+                    {
+                        move.ResumeNearestWaypoint = resumeNearest;
+                        sceneManager.SaveScenes();
+                        ApplyCurrentMovement(placement);
+                    }
+                    if (ImGui.IsItemHovered()) ImGui.SetTooltip("チェック時: プレイヤー離脱時に現在地から最も近いウェイポイントへ復帰します。\n未チェック時: 中断前の次のウェイポイントへ戻ります。");
+                }
+                else
+                {
+                    bool retHome = move.ReturnToHome;
+                    ImGui.SetCursorPosX(130);
+                    if (ImGui.Checkbox("Return to Home upon loss (追従解除時にホームへ自律帰還)##RetHome", ref retHome))
+                    {
+                        move.ReturnToHome = retHome;
+                        sceneManager.SaveScenes();
+                        ApplyCurrentMovement(placement);
+                    }
+                }
             }
         }
 
@@ -1121,18 +1210,28 @@ public class SceneEditWindow : Window, IDisposable
             }
             else
             {
-                if (ImGui.BeginChild("##WaypointsListArea", new Vector2(0, 160), true))
+                if (ImGui.BeginChild("##WaypointsListArea", new Vector2(0, 220), true))
                 {
                     for (int i = 0; i < move.Waypoints.Count; i++)
                     {
                         var wp = move.Waypoints[i];
                         ImGui.PushID($"WP_Row_{i}");
 
+                        bool isDetailOpen = selectedWpDetailIndex == i;
+
+                        // 演出詳細展開トグルボタン (⚙)
+                        if (ImGui.SmallButton(isDetailOpen ? "▼##WpDetail" : "⚙##WpDetail"))
+                        {
+                            selectedWpDetailIndex = isDetailOpen ? -1 : i;
+                        }
+                        if (ImGui.IsItemHovered()) ImGui.SetTooltip("この通過地点の演出設定（到着時モーション、表情、セリフ）を開閉");
+
+                        ImGui.SameLine();
                         ImGui.TextColored(new Vector4(0.9f, 0.75f, 0.2f, 1.0f), $"#{i + 1}");
                         ImGui.SameLine();
                         ImGui.TextUnformatted($"<{wp.Position.X:F1}, {wp.Position.Y:F1}, {wp.Position.Z:F1}>");
 
-                        ImGui.SameLine(180);
+                        ImGui.SameLine(190);
                         float wait = wp.WaitSeconds;
                         ImGui.SetNextItemWidth(60);
                         if (ImGui.DragFloat("##WaitSec", ref wait, 0.5f, 0f, 60f, "%.1fs"))
@@ -1149,6 +1248,8 @@ public class SceneEditWindow : Window, IDisposable
                         if (ImGui.SmallButton("▲##MoveUpWp"))
                         {
                             (move.Waypoints[i], move.Waypoints[i - 1]) = (move.Waypoints[i - 1], move.Waypoints[i]);
+                            if (selectedWpDetailIndex == i) selectedWpDetailIndex = i - 1;
+                            else if (selectedWpDetailIndex == i - 1) selectedWpDetailIndex = i;
                             sceneManager.SaveScenes();
                             ApplyCurrentMovement(placement);
                         }
@@ -1159,6 +1260,8 @@ public class SceneEditWindow : Window, IDisposable
                         if (ImGui.SmallButton("▼##MoveDownWp"))
                         {
                             (move.Waypoints[i], move.Waypoints[i + 1]) = (move.Waypoints[i + 1], move.Waypoints[i]);
+                            if (selectedWpDetailIndex == i) selectedWpDetailIndex = i + 1;
+                            else if (selectedWpDetailIndex == i + 1) selectedWpDetailIndex = i;
                             sceneManager.SaveScenes();
                             ApplyCurrentMovement(placement);
                         }
@@ -1169,10 +1272,57 @@ public class SceneEditWindow : Window, IDisposable
                         if (ImGui.SmallButton("✕##DelWp"))
                         {
                             move.Waypoints.RemoveAt(i);
+                            if (selectedWpDetailIndex == i) selectedWpDetailIndex = -1;
                             sceneManager.SaveScenes();
                             ApplyCurrentMovement(placement);
                             ImGui.PopID();
                             break;
+                        }
+
+                        // 演出詳細展開パネル
+                        if (isDetailOpen)
+                        {
+                            ImGui.Indent(20);
+                            ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.18f, 0.22f, 0.28f, 0.6f));
+                            if (ImGui.BeginChild($"##WpDetailPanel_{i}", new Vector2(0, 68), true))
+                            {
+                                int wpAct = wp.ActionTimelineId;
+                                ImGui.TextUnformatted("Motion ID:");
+                                ImGui.SameLine(75);
+                                ImGui.SetNextItemWidth(70);
+                                if (ImGui.InputInt("##WpActionTimelineId", ref wpAct))
+                                {
+                                    wp.ActionTimelineId = (ushort)Math.Max(0, wpAct);
+                                    sceneManager.SaveScenes();
+                                }
+                                if (ImGui.IsItemHovered()) ImGui.SetTooltip("到着時に再生する ActionTimeline ID (0=待機維持)");
+
+                                ImGui.SameLine();
+                                int wpFac = wp.FacialTimelineId;
+                                ImGui.TextUnformatted("Facial ID:");
+                                ImGui.SameLine();
+                                ImGui.SetNextItemWidth(65);
+                                if (ImGui.InputInt("##WpFacialTimelineId", ref wpFac))
+                                {
+                                    wp.FacialTimelineId = (ushort)Math.Max(0, wpFac);
+                                    sceneManager.SaveScenes();
+                                }
+                                if (ImGui.IsItemHovered()) ImGui.SetTooltip("到着時に再生・フリーズする表情 ID (0=素顔/変更なし)");
+
+                                string dialogue = wp.DialogueText ?? string.Empty;
+                                ImGui.TextUnformatted("Dialogue:");
+                                ImGui.SameLine(75);
+                                ImGui.SetNextItemWidth(250);
+                                if (ImGui.InputText("##WpDialogue", ref dialogue, 128))
+                                {
+                                    wp.DialogueText = dialogue;
+                                    sceneManager.SaveScenes();
+                                }
+                                if (ImGui.IsItemHovered()) ImGui.SetTooltip("到着時に発言するセリフ（ログ出力および吹き出し連携準備）");
+                            }
+                            ImGui.EndChild();
+                            ImGui.PopStyleColor();
+                            ImGui.Unindent(20);
                         }
 
                         ImGui.PopID();

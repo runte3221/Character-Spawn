@@ -2,7 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.92] - 2026-10-04
+## [0.1.93] - 2026-10-04
+### Added
+- **接近時インタラクション（立ち止まり ＆ 挨拶エモート後の自動巡回再開 ＆ 離脱リセット） (`Services/MovementService.cs`, `UI/SceneEditWindow.cs`, `Models/SceneData.cs`)**:
+  - **リアクション動作モード (`ProximityReactionType`) の新設**:
+    - `Follow`: 従来のプレイヤー接近追従（歩み寄ってついてくる）。
+    - `Stop & Look`: その場で足を止め、プレイヤーの方向を向いて見つめる（プレイヤーが離脱すると巡回へ復帰）。
+    - `Greet & Resume`: その場で足を止めてプレイヤーに向き直り、指定の挨拶エモート＋表情を再生。指定秒数（`GreetDurationSeconds`）が経過したら、**プレイヤーが目の前に立っていても自動的に元の巡回ルートへ歩き出す**。
+  - **範囲離脱による再トリガーリセット (Edge-Trigger with Exit Reset)**:
+    - 挨拶を終えた後は「通過フラグ」が立ち、目の前のプレイヤーに引っかからずに歩き去る。
+    - 巡回ルートを進んでプレイヤーの Trigger Distance 範囲外へ一度抜けるとフラグが自動リセットされ、**「巡回から戻ってきたときに再度プレイヤーが範囲内にいれば、再び立ち止まって挨拶エモートを行う」** 自然なNPCの生態系サイクルを実現。
+  - **クールダウン管理 (`ReactionCooldownSeconds`)**:
+    - 一度挨拶した後の再反応クールダウンを設け、不自然な連続トリガーを防止。
+- **ウェイポイント（Waypoints）演出連動（待機・モーション・表情・セリフ） (`Services/MovementService.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`, `Models/SceneData.cs`)**:
+  - 各通過地点（ウェイポイント）に到着時の個別演出プロパティ（待機秒数 `WaitSeconds`、到着時モーション `ActionTimelineId`、到着時表情 `FacialTimelineId`、発言セリフ `DialogueText`）をサポート。
+  - ウェイポイント到達時に指定秒数待機しながらモーション・表情を自動再生し、タイマー満了時に通常待機モーションへ安全復帰して次のウェイポイントへ移動するシームレスな演出シーケンスを実現。
+  - `SceneEditWindow` の各WP行に展開ボタン（⚙）を新設し、インライン設定パネルからモーション・表情・セリフを直感的に編集可能に。
+- **巡回＋追従の連携高度化（動的復帰 & リーシュ管理） (`Services/MovementService.cs`, `UI/SceneEditWindow.cs`, `Models/SceneData.cs`)**:
+  - **最近傍ウェイポイントへの動的復帰 (`ResumeNearestWaypoint`)**:
+    - プレイヤー追従で巡回ルートから離脱した際、初期位置（ホーム）や直前の地点だけでなく「アクターの現在地から最も近いウェイポイント」を即座に自動選定してスムーズに巡回へ復帰。
+  - **リーシュ範囲制御 (`LeashRange`)**:
+    - 巡回ルートからの最大許容追従距離（デフォルト15m、5〜50m可変）を導入。プレイヤーに誘引されても一定以上離れたら自動で諦めて巡回ルートへ安全帰還。
+- **Brio ポーズ固定（Idle / Freeze）の統合準備 (`Services/AnimationService.cs`, `Models/SceneData.cs`)**:
+  - `AnimationService` にフレームフリーズ機構（`FreezeCurrentFrame`, `UnfreezeFrame`）を新設。
+  - 外部ポーズ（Brio / Anamnesis等）のボーン姿勢適用を見据えたデータモデル `BrioPoseData` を先行定義。
+
 ### Added
 - **Edit非表示時のターゲット可否制御（カスタムネーム表示中のみターゲット可能化） (`Managers/ActorManager.cs`, `Plugin.cs`)**:
   - **要望の実現**: Edit（SceneEditWindow）を開いていない通常プレイ・鑑賞時において、カスタムネームを表示している（`[x] Custom Name`）アクター以外はゲーム画面上でターゲットできない（`TargetableStatus = 0`）ように修正。

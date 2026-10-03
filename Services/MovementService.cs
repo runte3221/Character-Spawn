@@ -30,6 +30,8 @@ public unsafe class MovementService : IDisposable
         MovingToWaypoint,   // 次のウェイポイントへ移動中
         WaitingAtWaypoint,  // ウェイポイント到着後の待機中
         FollowingPlayer,    // プレイヤーに歩み寄り・追従中
+        PausingOnProximity, // 接近検知でその場停止・注視中 (StopAndLook)
+        GreetingPlayer,     // 接近検知で挨拶エモート再生中 (GreetAndResume)
         ReturningHome       // ホーム位置へ帰還中
     }
 
@@ -55,6 +57,11 @@ public unsafe class MovementService : IDisposable
         public Vector3 FollowStartPosition { get; set; } = Vector3.Zero; // 追従を開始した地点の座標
 
         public bool IsMovingAnimationPlaying { get; set; } = false;
+
+        // 接近時リアクション制御
+        public bool HasGreetedOnThisPass { get; set; } = false; // 今回の接近で挨拶済みか（離脱でリセット）
+        public float GreetingTimer { get; set; } = 0.0f;        // 挨拶待機タイマー
+        public float ReactionCooldownTimer { get; set; } = 0.0f; // クールダウンタイマー
     }
 
     public MovementService(
@@ -176,28 +183,147 @@ public unsafe class MovementService : IDisposable
         float curRot = state.CurrentRotation;
         var config = state.Config;
 
-        // 1. プレイヤー接近検知 ＆ 追従判定 (FollowPlayer または PatrolAndFollow)
-        bool allowFollow = config.Mode == MovementMode.FollowPlayer || config.Mode == MovementMode.PatrolAndFollow;
-        if (allowFollow && isPlayerValid)
+        // クールダウンタイマーの更新
+        if (state.ReactionCooldownTimer > 0.0f)
         {
-            // 動いているカスタムスポーンの現在位置（中心）からプレイヤーまでの実距離
+            state.ReactionCooldownTimer -= deltaTime;
+        }
+
+        // =========================================================================
+        // A. 挨拶エモート再生中ステート (GreetingPlayer)
+        // =========================================================================
+        if (state.State == MovementRuntimeState.GreetingPlayer)
+        {
+            state.GreetingTimer -= deltaTime;
+
+            // プレイヤーの方を向く（旋回補間）
+            if (isPlayerValid)
+            {
+                Vector3 toPlayer = playerPos - curPos;
+                if (toPlayer.LengthSquared() > 0.01f)
+                {
+                    float targetYaw = MathF.Atan2(toPlayer.X, toPlayer.Z);
+                    state.CurrentRotation = RotateToward(curRot, targetYaw, config.TurnSpeed * 1.5f, deltaTime);
+                }
+            }
+
+            // 足元の地面追従
+            if (TryGetGroundHeight(curPos, out float gY))
+            {
+                if (MathF.Abs(gY - curPos.Y) > 0.01f)
+                {
+                    state.CurrentPosition = new Vector3(curPos.X, gY, curPos.Z);
+                }
+            }
+            actorManager.UpdateActorTransform(actor, state.CurrentPosition, state.CurrentRotation);
+
+            if (state.GreetingTimer <= 0.0f)
+            {
+                // 挨拶完了！
+                // プレイヤーが目の前に立っていても連続停止せず歩き去るため、通過フラグをオン
+                state.HasGreetedOnThisPass = true;
+                state.ReactionCooldownTimer = config.ReactionCooldownSeconds;
+
+                // 元の通常待機モーション・表情へ綺麗に復帰！
+                animationService?.RestoreDefaultMotion(actor, state.MotionConfig, state.CurrentRotation);
+
+                // 巡回移動を即座に再開！
+                if (config.Waypoints.Count > 0)
+                {
+                    state.State = MovementRuntimeState.MovingToWaypoint;
+                }
+                else
+                {
+                    state.State = MovementRuntimeState.Idle;
+                }
+            }
+            return;
+        }
+
+        // =========================================================================
+        // B. その場停止＆プレイヤー注視中ステート (PausingOnProximity)
+        // =========================================================================
+        if (state.State == MovementRuntimeState.PausingOnProximity)
+        {
+            float dist = isPlayerValid ? Vector3.Distance(curPos, playerPos) : 999.0f;
+            // プレイヤーが離脱（TriggerDistance * 1.3f）したら解除して巡回へ復帰
+            if (dist > config.FollowTriggerDistance * 1.3f || !isPlayerValid)
+            {
+                state.ReactionCooldownTimer = config.ReactionCooldownSeconds;
+                animationService?.RestoreDefaultMotion(actor, state.MotionConfig, state.CurrentRotation);
+                if (config.Waypoints.Count > 0)
+                {
+                    state.State = MovementRuntimeState.MovingToWaypoint;
+                }
+                else
+                {
+                    state.State = MovementRuntimeState.Idle;
+                }
+            }
+            else
+            {
+                // プレイヤーの方を向いて見つめる
+                Vector3 toPlayer = playerPos - curPos;
+                if (toPlayer.LengthSquared() > 0.01f)
+                {
+                    float targetYaw = MathF.Atan2(toPlayer.X, toPlayer.Z);
+                    state.CurrentRotation = RotateToward(curRot, targetYaw, config.TurnSpeed * 1.5f, deltaTime);
+                }
+                if (TryGetGroundHeight(curPos, out float gY))
+                {
+                    if (MathF.Abs(gY - curPos.Y) > 0.01f)
+                    {
+                        state.CurrentPosition = new Vector3(curPos.X, gY, curPos.Z);
+                    }
+                }
+                actorManager.UpdateActorTransform(actor, state.CurrentPosition, state.CurrentRotation);
+            }
+            return;
+        }
+
+        // =========================================================================
+        // C. プレイヤー接近検知 ＆ 追従・リアクション判定
+        // =========================================================================
+        bool allowProximity = config.Mode == MovementMode.FollowPlayer || config.Mode == MovementMode.PatrolAndFollow;
+        if (allowProximity && isPlayerValid)
+        {
             float distToPlayer = Vector3.Distance(curPos, playerPos);
 
+            // プレイヤーの範囲外（TriggerDistance * 1.3f 以上）に離脱したら、通過フラグをリセット！
+            // これにより、巡回して戻ってきたときに再度挨拶エモートが発火する！
+            if (distToPlayer > config.FollowTriggerDistance * 1.3f)
+            {
+                state.HasGreetedOnThisPass = false;
+            }
+
+            // 1. 追従中ステートの処理 (FollowingPlayer)
             if (state.State == MovementRuntimeState.FollowingPlayer)
             {
-                // 追従中断判定:
-                // 1) プレイヤーが検知距離より離れた
-                // 2) 追従開始地点からの移動距離がテリトリー限界を超えた (PatrolAndFollow時)
-                // 3) または初期ホーム位置からの距離がテリトリー限界を超えた (FollowPlayer時)
+                float leash = config.LeashRange > 1.0f ? config.LeashRange : config.MaxTerritoryDistance;
                 bool isOutOfTerritory = config.Mode == MovementMode.PatrolAndFollow
-                    ? (state.FollowStartPosition != Vector3.Zero && Vector3.Distance(curPos, state.FollowStartPosition) > config.MaxTerritoryDistance)
+                    ? (state.FollowStartPosition != Vector3.Zero && Vector3.Distance(curPos, state.FollowStartPosition) > leash)
                     : Vector3.Distance(curPos, state.HomePosition) > config.MaxTerritoryDistance;
 
                 if (distToPlayer > config.FollowTriggerDistance * 1.6f || isOutOfTerritory)
                 {
                     if (config.Mode == MovementMode.PatrolAndFollow && config.Waypoints.Count > 0)
                     {
-                        // 巡回中の追従中断時: ホームではなく、直前に目指していたウェイポイントへ直接復帰して巡回を続行！
+                        // 追従離脱時: 最近傍WP探索（ResumeNearestWaypoint有効時）
+                        if (config.ResumeNearestWaypoint)
+                        {
+                            int nearestIndex = 0;
+                            float minDistSq = float.MaxValue;
+                            for (int i = 0; i < config.Waypoints.Count; i++)
+                            {
+                                float dSq = Vector3.DistanceSquared(curPos, config.Waypoints[i].Position);
+                                if (dSq < minDistSq)
+                                {
+                                    minDistSq = dSq;
+                                    nearestIndex = i;
+                                }
+                            }
+                            state.CurrentWaypointIndex = nearestIndex;
+                        }
                         state.State = MovementRuntimeState.MovingToWaypoint;
                     }
                     else if (config.ReturnToHome)
@@ -216,26 +342,51 @@ public unsafe class MovementService : IDisposable
                     return;
                 }
             }
+            // 2. 新規の接近リアクション判定
             else if (state.State != MovementRuntimeState.ReturningHome)
             {
-                // 追従開始判定:
-                // 巡回中(PatrolAndFollow)は、現在地からプレイヤーまでの距離(Trigger Dist)のみで即座に反応！
-                // 単体追従(FollowPlayer)の場合は、ホームからの距離制限も加味。
-                bool canTriggerFollow = config.Mode == MovementMode.PatrolAndFollow
-                    ? distToPlayer <= config.FollowTriggerDistance
-                    : (distToPlayer <= config.FollowTriggerDistance && Vector3.Distance(curPos, state.HomePosition) <= config.MaxTerritoryDistance);
-
-                if (canTriggerFollow)
+                if (distToPlayer <= config.FollowTriggerDistance && state.ReactionCooldownTimer <= 0.0f)
                 {
-                    state.State = MovementRuntimeState.FollowingPlayer;
-                    state.FollowStartPosition = curPos; // 追従を開始した現在位置を記録
-                    StepTowardTarget(state, playerPos, config.FollowStopDistance, deltaTime, isPlayerTarget: true);
-                    return;
+                    // パターン 1: 挨拶エモート ＆ 自動巡回再開 (GreetAndResume)
+                    if (config.ProximityReaction == ProximityReactionType.GreetAndResume && !state.HasGreetedOnThisPass)
+                    {
+                        state.State = MovementRuntimeState.GreetingPlayer;
+                        state.GreetingTimer = config.GreetDurationSeconds > 0.1f ? config.GreetDurationSeconds : 3.0f;
+
+                        if (animationService != null && (config.GreetTimelineId > 0 || config.GreetFacialId > 0))
+                        {
+                            animationService.ApplyTemporaryAction(actor, config.GreetTimelineId, config.GreetFacialId);
+                        }
+                        return;
+                    }
+                    // パターン 2: その場停止 ＆ 見つめる (StopAndLook)
+                    else if (config.ProximityReaction == ProximityReactionType.StopAndLook)
+                    {
+                        state.State = MovementRuntimeState.PausingOnProximity;
+                        return;
+                    }
+                    // パターン 3: 従来のプレイヤー追従 (Follow)
+                    else if (config.ProximityReaction == ProximityReactionType.Follow)
+                    {
+                        bool canTriggerFollow = config.Mode == MovementMode.PatrolAndFollow
+                            ? true
+                            : Vector3.Distance(curPos, state.HomePosition) <= config.MaxTerritoryDistance;
+
+                        if (canTriggerFollow)
+                        {
+                            state.State = MovementRuntimeState.FollowingPlayer;
+                            state.FollowStartPosition = curPos;
+                            StepTowardTarget(state, playerPos, config.FollowStopDistance, deltaTime, isPlayerTarget: true);
+                            return;
+                        }
+                    }
                 }
             }
         }
 
-        // 2. ホーム帰還中 (ReturningHome)
+        // =========================================================================
+        // D. ホーム帰還中 (ReturningHome)
+        // =========================================================================
         if (state.State == MovementRuntimeState.ReturningHome)
         {
             Vector3 targetPos = config.Waypoints.Count > 0 ? config.Waypoints[state.CurrentWaypointIndex].Position : state.HomePosition;
@@ -249,7 +400,6 @@ public unsafe class MovementService : IDisposable
                 else
                 {
                     state.State = MovementRuntimeState.Idle;
-                    // ホーム到着時、元の回転角へ戻す
                     state.CurrentRotation = state.HomeRotation;
                     actorManager.UpdateActorTransform(actor, state.CurrentPosition, state.CurrentRotation);
                 }
@@ -257,23 +407,33 @@ public unsafe class MovementService : IDisposable
             return;
         }
 
-        // 3. ウェイポイント巡回 (Patrol または PatrolAndFollow)
+        // =========================================================================
+        // E. ウェイポイント巡回 (Patrol または PatrolAndFollow)
+        // =========================================================================
         if (config.Mode == MovementMode.Patrol || config.Mode == MovementMode.PatrolAndFollow)
         {
             if (config.Waypoints.Count == 0) return;
 
+            // 1. ウェイポイント待機中
             if (state.State == MovementRuntimeState.WaitingAtWaypoint)
             {
                 state.WaitTimer -= deltaTime;
                 if (state.WaitTimer <= 0.0f)
                 {
-                    // 待機終了 -> 次のウェイポイントへ
+                    // 待機終了 -> 元の通常待機モーション・表情へ綺麗に復元！
+                    if (animationService != null)
+                    {
+                        animationService.RestoreDefaultMotion(actor, state.MotionConfig, state.CurrentRotation);
+                    }
+
+                    // 次のウェイポイントへ前進
                     AdvanceWaypoint(state);
                     state.State = MovementRuntimeState.MovingToWaypoint;
                 }
                 return;
             }
 
+            // 2. ウェイポイントへ移動中
             if (state.State == MovementRuntimeState.MovingToWaypoint)
             {
                 if (state.CurrentWaypointIndex >= config.Waypoints.Count)
@@ -285,23 +445,22 @@ public unsafe class MovementService : IDisposable
                 bool arrived = StepTowardTarget(state, currentWp.Position, 0.2f, deltaTime, isPlayerTarget: false);
                 if (arrived)
                 {
-                    // 到着！
+                    // ウェイポイント到達！
                     if (currentWp.WaitSeconds > 0.05f)
                     {
                         state.State = MovementRuntimeState.WaitingAtWaypoint;
                         state.WaitTimer = currentWp.WaitSeconds;
 
-                        // 到着時モーション再生
-                        if (currentWp.ActionTimelineId > 0 && animationService != null)
+                        // 到着時モーション ＆ 表情の再生
+                        if (animationService != null && (currentWp.ActionTimelineId > 0 || currentWp.FacialTimelineId > 0))
                         {
-                            var wpMotion = new SceneActorMotionConfig
-                            {
-                                TimelineId = currentWp.ActionTimelineId,
-                                TimelineKey = currentWp.ActionTimelineKey,
-                                IsLoop = true,
-                                Speed = 1.0f
-                            };
-                            animationService.ApplyMotion(actor, wpMotion, state.CurrentRotation);
+                            animationService.ApplyTemporaryAction(actor, currentWp.ActionTimelineId, currentWp.FacialTimelineId);
+                        }
+
+                        // セリフ設定があればログ出力（吹き出し連携準備）
+                        if (!string.IsNullOrEmpty(currentWp.DialogueText))
+                        {
+                            logManager?.Info($"[Waypoint Speech] '{actor.DisplayName}': {currentWp.DialogueText}");
                         }
                     }
                     else

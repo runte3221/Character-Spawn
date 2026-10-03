@@ -176,15 +176,28 @@ public enum PatrolLoopType
 }
 
 /// <summary>
+/// プレイヤー接近時のリアクション動作モード
+/// </summary>
+public enum ProximityReactionType
+{
+    Follow = 0,         // 従来の接近追従 (歩み寄ってついてくる)
+    StopAndLook = 1,    // その場で立ち止まり、プレイヤーを見つめる (プレイヤーが離脱すると巡回再開)
+    GreetAndResume = 2  // 立ち止まり、挨拶エモート＋表情を再生して指定秒待機後に巡回再開
+}
+
+/// <summary>
 /// 巡回ウェイポイント
 /// </summary>
 public class SceneActorWaypoint
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Vector3 Position { get; set; } = Vector3.Zero;
-    public float WaitSeconds { get; set; } = 0.0f; // 到着時の待機秒数
+    public float WaitSeconds { get; set; } = 0.0f; // 到着時の待機秒数 (0 = ノンストップ通過)
     public ushort ActionTimelineId { get; set; } = 0; // 到着時のモーション (0=待機維持)
     public string ActionTimelineKey { get; set; } = string.Empty;
+    public ushort FacialTimelineId { get; set; } = 0; // 到着時の表情ID (0=変更なし/素顔維持)
+    public string FacialKey { get; set; } = string.Empty;
+    public string DialogueText { get; set; } = string.Empty; // 到着時発言セリフ
     public string Description { get; set; } = string.Empty;
 }
 
@@ -210,5 +223,29 @@ public class SceneActorMovementConfig
     public float FollowStopDistance { get; set; } = 1.8f;    // 停止距離
     public float MaxTerritoryDistance { get; set; } = 15.0f; // テリトリー限界距離 (ホームからの最大距離)
     public bool ReturnToHome { get; set; } = true;          // 追従解除時にホーム/直前地点へ歩いて戻る
+
+    // 接近時リアクション設定
+    public ProximityReactionType ProximityReaction { get; set; } = ProximityReactionType.Follow;
+    public ushort GreetTimelineId { get; set; } = 0;           // 挨拶モーションID (例: 挨拶・お辞儀・手を振る)
+    public string GreetTimelineKey { get; set; } = string.Empty;
+    public ushort GreetFacialId { get; set; } = 0;             // 挨拶時表情ID (笑顔など)
+    public string GreetFacialKey { get; set; } = string.Empty;
+    public float GreetDurationSeconds { get; set; } = 3.0f;    // 挨拶待機秒数
+    public float ReactionCooldownSeconds { get; set; } = 10.0f; // クールダウン秒数
+
+    // 追従復帰 & リーシュ設定
+    public bool ResumeNearestWaypoint { get; set; } = true;    // 離脱時に直近のWPへ復帰（falseの場合は中断したWPへ戻る）
+    public float LeashRange { get; set; } = 15.0f;             // 巡回ルートからの最大追従許容距離
+}
+
+/// <summary>
+/// 将来のBrioポーズ（.pose）連携およびボーン固定用データモデル先行定義
+/// </summary>
+public class BrioPoseData
+{
+    public string BoneName { get; set; } = string.Empty;
+    public Vector3 PositionOffset { get; set; } = Vector3.Zero;
+    public Quaternion Rotation { get; set; } = Quaternion.Identity;
+    public Vector3 Scale { get; set; } = Vector3.One;
 }
 

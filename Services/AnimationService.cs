@@ -187,6 +187,120 @@ public unsafe class AnimationService : IDisposable
     }
 
     /// <summary>
+    /// 一時的なアクション（ウェイポイント到着時アクションや接近時挨拶エモート）を再生
+    /// </summary>
+    public void ApplyTemporaryAction(SpawnedActorData spawned, ushort actionTimelineId, ushort facialTimelineId, float speed = 1.0f)
+    {
+        if (spawned == null || spawned.NativeAddress == 0) return;
+        var chara = (Character*)spawned.NativeAddress;
+        if (chara == null) return;
+
+        try
+        {
+            if (actionTimelineId > 0)
+            {
+                chara->SetMode(CharacterModes.Normal, 0);
+                chara->Timeline.OverallSpeed = speed > 0.01f ? speed : 1.0f;
+                chara->Timeline.TimelineSequencer.SetSlotSpeed(0, speed > 0.01f ? speed : 1.0f);
+                chara->StopTimeline(0);
+                chara->Timeline.TimelineSequencer.PlayTimeline(actionTimelineId);
+            }
+
+            if (facialTimelineId > 0)
+            {
+                chara->Timeline.TimelineSequencer.PlayTimeline(facialTimelineId);
+                chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 0.0f); // 表情スロット速度0でフリーズ
+            }
+
+            logManager?.Info($"ApplyTemporaryAction: '{spawned.DisplayName}' -> Action: {actionTimelineId}, Facial: {facialTimelineId}");
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Failed to apply temporary action to {spawned.DisplayName}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 表情タイムラインを再生し、スロット2の速度を0にして表情をフリーズ固定
+    /// </summary>
+    public void ApplyFacialDirect(SpawnedActorData spawned, ushort facialTimelineId)
+    {
+        if (spawned == null || spawned.NativeAddress == 0) return;
+        var chara = (Character*)spawned.NativeAddress;
+        if (chara == null) return;
+
+        try
+        {
+            if (facialTimelineId > 0)
+            {
+                chara->Timeline.TimelineSequencer.PlayTimeline(facialTimelineId);
+                chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 0.0f);
+            }
+            else
+            {
+                chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 1.0f);
+                chara->Timeline.TimelineSequencer.PlayTimeline(604); // 素顔
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Failed to apply facial to {spawned.DisplayName}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 一時アクション終了後に、アクターの基本モーション設定（待機・表情・視線）へ安全に復帰
+    /// </summary>
+    public void RestoreDefaultMotion(SpawnedActorData spawned, SceneActorMotionConfig defaultMotion, float currentRotation)
+    {
+        if (spawned == null || defaultMotion == null) return;
+        ApplyMotion(spawned, defaultMotion, currentRotation, isInitialSpawn: false);
+    }
+
+    /// <summary>
+    /// 【Brioポーズ統合準備】アクターの現在フレームを完全静止（Freeze Frame）
+    /// </summary>
+    public void FreezeCurrentFrame(SpawnedActorData spawned)
+    {
+        if (spawned == null || spawned.NativeAddress == 0) return;
+        var chara = (Character*)spawned.NativeAddress;
+        if (chara == null) return;
+
+        try
+        {
+            chara->Timeline.OverallSpeed = 0.0f;
+            chara->Timeline.TimelineSequencer.SetSlotSpeed(0, 0.0f);
+            logManager?.Info($"FreezeCurrentFrame: '{spawned.DisplayName}' frame frozen.");
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Failed to freeze frame on {spawned.DisplayName}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 【Brioポーズ統合準備】アクターのフリーズを解除して再生再開
+    /// </summary>
+    public void UnfreezeFrame(SpawnedActorData spawned, float resumeSpeed = 1.0f)
+    {
+        if (spawned == null || spawned.NativeAddress == 0) return;
+        var chara = (Character*)spawned.NativeAddress;
+        if (chara == null) return;
+
+        try
+        {
+            float spd = resumeSpeed > 0.01f ? resumeSpeed : 1.0f;
+            chara->Timeline.OverallSpeed = spd;
+            chara->Timeline.TimelineSequencer.SetSlotSpeed(0, spd);
+            logManager?.Info($"UnfreezeFrame: '{spawned.DisplayName}' frame unfrozen (speed: {spd}).");
+        }
+        catch (Exception ex)
+        {
+            log.Error($"Failed to unfreeze frame on {spawned.DisplayName}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// 毎フレームのループ監視、速度維持、表情固定、視線追従更新
     /// </summary>
     private void OnFrameworkUpdate(IFramework _)
