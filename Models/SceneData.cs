@@ -122,7 +122,7 @@ public class SceneActorMotionConfig
 /// </summary>
 public class SceneActorNamePlateConfig
 {
-    public bool ShowCustomName { get; set; } = true; // [x] Custom Name (ネームプレート表示)
+    public bool ShowCustomName { get; set; } = false; // [ ] Custom Name (デフォルトは非表示、チェック時のみ通常表示)
     public bool ShowCustomTitle { get; set; } = false; // [ ] Custom Title (称号表示)
     public string CustomTitle { get; set; } = string.Empty; // カスタム称号文字列
     public bool HideNamePlate { get; set; } = false;

@@ -429,6 +429,34 @@ public class SceneManager : IDisposable
     }
 
     /// <summary>
+    /// スポーンされたアクターデータから対応する配置データを取得
+    /// </summary>
+    public SceneActorPlacement? GetPlacementForActor(SpawnedActorData? actor)
+    {
+        if (actor == null) return null;
+        var targetScene = ActiveSpawnedScene ?? SelectedScene;
+        if (targetScene == null) return null;
+
+        if (actor.PlacementId.HasValue)
+        {
+            var p = targetScene.Placements.FirstOrDefault(x => x.PlacementId == actor.PlacementId.Value);
+            if (p != null) return p;
+        }
+
+        foreach (var placement in targetScene.Placements)
+        {
+            if (spawnedSceneActors.TryGetValue(placement.PlacementId, out var spawned) && spawned != null)
+            {
+                if (spawned == actor || spawned.NativeAddress == actor.NativeAddress || (actor.GameObjectId != 0 && spawned.GameObjectId == actor.GameObjectId))
+                {
+                    return placement;
+                }
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
     /// シーン内のすべての配置キャラクターを非同期フレーム分散（スタッガー）キューで順次スポーン
     /// 自キャラに近いアクターから優先スポーン（363msヒッチ解消・将来100体規模対応）
     /// </summary>
@@ -553,11 +581,17 @@ public class SceneManager : IDisposable
         var spawned = actorManager.SpawnCharacter(template, placement.Position, placement.Rotation, placement.Scale);
         if (spawned != null)
         {
+            spawned.PlacementId = placement.PlacementId;
             spawned.Transform.Scale = placement.Scale > 0 ? placement.Scale : 1.0f;
             if (!string.IsNullOrWhiteSpace(placement.CustomDisplayName))
             {
                 spawned.DisplayName = placement.CustomDisplayName;
             }
+            spawned.NamePlate.Show = placement.NamePlate.ShowCustomName;
+            spawned.NamePlate.CustomName = !string.IsNullOrWhiteSpace(placement.CustomDisplayName)
+                ? placement.CustomDisplayName
+                : template.Name;
+
             spawnedSceneActors[placement.PlacementId] = spawned;
             logManager?.Info($"Spawned scene actor '{spawned.DisplayName}' at {placement.Position}.");
 

@@ -135,6 +135,9 @@ public class SpawnedActorData
 
     [JsonIgnore]
     public Guid? AssignedCustomizePlusGuid { get; set; }
+
+    [JsonIgnore]
+    public Guid? PlacementId { get; set; }
 }
 
 public class ScenePreset

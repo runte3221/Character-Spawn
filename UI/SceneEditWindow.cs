@@ -353,6 +353,12 @@ public class SceneEditWindow : Window, IDisposable
         {
             placement.NamePlate.ShowCustomName = showCustomName;
             sceneManager.SaveScenes();
+
+            var spawned = sceneManager.GetSpawnedActor(placement.PlacementId);
+            if (spawned != null)
+            {
+                spawned.NamePlate.Show = showCustomName;
+            }
         }
 
         ImGui.SameLine(180);

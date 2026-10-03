@@ -77,8 +77,6 @@ public sealed class Plugin : IDalamudPlugin
         actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser, PluginInterface, customizePlusIpc, gameDataService, Framework);
         movementService = new MovementService(Framework, ObjectTable, actorManager, animationService, Log, logManager);
         sceneManager = new SceneManager(PluginInterface, ClientState, logManager, actorManager, Configuration, animationService, movementService);
-        namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
-
         // UI
         gizmoRenderer = new GizmoRenderer(GameGui, Configuration);
         logTab = new LogTab(logManager);
@@ -89,6 +87,13 @@ public sealed class Plugin : IDalamudPlugin
             sceneEditWindow.IsOpen = true;
         });
         mainWindow = new MainWindow(Configuration, libraryTab, stageTab, logTab, gizmoRenderer, actorManager, Log);
+
+        namePlateController = new NamePlateController(
+            NamePlateGui,
+            Log,
+            () => actorManager.ActiveActors,
+            () => sceneEditWindow.IsOpen,
+            actor => sceneManager.GetPlacementForActor(actor));
 
         WindowSystem.AddWindow(mainWindow);
         WindowSystem.AddWindow(sceneEditWindow);

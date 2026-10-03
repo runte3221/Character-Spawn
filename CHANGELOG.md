@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.91] - 2026-10-04
+### Added
+- **ネームプレート表示ルールの改善（Edit表示中は全員表示・通常時はカスタムネーム有効時のみ表示） (`Managers/NamePlateController.cs`, `Managers/SceneManager.cs`, `UI/SceneEditWindow.cs`, `Plugin.cs`, `Models/SceneData.cs`)**:
+  - **要望の実現**: カスタムスポーンの頭上ネームプレートについて、Edit（SceneEditWindow）を開いている時と閉じている（通常時）時で表示ルールを分離。
+  - **Edit ウィンドウ表示中**:
+    - 編集・ポーズ調整・ルート設定時にどのアクターか一目で識別できるよう、全カスタムスポーンの名前を頭上に表示。
+  - **Edit ウィンドウ非表示時（通常プレイ・鑑賞時）**:
+    - 配置アクターごとの設定で「カスタムネームを表示」（`[x] Custom Name`）にしているスポーンだけ名前を表示。
+    - それ以外のスポーン（チェックがオフのアクター）は、頭上ネームプレートを自動的に完全非表示（`RemoveName()`）にして鑑賞・撮影時の没入感を向上。
+  - **新規配置アクターのデフォルト値変更**:
+    - `SceneActorNamePlateConfig.ShowCustomName` の新規デフォルト値を `false`（非表示）に変更し、新しく配置したモブやキャラクターの頭上に勝手に名前が表示されないよう改善。
+
 ## [0.1.90] - 2026-10-04
 ### Fixed
 - **追従停止時の上下振動（激しいジッター）の解消 (`Services/MovementService.cs`)**:
