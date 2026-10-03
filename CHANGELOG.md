@@ -2,7 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.80] - 2026-10-04
+## [0.1.81] - 2026-10-04
+### Improved
+- **LookAt（視線・目線追従）の有効距離（Distance）デフォルト拡大およびUI支援機能の新設 (`Models/SceneData.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:
+  - `LookAtMaxDistance` のデフォルト値を従来の `8.0m` から `15.0m` へ拡大。
+  - シーン配置時にアクター同士の距離が 8m を超えるケース（例: オルト・サキュバスと test ruma の距離が 8.11m など）において、距離制限の超過により視線追従が毎フレーム解除されてしまっていた問題を根本解決。
+  - `Distance` スライダーの上限を `30.0m` から `50.0m` に拡張し、Reset ボタンも新デフォルト値の `15.0m` を反映。
+  - LookAt Target の選択ドロップダウン内に、対象アクターまでの現在距離（例: `testruma (8.1m)`）を表示。
+  - 選択中のターゲットアクターまでの実距離が設定された `Distance` を超過している場合、UI 上に「⚠️超過」警告を表示するとともに、ワンクリックで最適な距離に自動設定する「Fit」ボタンを新設。
+
+
 ### Improved
 - **デミヒューマン（サキュバス種等）固有モーション抽出の完全対応 ＆ 判定強化 (`Services/GameDataService.cs`, `UI/SceneEditWindow.cs`)**:
   - `ModelChara.Type == 2`（DemiHuman）の骨格プレフィックス（`d****`）に対応した `GetModelPrefix` を新設。サキュバス（`d1016`）やモーグリ等のデミヒューマンに対して、正しく固有プレフィックスを生成するよう改善。

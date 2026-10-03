@@ -102,7 +102,7 @@ public class SceneActorMotionConfig
     public bool LookAtCustomSpawn { get; set; } = false;
     public Guid LookAtTargetPlacementId { get; set; } = Guid.Empty;
     public float BodyTurnAngleLimit { get; set; } = 0.0f; // 体の回転許容角度(度)。0=首・視線のみ追従, 45=左右45度まで体も追従, 180=全方位追従
-    public float LookAtMaxDistance { get; set; } = 8.0f; // 視線追従の最大有効距離(m)。範囲外に出ると追従解除
+    public float LookAtMaxDistance { get; set; } = 15.0f; // 視線追従の最大有効距離(m)。範囲外に出ると追従解除 (デフォルト: 15.0m)
 
     // 接近リアクション (Proximity Trigger)
     public bool EnableProximityReaction { get; set; } = false;

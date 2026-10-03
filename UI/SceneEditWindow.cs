@@ -537,11 +537,11 @@ public class SceneEditWindow : Window, IDisposable
 
         // 3. パラメータ行 (左列: Distance, Body Turn, Speed / 右列: Target)
         // 行 1: Distance (左) ＆ Target (右)
-        float lookAtDist = placement.Motion.LookAtMaxDistance > 0.1f ? placement.Motion.LookAtMaxDistance : 8.0f;
+        float lookAtDist = placement.Motion.LookAtMaxDistance > 0.1f ? placement.Motion.LookAtMaxDistance : 15.0f;
         ImGui.TextUnformatted("Distance");
         ImGui.SameLine(85);
         ImGui.SetNextItemWidth(120);
-        if (ImGui.SliderFloat("##AnimLookAtDist", ref lookAtDist, 1.0f, 30.0f, "%.1fm"))
+        if (ImGui.SliderFloat("##AnimLookAtDist", ref lookAtDist, 1.0f, 50.0f, "%.1fm"))
         {
             placement.Motion.LookAtMaxDistance = lookAtDist;
             sceneManager.SaveScenes();
@@ -550,13 +550,13 @@ public class SceneEditWindow : Window, IDisposable
         ImGui.SameLine();
         if (ImGui.SmallButton("Reset##ResetLookAtDist"))
         {
-            placement.Motion.LookAtMaxDistance = 8.0f;
+            placement.Motion.LookAtMaxDistance = 15.0f;
             sceneManager.SaveScenes();
             ApplyCurrentMotion(placement);
         }
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("Distance at which the actor begins and stops tracking the player or target (Default: 8.0m).\nClick Reset to return to 8.0m.");
+            ImGui.SetTooltip("Distance at which the actor begins and stops tracking the player or target (Default: 15.0m).\nClick Reset to return to 15.0m.");
         }
 
         // 右列: Target
@@ -584,9 +584,11 @@ public class SceneEditWindow : Window, IDisposable
             {
                 var oTemplate = configuration.Templates.FirstOrDefault(t => t.Id == other.CharacterTemplateId);
                 string oName = !string.IsNullOrWhiteSpace(other.CustomDisplayName) ? other.CustomDisplayName : (oTemplate?.Name ?? "アクター");
+                float d = Vector3.Distance(placement.Position, other.Position);
+                string itemLabel = $"{oName} ({d:F1}m)";
                 bool isSelected = placement.Motion.LookAtTargetPlacementId == other.PlacementId;
 
-                if (ImGui.Selectable($"{oName}##{other.PlacementId}", isSelected))
+                if (ImGui.Selectable($"{itemLabel}##{other.PlacementId}", isSelected))
                 {
                     placement.Motion.LookAtTargetPlacementId = other.PlacementId;
                     sceneManager.SaveScenes();
@@ -594,6 +596,32 @@ public class SceneEditWindow : Window, IDisposable
                 }
             }
             ImGui.EndCombo();
+        }
+
+        // ターゲットまでの実距離と範囲外警告 ＆ ワンクリック自動調整 (Fit) ボタン
+        if (currentTarget != null)
+        {
+            float actualDist = Vector3.Distance(placement.Position, currentTarget.Position);
+            ImGui.SameLine();
+            if (actualDist > lookAtDist)
+            {
+                ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.15f, 1.0f), $"({actualDist:F1}m ⚠️超過)");
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Fit##FitLookAtDist"))
+                {
+                    placement.Motion.LookAtMaxDistance = MathF.Ceiling(actualDist + 2.0f);
+                    sceneManager.SaveScenes();
+                    ApplyCurrentMotion(placement);
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip($"Distance ({lookAtDist:F1}m) is smaller than target distance ({actualDist:F1}m)!\nClick to set Distance to {MathF.Ceiling(actualDist + 2.0f):F0}m so the actor can look at the target.");
+                }
+            }
+            else
+            {
+                ImGui.TextDisabled($"({actualDist:F1}m)");
+            }
         }
 
         // 行 2: Body Turn

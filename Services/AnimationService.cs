@@ -88,7 +88,7 @@ public unsafe class AnimationService : IDisposable
                 LookAtCustomSpawn = config.LookAtCustomSpawn,
                 LookAtTargetPlacementId = config.LookAtTargetPlacementId,
                 BodyTurnAngleLimit = config.BodyTurnAngleLimit,
-                LookAtMaxDistance = config.LookAtMaxDistance > 0.1f ? config.LookAtMaxDistance : 8.0f,
+                LookAtMaxDistance = config.LookAtMaxDistance > 0.1f ? config.LookAtMaxDistance : 15.0f,
                 OriginalRotation = defaultRotation,
                 TicksSinceApply = 0,
                 IsInitialSpawn = isInitialSpawn
