@@ -51,6 +51,8 @@ public unsafe class MovementService : IDisposable
         public Vector3 CurrentPosition { get; set; }
         public float CurrentRotation { get; set; }
 
+        public Vector3 FollowStartPosition { get; set; } = Vector3.Zero; // 追従を開始した地点の座標
+
         public bool IsMovingAnimationPlaying { get; set; } = false;
     }
 
@@ -177,23 +179,33 @@ public unsafe class MovementService : IDisposable
         bool allowFollow = config.Mode == MovementMode.FollowPlayer || config.Mode == MovementMode.PatrolAndFollow;
         if (allowFollow && isPlayerValid)
         {
+            // 動いているカスタムスポーンの現在位置（中心）からプレイヤーまでの実距離
             float distToPlayer = Vector3.Distance(curPos, playerPos);
-            float distToHome = Vector3.Distance(curPos, state.HomePosition);
 
             if (state.State == MovementRuntimeState.FollowingPlayer)
             {
-                // 追従中断判定: プレイヤーが離れすぎた、またはテリトリー境界を超えた
-                if (distToPlayer > config.FollowTriggerDistance * 1.6f || distToHome > config.MaxTerritoryDistance)
+                // 追従中断判定:
+                // 1) プレイヤーが検知距離より離れた
+                // 2) 追従開始地点からの移動距離がテリトリー限界を超えた (PatrolAndFollow時)
+                // 3) または初期ホーム位置からの距離がテリトリー限界を超えた (FollowPlayer時)
+                bool isOutOfTerritory = config.Mode == MovementMode.PatrolAndFollow
+                    ? (state.FollowStartPosition != Vector3.Zero && Vector3.Distance(curPos, state.FollowStartPosition) > config.MaxTerritoryDistance)
+                    : Vector3.Distance(curPos, state.HomePosition) > config.MaxTerritoryDistance;
+
+                if (distToPlayer > config.FollowTriggerDistance * 1.6f || isOutOfTerritory)
                 {
-                    if (config.ReturnToHome)
+                    if (config.Mode == MovementMode.PatrolAndFollow && config.Waypoints.Count > 0)
+                    {
+                        // 巡回中の追従中断時: ホームではなく、直前に目指していたウェイポイントへ直接復帰して巡回を続行！
+                        state.State = MovementRuntimeState.MovingToWaypoint;
+                    }
+                    else if (config.ReturnToHome)
                     {
                         state.State = MovementRuntimeState.ReturningHome;
                     }
                     else
                     {
-                        state.State = config.Mode == MovementMode.PatrolAndFollow && config.Waypoints.Count > 0
-                            ? MovementRuntimeState.MovingToWaypoint
-                            : MovementRuntimeState.Idle;
+                        state.State = MovementRuntimeState.Idle;
                     }
                 }
                 else
@@ -205,10 +217,17 @@ public unsafe class MovementService : IDisposable
             }
             else if (state.State != MovementRuntimeState.ReturningHome)
             {
-                // 追従開始判定
-                if (distToPlayer <= config.FollowTriggerDistance && distToHome <= config.MaxTerritoryDistance)
+                // 追従開始判定:
+                // 巡回中(PatrolAndFollow)は、現在地からプレイヤーまでの距離(Trigger Dist)のみで即座に反応！
+                // 単体追従(FollowPlayer)の場合は、ホームからの距離制限も加味。
+                bool canTriggerFollow = config.Mode == MovementMode.PatrolAndFollow
+                    ? distToPlayer <= config.FollowTriggerDistance
+                    : (distToPlayer <= config.FollowTriggerDistance && Vector3.Distance(curPos, state.HomePosition) <= config.MaxTerritoryDistance);
+
+                if (canTriggerFollow)
                 {
                     state.State = MovementRuntimeState.FollowingPlayer;
+                    state.FollowStartPosition = curPos; // 追従を開始した現在位置を記録
                     StepTowardTarget(state, playerPos, config.FollowStopDistance, deltaTime, isPlayerTarget: true);
                     return;
                 }
@@ -310,12 +329,23 @@ public unsafe class MovementService : IDisposable
         // 停止距離に到達
         if (horizDist <= stopDistance)
         {
-            // プレイヤーをターゲットにしている場合、立ち止まってプレイヤーの方を向く
-            if (isPlayerTarget && horizDist > 0.1f)
+            // プレイヤーをターゲットにしている場合、足元の高さを合わせ、立ち止まってプレイヤーの方を向く
+            if (isPlayerTarget)
             {
-                float targetYaw = MathF.Atan2(diff.X, diff.Z);
-                state.CurrentRotation = RotateToward(curRot, targetYaw, state.Config.TurnSpeed * 2.0f, deltaTime);
-                actorManager.UpdateActorTransform(actor, curPos, state.CurrentRotation);
+                float yDiffAtStop = diff.Y;
+                if (MathF.Abs(yDiffAtStop) > 0.02f)
+                {
+                    float snapSpeed = 6.0f * deltaTime;
+                    float stepY = Math.Clamp(yDiffAtStop, -snapSpeed, snapSpeed);
+                    state.CurrentPosition = new Vector3(curPos.X, curPos.Y + stepY, curPos.Z);
+                }
+
+                if (horizDist > 0.1f)
+                {
+                    float targetYaw = MathF.Atan2(diff.X, diff.Z);
+                    state.CurrentRotation = RotateToward(curRot, targetYaw, state.Config.TurnSpeed * 2.0f, deltaTime);
+                }
+                actorManager.UpdateActorTransform(actor, state.CurrentPosition, state.CurrentRotation);
             }
             return true;
         }
@@ -337,11 +367,36 @@ public unsafe class MovementService : IDisposable
         Vector3 moveDir = new Vector3(diff.X / horizDist, 0, diff.Z / horizDist);
         Vector3 newPos = curPos + moveDir * moveStep;
 
-        // Y座標（高度）のスムーズな線形補間
-        if (horizDist > 0.01f)
+        // Y座標（高度）の地形適応・段差追従
+        // プレイヤーや目的地が段差・階段の上にある場合、水平距離の比率でゆっくり上げると段差の地面に埋もれるため、
+        // 上り（diff.Y > 0）の時は素早く高度をターゲットに追従（段差を踏み越えるように上昇）させる。
+        float yDiff = diff.Y;
+        if (MathF.Abs(yDiff) > 0.01f)
         {
-            float yStep = (diff.Y / horizDist) * moveStep;
-            newPos.Y = curPos.Y + yStep;
+            if (yDiff > 0f)
+            {
+                // 上り（段差を上がる）: 地面に埋もれないよう、垂直上昇速度（5.0m/s）でターゲット高さに速やかに追従
+                float maxUpStep = 5.0f * deltaTime;
+                newPos.Y = curPos.Y + MathF.Min(yDiff, maxUpStep);
+            }
+            else
+            {
+                // 下り（段差を降りる）: 宙に浮き続けないよう、水平の移動進捗に合わせて自然に降下
+                if (horizDist > 0.01f)
+                {
+                    float yStep = (yDiff / horizDist) * moveStep;
+                    // 水平距離が停止距離に近づいたら、残り高度差も確実に合わせる
+                    if (horizDist <= stopDistance + 0.6f)
+                    {
+                        float maxDownStep = 5.0f * deltaTime;
+                        newPos.Y = curPos.Y + MathF.Max(yDiff, -maxDownStep);
+                    }
+                    else
+                    {
+                        newPos.Y = curPos.Y + yStep;
+                    }
+                }
+            }
         }
 
         state.CurrentPosition = newPos;

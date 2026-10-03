@@ -40,3 +40,14 @@
 - [x] CHANGELOG.md および docs の同期
 - [x] Git commit & push、GitHub Actions ビルド完了確認 (Success)
 
+### 【Step 2.2-fix1】追従の動的中心検知 ＆ 巡回地点直行復帰 ＆ 段差高度適応（`v0.1.83.0`）
+- [x] **動いているアクター中心からの Trigger Dist 判定 (`Services/MovementService.cs`)**
+  - [x] 巡回中（`PatrolAndFollow`）に初期スポーン位置からの距離制限で追従が阻害されていた問題を修正
+  - [x] アクターの現在地とプレイヤーの実距離のみで即座に接近追従を開始
+- [x] **追従解除時における次の巡回地点（ウェイポイント）直行復帰 (`Services/MovementService.cs`)**
+  - [x] ①から②へ向かう途中で追従後、追従が切れたらそのまま②へ歩行移動を再開
+- [x] **段差・階段における地面めり込み防止（高度追従の高速化） (`Services/MovementService.cs`)**
+  - [x] 上り段差に向かう際、垂直上昇速度（5.0m/s）でターゲット床面高さへ素早く追従
+  - [x] 停止時にもターゲットの足元高さへスムーズにスナップ
+
+
