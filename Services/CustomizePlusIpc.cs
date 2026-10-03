@@ -176,7 +176,7 @@ public class CustomizePlusIpc
             try
             {
                 var parsed = Newtonsoft.Json.Linq.JObject.Parse(profileJson);
-                if (parsed["Enabled"] == null || parsed["Enabled"]!.Value<bool>() == false)
+                if (parsed["Enabled"] == null || (bool?)parsed["Enabled"] == false)
                 {
                     parsed["Enabled"] = true;
                     finalJson = parsed.ToString(Newtonsoft.Json.Formatting.None);
