@@ -30,6 +30,8 @@ public unsafe class ActorManager : IDisposable
     private readonly CustomizePlusIpc? customizePlusIpc;
     private readonly GameDataService? gameDataService;
     private readonly IFramework? framework;
+    private Func<bool>? isEditOpenFunc;
+    private Func<SpawnedActorData, bool>? isCustomNameShownFunc;
 
     private readonly List<SpawnedActorData> activeActors = new();
     private readonly List<ushort> createdIndexes = new();
@@ -683,6 +685,15 @@ public unsafe class ActorManager : IDisposable
     }
 
     /// <summary>
+    /// Edit ウィンドウの開閉状態およびカスタムネーム表示設定に応じたターゲット可否ポリシーを設定
+    /// </summary>
+    public void SetTargetablePolicy(Func<bool> isEditOpen, Func<SpawnedActorData, bool>? isCustomNameShown = null)
+    {
+        this.isEditOpenFunc = isEditOpen;
+        this.isCustomNameShownFunc = isCustomNameShown;
+    }
+
+    /// <summary>
     /// アクターが新しくスポーンされる際、過去にそのスロット(globalIdx)を使用していたアクターの外見ステート
     /// （Glamourerステートキャッシュ、Penumbraコレクション割り当て、CustomizePlusプロファイル等）を安全に初期化・パージする。
     /// これにより、以前同じスロットにいたChonk等の見た目がモンスターやNPCに誤爆・感染することを100%防止する。
@@ -1232,10 +1243,21 @@ public unsafe class ActorManager : IDisposable
                     }
                 }
 
-                // 4. ターゲット可否フラグ常時維持 (モンスター・デミヒューマン・マウント・ミニオン・人型NPCの直接クリック選択保証)
-                if (actor.IsTargetable && (chara->GameObject.TargetableStatus & ObjectTargetableFlags.IsTargetable) == 0)
+                // 4. ターゲット可否フラグ動的制御
+                // Edit ウィンドウ表示中: 全カスタムスポーンがターゲット可能（編集・選択の円滑化）
+                // Edit ウィンドウ非表示時: カスタムネームを表示しているスポーンのみターゲット可能（それ以外のモブ等はターゲット不可）
+                bool isEditOpen = isEditOpenFunc != null && isEditOpenFunc();
+                bool isCustomNameShown = isCustomNameShownFunc != null ? isCustomNameShownFunc(actor) : actor.NamePlate.Show;
+                bool shouldBeTargetable = actor.IsTargetable && (isEditOpen || isCustomNameShown);
+
+                bool isCurrentlyTargetable = (chara->GameObject.TargetableStatus & ObjectTargetableFlags.IsTargetable) != 0;
+                if (shouldBeTargetable && !isCurrentlyTargetable)
                 {
                     chara->GameObject.TargetableStatus |= ObjectTargetableFlags.IsTargetable;
+                }
+                else if (!shouldBeTargetable && isCurrentlyTargetable)
+                {
+                    chara->GameObject.TargetableStatus &= ~ObjectTargetableFlags.IsTargetable;
                 }
             }
         }

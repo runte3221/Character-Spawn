@@ -95,6 +95,14 @@ public sealed class Plugin : IDalamudPlugin
             () => sceneEditWindow.IsOpen,
             actor => sceneManager.GetPlacementForActor(actor));
 
+        actorManager.SetTargetablePolicy(
+            () => sceneEditWindow.IsOpen,
+            actor =>
+            {
+                var placement = sceneManager.GetPlacementForActor(actor);
+                return placement != null ? placement.NamePlate.ShowCustomName : actor.NamePlate.Show;
+            });
+
         WindowSystem.AddWindow(mainWindow);
         WindowSystem.AddWindow(sceneEditWindow);
 

@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.92] - 2026-10-04
+### Added
+- **Edit非表示時のターゲット可否制御（カスタムネーム表示中のみターゲット可能化） (`Managers/ActorManager.cs`, `Plugin.cs`)**:
+  - **要望の実現**: Edit（SceneEditWindow）を開いていない通常プレイ・鑑賞時において、カスタムネームを表示している（`[x] Custom Name`）アクター以外はゲーム画面上でターゲットできない（`TargetableStatus = 0`）ように修正。
+  - **背景モブ・モンスターの誤ターゲット防止**:
+    - 名前非表示のモブや背景キャラクターをクリックしたり Tab ターゲットで拾ってしまうのを完全に防止し、公式 NPC のような自然な存在感（名前を表示させた看板キャラ・主要 NPC だけターゲット可能）を実現。
+  - **Edit ウィンドウ表示中**:
+    - 引き続き全カスタムスポーンがターゲット可能となり、3D 空間モデル直接クリックやギズモ操作による編集・選択の円滑さを維持。
+
 ## [0.1.91] - 2026-10-04
 ### Added
 - **ネームプレート表示ルールの改善（Edit表示中は全員表示・通常時はカスタムネーム有効時のみ表示） (`Managers/NamePlateController.cs`, `Managers/SceneManager.cs`, `UI/SceneEditWindow.cs`, `Plugin.cs`, `Models/SceneData.cs`)**:
