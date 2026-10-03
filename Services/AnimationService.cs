@@ -34,7 +34,7 @@ public unsafe class AnimationService : IDisposable
         public int TicksSinceApply { get; set; }
     }
 
-    private readonly ConcurrentDictionary<Guid, ActiveAnimationState> activeStates = new();
+    private readonly ConcurrentDictionary<string, ActiveAnimationState> activeStates = new();
 
     public AnimationService(
         IFramework framework,
@@ -151,7 +151,7 @@ public unsafe class AnimationService : IDisposable
     {
         if (activeStates.IsEmpty) return;
 
-        var localPlayer = objectTable.Length > 0 ? objectTable[0] as ICharacter : null;
+        var localPlayer = objectTable.Length > 0 ? objectTable[0] : null;
         var myPos = localPlayer != null ? localPlayer.Position : Vector3.Zero;
 
         foreach (var (instanceId, state) in activeStates)
