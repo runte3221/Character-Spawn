@@ -191,10 +191,12 @@ public unsafe class GizmoRenderer
                 }
             }
 
-            // 次フレームの NoInputs 判定用にホバー・使用状態を記録
-            isHoveredOrUsing = ImGuizmo.IsOver() || ImGuizmo.IsUsing();
+                // 次フレームの NoInputs 判定用にホバー・使用状態を記録
+                isHoveredOrUsing = ImGuizmo.IsOver() || ImGuizmo.IsUsing();
 
-            ImGuizmo.SetID(-1);
+                ImGuizmo.SetID(-1);
+            }
+
             ImGui.End();
         }
 
