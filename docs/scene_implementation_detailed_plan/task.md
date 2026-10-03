@@ -28,10 +28,10 @@
     - [x] 全タブ共通上段: 4モードギズモ切替 (Select, Translate, Rotate, Scale) + テンプレート選択コンボ + `[+Add]`
     - [x] アクター一覧リスト: 紫色の人アイコン + Custom Name (または Character Name) + 右端の目のアイコン (表示/非表示即時トグル) + 右下 `[Delete]`
     - [x] 下段 `[Spawn]` タブ: Character Name (表示専用), Custom Name / Custom Title 入力 & チェックボックス, Translation (X,Y,Z), Rotation (角度), Scale, `[Apply Own Transform]` ボタン
-- [ ] **1-5. 大規模（〜100体）・高負荷対応非同期スポーンキュー＆MCDFリソース解決安定化**:
-  - [ ] `McdfParser.cs`: MCDF バンドルのインメモリキャッシュ機構（LZ4解凍時間 137ms → 0ms）
-  - [ ] `SceneManager.cs`: シーン一括スポーン時の非同期フレーム分散（スタッガー）スポーンキュー（メインスレッドヒッチ 363ms → 0ms）
-  - [ ] `ActorManager.cs`: MCDF アクターに対する Penumbra 非同期リソース解決待機（ディファード Redraw ジョブキュー）
+- [x] **1-5. 大規模（〜100体）・高負荷対応非同期スポーンキュー＆MCDFリソース解決安定化**:
+  - [x] `McdfParser.cs`: MCDF バンドルのインメモリキャッシュ機構（LZ4解凍時間 137ms → 0ms）
+  - [x] `SceneManager.cs`: シーン一括スポーン時の非同期フレーム分散（スタッガー）スポーンキュー（メインスレッドヒッチ 363ms → 0ms）
+  - [x] `ActorManager.cs`: MCDF アクターに対する Penumbra 非同期リソース解決待機（ディファード Redraw ジョブキュー）
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか
