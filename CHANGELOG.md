@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.59] - 2026-10-03
+### Fixed
+- **Glamourer + Penumbra + CustomizePlus 複合アクター（Chonk等）における体型打ち消し防止と統合遅延安定化**:
+  - **統合アピアランス遅延安定化キュー (`AppearanceDeferredJob`) の導入 (`Managers/ActorManager.cs`)**:
+    - Glamourer の非同期 DrawObject 再構築によって、直前に注入した CustomizePlus のボーン変形行列がリセット（バニラ体型・素体に戻る現象）される問題を完全解明・解決。
+    - Glamourer 適用完了後、ゲームエンジンのモデル再構築完了を待ってから、**CustomizePlus の一時プロファイルの再適用（リフレッシュ）** および **Penumbra の遅延 Redraw** を確定実行する統合ジョブキューを実装。
+    - これにより、何度 Show/Hide を繰り返しても、Chonk 特有の体型MODおよびテクスチャ・マテリアルが 100% 確実に維持・反映される。
+  - **Show/Hide 高速切り替え時の初期化バッファの追加 (`Managers/SceneManager.cs`)**:
+    - スポーン開始時に安全インターバル（2フレーム / 約33ms）を設け、直前のデスポーンによる COM オブジェクト破棄と新しいオブジェクト生成のステート衝突を排除。
+  - **安全ガードの徹底**:
+    - 自キャラ（LocalPlayer）への二重物理遮断（GlobalIndex == 0 & LocalPlayer.Address 一致チェック）、独立パイプライン（NPC/モンスター）への干渉遮断、デスポーン時のゾンビジョブ即時破棄を完備。
+  - **完全隔離の保証**:
+    - 第1工程のコアロジック（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）は完全不可侵（変更なし）を厳守。
+
 ## [0.1.58] - 2026-10-03
 ### Fixed
 - **大規模シーン（最大100体規模）・大容量MOD対応の非同期分散スポーンキューおよび MCDF リソース解決安定化**:

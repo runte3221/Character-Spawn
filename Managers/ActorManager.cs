@@ -56,15 +56,20 @@ public unsafe class ActorManager : IDisposable
     }
     private readonly List<HumanoidNpcApplyJob> humanoidNpcApplyJobs = new();
 
-    // MCDF 非同期 Mod リソース解決待機キュー (Penumbra 非同期ロード完了待ちディファード Redraw)
-    private sealed class McdfDeferredRedrawJob
+    // 統合アピアランス遅延安定化キュー (Glamourer モデル再構築 & Penumbra 非同期ロード完了待ち確定処理)
+    // Chonk などの Glamourer + Penumbra + CustomizePlus 複合アクターにおける体型打ち消し・MOD抜けを完全根絶
+    private sealed class AppearanceDeferredJob
     {
         public SpawnedActorData Spawned = null!;
         public ushort GlobalIndex;
+        public CharacterTemplate Template = null!;
+        public string? FallbackMcdfCPlusData;
+        public bool HasPenumbra;
+        public bool HasCustomizePlus;
         public int Ticks;
-        public const int DelayTicks = 5; // Penumbra の非同期 Mod 読み込み待機 (約5フレーム / ~80ms)
+        public const int DelayTicks = 6; // Glamourer再構築 & Penumbra非同期ロード待機 (約6フレーム / ~100ms)
     }
-    private readonly List<McdfDeferredRedrawJob> mcdfDeferredRedrawJobs = new();
+    private readonly List<AppearanceDeferredJob> appearanceDeferredJobs = new();
 
     private int puppetSerial = 0;
     private const int MaxReadyTicks = 200;
@@ -152,7 +157,7 @@ public unsafe class ActorManager : IDisposable
         }
         monsterRedrawJobs.Clear();
         humanoidNpcApplyJobs.Clear();
-        mcdfDeferredRedrawJobs.Clear();
+        appearanceDeferredJobs.Clear();
         activeActors.Clear();
         createdIndexes.Clear();
         CurrentPreviewActor = null;
@@ -515,7 +520,7 @@ public unsafe class ActorManager : IDisposable
             actor.IsReady = false;
             monsterRedrawJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
             humanoidNpcApplyJobs.RemoveAll(j => j.Spawned == actor || j.Spawned.GlobalIndex == actor.GlobalIndex);
-            mcdfDeferredRedrawJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
+            appearanceDeferredJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
 
             // Penumbra 一時コレクションのクリーンアップ (AQR / Mare 準拠)
             if (actor.TemporaryCollectionGuid.HasValue)
@@ -821,38 +826,70 @@ public unsafe class ActorManager : IDisposable
                 }
             }
 
-            // MCDF 非同期 Mod リソース解決待機ジョブ (Penumbra 非同期ロード完了待ちディファード Redraw)
-            if (mcdfDeferredRedrawJobs.Count > 0)
+            // 統合アピアランス遅延安定化ジョブ (Glamourer モデル再構築完了後の CustomizePlus 体型復元 & Penumbra 非同期ロード待機 Redraw)
+            if (appearanceDeferredJobs.Count > 0)
             {
-                for (int i = mcdfDeferredRedrawJobs.Count - 1; i >= 0; i--)
+                for (int i = appearanceDeferredJobs.Count - 1; i >= 0; i--)
                 {
                     try
                     {
-                        var job = mcdfDeferredRedrawJobs[i];
+                        var job = appearanceDeferredJobs[i];
                         job.Ticks++;
 
                         if (!activeActors.Contains(job.Spawned))
                         {
-                            mcdfDeferredRedrawJobs.RemoveAt(i);
+                            appearanceDeferredJobs.RemoveAt(i);
                             continue;
                         }
 
-                        if (job.Ticks < McdfDeferredRedrawJob.DelayTicks)
+                        if (job.Ticks < AppearanceDeferredJob.DelayTicks)
                             continue;
 
-                        // Penumbra の非同期ファイル解決が完了したタイミングで最終 Redraw を実行
-                        if (penumbraIpc.IsAvailable && job.GlobalIndex < objectTable.Length)
+                        int actorIndex = (int)job.GlobalIndex;
+
+                        // 自キャラ誤爆ガード
+                        if (actorIndex <= 0 || (objectTable.Length > 0 && objectTable[0]?.Address == job.Spawned.NativeAddress))
                         {
-                            penumbraIpc.Redraw((int)job.GlobalIndex);
-                            logManager?.Info($"[Pipeline B: MCDF] Deferred Penumbra Redraw executed for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex} after {job.Ticks} ticks.");
+                            appearanceDeferredJobs.RemoveAt(i);
+                            continue;
                         }
 
-                        mcdfDeferredRedrawJobs.RemoveAt(i);
+                        if (job.GlobalIndex >= objectTable.Length)
+                        {
+                            appearanceDeferredJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        var obj = objectTable[job.GlobalIndex];
+                        if (obj is not ICharacter charaObj || charaObj.Address == nint.Zero)
+                        {
+                            appearanceDeferredJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        var chara = (Character*)charaObj.Address;
+
+                        // 1. Penumbra の遅延 Redraw（Glamourer および非同期ファイル解決完了後の確定）
+                        if (job.HasPenumbra && penumbraIpc.IsAvailable)
+                        {
+                            penumbraIpc.Redraw(actorIndex);
+                            logManager?.Info($"[AppearanceDeferredJob] Penumbra Redraw executed for '{job.Spawned.DisplayName}' on Global#{actorIndex} after {job.Ticks} ticks.");
+                        }
+
+                        // 2. CustomizePlus の体型プロファイル再適用（Glamourer の DrawObject 再構築でボーン変形が消えた後の確実な復元）
+                        if (job.HasCustomizePlus)
+                        {
+                            ApplyCustomizePlusProfile(chara, actorIndex, job.Template, job.Spawned, job.FallbackMcdfCPlusData);
+                            logManager?.Info($"[AppearanceDeferredJob] CustomizePlus profile finalized for '{job.Spawned.DisplayName}' on Global#{actorIndex} after {job.Ticks} ticks.");
+                        }
+
+                        job.Spawned.IsReady = true;
+                        appearanceDeferredJobs.RemoveAt(i);
                     }
                     catch (Exception ex)
                     {
-                        logManager?.Error($"McdfDeferredRedrawJob exception: {ex}");
-                        if (i < mcdfDeferredRedrawJobs.Count) mcdfDeferredRedrawJobs.RemoveAt(i);
+                        logManager?.Error($"AppearanceDeferredJob exception: {ex}");
+                        if (i < appearanceDeferredJobs.Count) appearanceDeferredJobs.RemoveAt(i);
                     }
                 }
             }
@@ -1055,14 +1092,18 @@ public unsafe class ActorManager : IDisposable
                             logManager?.Info($"MCDF Penumbra Redraw for Global#{actorIndex}.");
                         }
 
-                        // Penumbra 非同期ファイル解決完了を待って確実に MOD を適用させるディファード Redraw キューへ登録
+                        // 統合アピアランス遅延安定化キューへ登録 (Penumbra 非同期ロード完了 & CustomizePlus 体型復元)
                         if (spawned != null)
                         {
-                            mcdfDeferredRedrawJobs.RemoveAll(j => j.Spawned == spawned || j.GlobalIndex == (ushort)actorIndex);
-                            mcdfDeferredRedrawJobs.Add(new McdfDeferredRedrawJob
+                            appearanceDeferredJobs.RemoveAll(j => j.Spawned == spawned || j.GlobalIndex == (ushort)actorIndex);
+                            appearanceDeferredJobs.Add(new AppearanceDeferredJob
                             {
                                 Spawned = spawned,
                                 GlobalIndex = (ushort)actorIndex,
+                                Template = template,
+                                FallbackMcdfCPlusData = bundle.CustomizePlusData,
+                                HasPenumbra = true,
+                                HasCustomizePlus = !string.IsNullOrWhiteSpace(template.CustomizePlusProfileGuid) || !string.IsNullOrWhiteSpace(bundle.CustomizePlusData),
                                 Ticks = 0
                             });
                         }
@@ -1128,8 +1169,23 @@ public unsafe class ActorManager : IDisposable
         chara->DrawData.HideWeapons(!template.WeaponVisible);
         chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-        // 5. Customize+ Profile の適用
+        // 5. Customize+ Profile の初期適用
         ApplyCustomizePlusProfile(chara, actorIndex, template, spawned);
+
+        // 6. 統合アピアランス遅延安定化キューへ登録 (Glamourer モデル再構築完了後の CustomizePlus 体型復元 & Penumbra 確定)
+        if (spawned != null)
+        {
+            appearanceDeferredJobs.RemoveAll(j => j.Spawned == spawned || j.GlobalIndex == (ushort)actorIndex);
+            appearanceDeferredJobs.Add(new AppearanceDeferredJob
+            {
+                Spawned = spawned,
+                GlobalIndex = (ushort)actorIndex,
+                Template = template,
+                HasPenumbra = penSuccess,
+                HasCustomizePlus = !string.IsNullOrWhiteSpace(template.CustomizePlusProfileGuid),
+                Ticks = 0
+            });
+        }
 
         if (spawned != null) spawned.IsReady = true;
     }

@@ -383,7 +383,7 @@ public class SceneManager : IDisposable
 
         ActiveSpawnedScene = scene;
         staggeredSpawnQueue.Clear();
-        spawnIntervalTicks = 0;
+        spawnIntervalTicks = DefaultSpawnIntervalTicks;
 
         Vector3 playerPos = actorManager.LocalPlayerPosition;
 
