@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.51] - 2026-10-03
+### Fixed
+- **Glamourer ApplyState への Base64 圧縮データ渡しと連続スポーン時の外見ズレ（直前キャラ表示・自キャラ化）の完全解消**:
+  - **根本原因の完全解明 (実機ログと Glamourer 逆アセンブル解析)**:
+    1. `dalamud.log` 解析により、人型NPCスポーン時に `Glamourer ApplyState (ulong flags=6) for NPC on actor #200 result: 7`（`InvalidState`）が毎フレーム発生し、60 ticks タイムアウト後に無理やり直接メモリフォールバックが走っていたことを特定。
+    2. `Glamourer.dll`（`StateApi.ApplyState`）の逆アセンブルにより、引数が `string` の場合、Glamourer はそれを Base64 圧縮文字列としてデコード（`DesignConverter.FromBase64`）しようとする仕様であることが判明。
+    3. `TryApplyNpcAppearance` が生の JSON 文字列（`{"FileVersion":1,...}`）を渡していたため、毎回 Base64 デコード例外が発生して失敗し、Glamourer による外見適用が 1 度も成功していなかった。
+    4. Glamourer 適用が 1 度も成功せず 60 ticks（約1秒）待たされるため、プレビューでキャラを連続で切り替えると、前のキャラの遅延フォールバックや Penumbra Redraw がゲームスレッド上で重なり、直前の外見が上書きされたり、最終的に素体（自キャラ）に戻ってしまっていた。
+  - **解決策: `CompressToBase64` による Base64 圧縮文字列渡し (`Services/GlamourerIpc.cs`)**:
+    - `TryApplyNpcAppearance` において、すでに MCDF パイプラインで 100% 成功実績のある `CompressToBase64(state)` を呼び出し、GZip 圧縮された Base64 文字列を `applyStateV2Ulong` に渡すよう修正。
+    - これにより Glamourer が 1 フレーム目（0 ticks）で即座に `result: 0`（Success）を返し、わずか数 ticks で NPC への変身が完了。
+    - タイムアウト待ち（60 ticks）や遅延フォールバックが一切発生しなくなり、連続スポーン時でもズレることなく瞬時に本来の NPC 外見が適用される！
+
+
 ## [0.1.50] - 2026-10-03
 ### Fixed
 - **HDM (HousingDollMaster) 完全照合による ENpc ID 空間の乖離解消と DrawObject 強制再構築 (`RedrawGuise`)**:

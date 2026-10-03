@@ -121,6 +121,25 @@
   1. `tools/release.ps1 0.1.50.0` で全自動リリース。
   2. ユウギリ、ミューヌ、カヌ・エ・センナをスポーンさせ、100% 正しい本物の姿（固有顔・髪型・衣装）でスポーンすることを確認。
 
+## 10. v0.1.51.0 改修計画（Glamourer ApplyState Base64 圧縮データ渡しと連続スポーン遅延解消）
+- **実機ログと逆アセンブル照合によって判明した真因**:
+  1. **Glamourer ApplyState の Base64 期待と JSON 渡し不整合**:
+     - `dalamud.log` 解析: `Glamourer ApplyState (ulong flags=6) for NPC on actor #200 ('Actor Bc') result: 7`（`InvalidState`）が毎フレーム発生。
+     - `Glamourer.dll` の `StateApi.ApplyState` 逆アセンブル: 第一引数が `string` の場合、Glamourer はそれを Base64 圧縮文字列としてデコード（`DesignConverter.FromBase64`）しようとする。
+     - `GlamourerIpc.TryApplyNpcAppearance` が生の JSON 文字列（`{"FileVersion":1,...}`）を渡していたため、毎回例外が発生して失敗し、60 ticks タイムアウト後に無理やり Direct Memory Fallback が走っていた。
+  2. **連続スポーン時の外見ズレ（直前キャラ表示・自キャラ化）**:
+     - Glamourer 適用が 1 回も成功せず 60 ticks（約1秒）待たされるため、プレビューでキャラを連続で切り替えると、前のキャラの遅延フォールバックや Penumbra Redraw がゲームスレッド上で重なり、直前の外見が上書きされたり、最終的に素体（自キャラ）に戻ってしまっていた。
+- **改修方針**:
+  1. **`Services/GlamourerIpc.cs`**:
+     - `TryApplyNpcAppearance` において、`applyStateV2Ulong` / `applyStateV2Uint` に渡すデータを `CompressToBase64(state)` で Base64 圧縮文字列に変換して渡す。
+     - これにより Glamourer が 1 フレーム目（0 ticks）で `res == 0`（Success）を返し、わずか数 ticks で NPC への変身が完了する。
+     - タイムアウト待ち（60 ticks）や遅延フォールバックの蓄積が一切発生しなくなり、連続スポーンでも瞬時に正確な NPC 外見が適用される。
+- **検証手順**:
+  1. `tools/release.ps1 0.1.51.0` で全自動リリース。
+  2. ミューヌ、カヌ・エ・センナ、ユウギリを連続でプレビュースポーンさせ、ズレることなくそれぞれの本来の姿が即座に描画されることを確認。
+  3. MCDF、モンスター、デミヒューマンが引き続き問題なく動作することを確認。
+
+
 
 
 

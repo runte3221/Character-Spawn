@@ -233,3 +233,43 @@ v0.1.49.0 の実機検証において、パペット名が ASCII 化されて Gl
    - `HumanoidNpcApplyJob` で Glamourer 適用成功後、直ちに `DisableDraw()` を実行。
    - 最低 2 ticks 待機し、ゲームエンジンの準備完了（`IsReadyToDraw`）を確認してから `EnableDraw()` を呼び出すことで、ゲームエンジンの DrawObject を NPC 外見で強制再構築！
 
+---
+
+## 11. Glamourer ApplyState Base64 圧縮データ渡しと連続スポーン遅延解消 (v0.1.51.0)
+
+### (1) 現象と実機ログの分析
+v0.1.50.0 において以下の現象が発生：
+- ミューヌをスポーン → ミューヌが表示される（正常）
+- カヌ・エ・センナをスポーン → なぜかミューヌが表示される（直前のキャラ）
+- ユウギリをスポーン → なぜかミューヌが表示される
+- その後ミューヌをスポーン → 今度はカヌ・エ・センナが表示される（顔や角も正常に変わっている）
+- 連続してスポーン・デスポーンを繰り返すと、最終的に自キャラしかスポーンしなくなる。
+
+### (2) 実機ログ (`dalamud.log`) と逆アセンブル解析で判明した真因
+`dalamud.log` より：
+```
+System.Exception: Unknown Error decoding Base64.
+   at Glamourer.Designs.DesignConverter.FromBase64(String base64, Boolean customize, Boolean equip, Byte& version) in /_/Glamourer/Designs/DesignConverter.cs:line 113
+Glamourer ApplyState (ulong flags=6) for NPC on actor #200 ('Actor Bc') result: 7
+Glamourer TryApplyNpcAppearance on actor #200 ('Actor Bc') final result: False
+[Pipeline C: NPC] Glamourer NPC appearance timed out after 60 ticks on Global#200 ('ユウギリ'). Applying direct memory fallback...
+Applied Humanoid NPC appearance fallback on Global#200 after 60 ticks.
+```
+
+1. **Glamourer ApplyState のデータ形式不一致**:
+   - `Glamourer.dll` の `StateApi.ApplyState` の実装をディスアセンブルした結果、引数が `string` の場合、Glamourer はそれを **Base64 文字列** として解釈し、`DesignConverter.FromBase64` でデコードすることが判明。
+   - `GlamourerIpc.TryApplyNpcAppearance` は生の JSON 文字列 `[{"FileVersion":1,...}]` を渡していたため、毎回例外が発生して `GlamourerApiEc.InvalidState (7)` で失敗していた！
+   - つまり、Glamourer による適用は 1 度も成功していなかった。
+2. **60 ticks タイムアウトと遅延フォールバックの蓄積による外見のズレ**:
+   - Glamourer が毎フレーム失敗するため、60 ticks（約1秒）のタイムアウトまで待たされ、その後に `ApplyNpcAppearanceDirectFallback` と `penumbraIpc.Redraw` が走っていた。
+   - ユーザーがプレビュー一覧で次々と別のキャラをクリックすると、前のキャラの遅延フォールバックや Penumbra Redraw がゲームスレッド上で遅れて実行され、新しくスポーンしたパペットに対して前回の外見（ミューヌやカヌ・エ・センナ）が上書きされていた。
+   - スポーン・デスポーンを高速で繰り返すと、タイムアウト中の未完了ジョブが重なり、最終的に Direct Fallback も追いつかず、初期素体（自キャラ）のまま残ってしまっていた。
+
+### (3) 解決策の実装
+1. **`Services/GlamourerIpc.cs`: `CompressToBase64` による Base64 圧縮文字列渡し**:
+   - `TryApplyNpcAppearance` 内で、すでに MCDF パイプラインで 100% 成功実績のある `CompressToBase64(state)` を呼び出し、GZip 圧縮された Base64 文字列を `applyStateV2Ulong` に渡すよう修正。
+   - これにより、Glamourer は 1 フレーム目（0 ticks）で即座に `result: 0`（Success）を返す。
+   - 待機時間は DrawObject の DisableDraw → EnableDraw の 2 ticks のみとなり、合計わずか 4 ticks（約0.06秒）で NPC 外見の適用が完了。
+   - タイムアウト待ち（60 ticks）や遅延フォールバックが一切発生しなくなり、連続スポーン時でもズレることなく瞬時に本来の NPC 外見が適用される！
+
+

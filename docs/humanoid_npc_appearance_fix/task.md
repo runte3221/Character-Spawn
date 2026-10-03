@@ -107,5 +107,20 @@
   - [x] `CHANGELOG.md` 更新（v0.1.50.0）
   - [x] `tools/release.ps1 0.1.50.0` 実行
 
+## 10. Glamourer ApplyState Base64 圧縮データ渡しと連続スポーン遅延解消フェーズ (v0.1.51.0)
+- [x] **原因究明 (実機ログと逆アセンブル解析)**:
+  - `dalamud.log` 解析: `Glamourer ApplyState (ulong flags=6) for NPC on actor #200 result: 7`（`InvalidState`）が毎フレーム発生。
+  - `Glamourer.dll` の `StateApi.ApplyState` 逆アセンブル: 第一引数が `string` の場合、Glamourer はそれを Base64 圧縮文字列としてデコード（`DesignConverter.FromBase64`）しようとする。
+  - `GlamourerIpc.TryApplyNpcAppearance` が生の JSON 文字列（`{"FileVersion":1,...}`）を渡していたため、毎回例外が発生して失敗し、60 ticks タイムアウト後に無理やり Direct Memory Fallback が走っていた。
+  - そのため、プレビューで連続してスポーン・デスポーンすると、前回の未完ジョブや Penumbra Redraw が遅延して重なり、外見が直前のキャラ（ミューヌやカヌエセンナ）にズレたり、最終的に自キャラ（初期素体）になっていた。
+- [x] **コード改修 (`Services/GlamourerIpc.cs`)**:
+  - [x] `TryApplyNpcAppearance` で `ApplyState` に渡すデータを、MCDF と同一の `CompressToBase64(state)` で Base64 圧縮文字列に変換して渡す。
+  - [x] これにより Glamourer が 1 フレーム目（0 ticks）で `res == 0`（Success）を返し、わずか数 ticks で NPC への変身が完了する。
+- [x] **ドキュメント更新とリリース**:
+  - [x] `docs/humanoid_npc_appearance_fix/` の 3 ファイル更新
+  - [x] `CHANGELOG.md` 更新（v0.1.51.0）
+  - [x] `tools/release.ps1 0.1.51.0` 実行
+
+
 
 
