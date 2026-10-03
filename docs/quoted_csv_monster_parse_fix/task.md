@@ -19,5 +19,5 @@
 ## 3. ドキュメント・リリース・検証フェーズ
 - [x] `docs/quoted_csv_monster_parse_fix/` 配下の 3 ファイル作成・同期
 - [x] `CHANGELOG.md` 更新（v0.1.53.0）
-- [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.53.0`)
-- [ ] CI/CD ビルド成功と CDN 反映の確認
+- [x] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.53.0` / CI/CD 成功確認)
+- [x] CI/CD ビルド成功と CDN 反映の確認
