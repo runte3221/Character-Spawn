@@ -99,6 +99,7 @@ public class SceneActorMotionConfig
 
     // 視線追従 (LookAt)
     public bool LookAtPlayer { get; set; } = false;
+    public float BodyTurnAngleLimit { get; set; } = 0.0f; // 体の回転許容角度(度)。0=首・視線のみ追従, 45=左右45度まで体も追従, 180=全方位追従
 
     // 接近リアクション (Proximity Trigger)
     public bool EnableProximityReaction { get; set; } = false;

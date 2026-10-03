@@ -32,6 +32,8 @@ public class SceneEditWindow : Window, IDisposable
 
     private string motionSearchQuery = string.Empty;
     private string facialSearchQuery = string.Empty;
+    private int selectedMotionCategoryIndex = 0;
+    private static readonly string[] MotionCategories = { "All", "Emotes", "NPC", "Monster", "Battle", "General" };
 
     public SceneEditWindow(
         Configuration configuration,
@@ -495,7 +497,24 @@ public class SceneEditWindow : Window, IDisposable
         }
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("Actor's head and body will naturally turn toward the local player when nearby.");
+            ImGui.SetTooltip("Actor's head and eyes naturally turn toward the local player when nearby.");
+        }
+
+        if (lookAt)
+        {
+            float bodyTurn = placement.Motion.BodyTurnAngleLimit;
+            ImGui.SetNextItemWidth(180);
+            string turnFmt = bodyTurn <= 0.01f ? "0° (Face & Eyes Only)" : "%.0f°";
+            if (ImGui.SliderFloat("Body Turn##AnimBodyTurn", ref bodyTurn, 0f, 180f, turnFmt))
+            {
+                placement.Motion.BodyTurnAngleLimit = bodyTurn;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Maximum body rotation angle toward player.\n0° = Body never rotates (Face & Eyes only)\n45° = Body turns up to ±45°\n180° = Full body rotation toward player");
+            }
         }
 
         float speed = placement.Motion.Speed > 0.01f ? placement.Motion.Speed : 1.0f;
@@ -532,12 +551,22 @@ public class SceneEditWindow : Window, IDisposable
             ImGui.TextDisabled("(None / Default Idle)");
         }
 
+        ImGui.SetNextItemWidth(120);
+        if (ImGui.Combo("##MotionCategory", ref selectedMotionCategoryIndex, MotionCategories, MotionCategories.Length))
+        {
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Filter motion category (All, Emotes, NPC Motions, Monsters, Battles)");
+        }
+
+        ImGui.SameLine();
         ImGui.SetNextItemWidth(-1);
-        ImGui.InputTextWithHint("##SearchMotion", "Search Motion / Emote (e.g. wave, sit, cheer, dance)...", ref motionSearchQuery, 64);
+        ImGui.InputTextWithHint("##SearchMotion", "Search Motion / Emote (e.g. wave, talk, guard, dance)...", ref motionSearchQuery, 64);
 
         if (gameDataService != null)
         {
-            var timelines = gameDataService.SearchTimelines(motionSearchQuery, 500);
+            var timelines = gameDataService.SearchTimelines(motionSearchQuery, MotionCategories[selectedMotionCategoryIndex], 500);
             if (ImGui.BeginListBox("##MotionList", new Vector2(-1, 180)))
             {
                 foreach (var t in timelines)

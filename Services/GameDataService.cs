@@ -201,11 +201,27 @@ public class GameDataService
         return new NpcAppearanceData(0, cust, equip);
     }
 
-    public IReadOnlyList<TimelineEntry> SearchTimelines(string query, int maxResults = 0)
+    public IReadOnlyList<TimelineEntry> SearchTimelines(string query, string category = "All", int maxResults = 0)
     {
         cachedTimelines ??= BuildTimelineCache();
 
         IEnumerable<TimelineEntry> filtered = cachedTimelines;
+
+        // カテゴリ絞り込み
+        if (!string.IsNullOrWhiteSpace(category) && category != "All")
+        {
+            if (category == "Emotes")
+                filtered = filtered.Where(t => t.IsEmote);
+            else if (category == "NPC")
+                filtered = filtered.Where(t => t.Description.StartsWith("[NPC]"));
+            else if (category == "Monster")
+                filtered = filtered.Where(t => t.Description.StartsWith("[Monster]"));
+            else if (category == "Battle")
+                filtered = filtered.Where(t => t.Description.StartsWith("[Battle]"));
+            else if (category == "General")
+                filtered = filtered.Where(t => t.Description.StartsWith("[General]"));
+        }
+
         if (!string.IsNullOrWhiteSpace(query))
         {
             filtered = filtered.Where(t => t.Key.Contains(query, StringComparison.OrdinalIgnoreCase) ||
@@ -213,7 +229,7 @@ public class GameDataService
                                            t.Id.ToString().Contains(query));
         }
 
-        // エモート（日常・戦闘エモート）を最優先で上位に表示
+        // エモート優先、その後 ID 順
         filtered = filtered.OrderByDescending(t => t.IsEmote).ThenBy(t => t.Id);
 
         return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
@@ -476,7 +492,37 @@ public class GameDataService
 
             var id = (ushort)row.RowId;
             var isEmote = emoteMap.TryGetValue(id, out var emoteName);
-            var desc = isEmote ? $"[Emote] {emoteName}" : $"ActionTimeline {id}";
+            string desc;
+
+            if (isEmote)
+            {
+                desc = $"[Emote] {emoteName}";
+            }
+            else if (key.StartsWith("human_sp/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("event_base/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("event/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("emote_sp/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("speak/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("resident/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("idle_sp/", StringComparison.OrdinalIgnoreCase))
+            {
+                desc = $"[NPC] {key}";
+            }
+            else if (key.StartsWith("mon_sp/", StringComparison.OrdinalIgnoreCase))
+            {
+                desc = $"[Monster] {key}";
+            }
+            else if (key.StartsWith("battle/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("ability/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("ws/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("magic/", StringComparison.OrdinalIgnoreCase))
+            {
+                desc = $"[Battle] {key}";
+            }
+            else
+            {
+                desc = $"[General] {key}";
+            }
 
             list.Add(new TimelineEntry(id, key, desc, isEmote));
         }
@@ -487,35 +533,24 @@ public class GameDataService
     private List<TimelineEntry> BuildFacialExpressionCache()
     {
         var list = new List<TimelineEntry>();
-        var sheet = dataManager.GetExcelSheet<ActionTimeline>();
-        if (sheet == null) return list;
+        var emoteSheet = dataManager.GetExcelSheet<Emote>();
+        if (emoteSheet == null) return list;
 
-        foreach (var row in sheet)
+        foreach (var emote in emoteSheet)
         {
-            var key = row.Key.ExtractText();
-            if (string.IsNullOrEmpty(key)) continue;
+            if (emote.EmoteCategory.RowId != 3) continue;
 
-            if (key.Contains("facial/", StringComparison.OrdinalIgnoreCase))
-            {
-                // "facial/pose/smile" -> "Smile"
-                string friendly = key;
-                if (friendly.StartsWith("facial/pose/", StringComparison.OrdinalIgnoreCase))
-                    friendly = friendly["facial/pose/".Length..];
-                else if (friendly.StartsWith("status/facial/", StringComparison.OrdinalIgnoreCase))
-                    friendly = friendly["status/facial/".Length..];
-                else if (friendly.StartsWith("facial/", StringComparison.OrdinalIgnoreCase))
-                    friendly = friendly["facial/".Length..];
+            string name = emote.Name.ExtractText().Trim();
+            if (string.IsNullOrEmpty(name)) continue;
 
-                if (!string.IsNullOrEmpty(friendly))
-                {
-                    friendly = char.ToUpperInvariant(friendly[0]) + friendly[1..];
-                }
+            ushort timelineId = emote.ActionTimeline.Count > 0 ? (ushort)emote.ActionTimeline[0].RowId : (ushort)0;
+            if (timelineId == 0) continue;
 
-                list.Add(new TimelineEntry((ushort)row.RowId, key, $"{friendly} ({key})", false));
-            }
+            list.Add(new TimelineEntry(timelineId, name, name, true));
         }
 
-        return list.OrderBy(t => t.Description).ToList();
+        // 素顔(604)を最優先、それ以外は名前順
+        return list.OrderBy(t => t.Id == 604 ? 0 : 1).ThenBy(t => t.Description).ToList();
     }
 
     public string GetTerritoryName(uint territoryId)

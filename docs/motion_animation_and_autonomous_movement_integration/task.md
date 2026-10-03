@@ -40,6 +40,19 @@ Character Spawn プラグインの根幹機能となる、カスタムスポー�
 - [x] **モーション一覧件数の拡張 (100 -> 500件) とエモート最優先表示 (`UI/SceneEditWindow.cs`)**
 - [x] **非同期モデルロード後の自動再同期 (30-tick resync)**
 
+### 【Step 2.1-fix2】表情フリーズ固定 ＆ LookAt体幹角度制限 ＆ モーションカテゴリ（`v0.1.73.0`）
+- [x] **表情固定の完全動作化 (Brio DFC 準拠のフリーズ機構) (`Services/GameDataService.cs`, `Services/AnimationService.cs`)**
+  - [x] `Emote` シート（`EmoteCategory == 3`）から全29種類のゲーム内表情（表情：笑顔、表情：口をすぼめる等）を日本語抽出
+  - [x] 再生直後に表情スロット（Facial = 2）の速度を `0.0f` にフリーズしてワンショット終了・素顔戻りを防止
+  - [x] 表情解除時に素顔（604）を再生して自然にリセット
+- [x] **LookAt Player の体幹回転制限スライダー (`BodyTurnAngleLimit`) (`Models/SceneData.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**
+  - [x] 0° 設定時：体は動かさず【顔と視線のみ】追従（周囲を回っても体がぐるぐる回るのを完全解消）
+  - [x] >0° 設定時：左右指定角度の範囲内でのみ体幹もプレイヤーの方へ向け、上限超過時は首のみ追従
+  - [x] チェック解除時の即時 `SetTargetId(0)` 発行と初期回転復帰によるリアルタイム解除
+- [x] **モーションカテゴリ分類フィルター (`UI/SceneEditWindow.cs`, `Services/GameDataService.cs`)**
+  - [x] `All`, `Emotes`, `NPC`, `Monster`, `Battle`, `General` のドロップダウン
+  - [x] 人型NPC演技・会話・固有モーション（2,000件以上）への `[NPC]` タグ付与とワンクリック絞り込み
+
 ### 【Step 2.2】自律移動 AI ＆ パトロール・追従・復帰ルーチン（次工程）
 - [ ] ウェイポイント巡回ルーチン (指定ルート巡回、各地点でのモーション再生)
 - [ ] プレイヤー接近感知・追従・規定距離超過時の元の位置復帰ルーチン

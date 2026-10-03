@@ -30,6 +30,7 @@ public unsafe class AnimationService : IDisposable
         public float Speed { get; set; } = 1.0f;
         public ushort FacialTimelineId { get; set; }
         public bool LookAtPlayer { get; set; }
+        public float BodyTurnAngleLimit { get; set; } = 0.0f; // 0=顔と視線のみ, >0=指定角まで体も向く
         public float LookAtMaxDistance { get; set; } = 8.0f;
         public float OriginalRotation { get; set; }
         public int TicksSinceApply { get; set; }
@@ -74,6 +75,7 @@ public unsafe class AnimationService : IDisposable
                 Speed = config.Speed > 0.01f ? config.Speed : 1.0f,
                 FacialTimelineId = config.FacialTimelineId,
                 LookAtPlayer = config.LookAtPlayer,
+                BodyTurnAngleLimit = config.BodyTurnAngleLimit,
                 OriginalRotation = defaultRotation,
                 TicksSinceApply = 0
             };
@@ -81,7 +83,6 @@ public unsafe class AnimationService : IDisposable
             // 1. 基本モーションの再生 (スロット0: Base)
             if (config.TimelineId > 0)
             {
-                // HDM 準拠: BaseOverride を設定して基本待機モーションとして定着させる
                 if (config.IsLoop)
                 {
                     chara->Timeline.BaseOverride = config.TimelineId;
@@ -95,7 +96,6 @@ public unsafe class AnimationService : IDisposable
                 chara->Timeline.OverallSpeed = state.Speed;
                 chara->Timeline.TimelineSequencer.SetSlotSpeed(0, state.Speed);
 
-                // スロット0でモーション再生
                 chara->PlayTimeline(config.TimelineId, 0);
             }
             else
@@ -108,18 +108,27 @@ public unsafe class AnimationService : IDisposable
                 chara->PlayTimeline(1, 0); // 1 = Default Idle
             }
 
-            // 2. 表情の再生 (スロット2: Facial / ActionTimelineSlots.Facial)
+            // 2. 表情の再生 ＆ フリーズ固定 (Brio DFC アーキテクチャ)
             if (config.FacialTimelineId > 0)
             {
-                chara->PlayTimeline(config.FacialTimelineId, 2);
+                chara->Timeline.TimelineSequencer.PlayTimeline(config.FacialTimelineId);
+                chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 0.0f); // 表情スロットの速度を0にして固定！
             }
             else
             {
-                chara->StopTimeline(2);
+                chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 1.0f);
+                chara->Timeline.TimelineSequencer.PlayTimeline(604); // 表情：素顔
+            }
+
+            // 3. 視線追従のトグル制御 (チェックを外した時の即時解除)
+            if (!config.LookAtPlayer)
+            {
+                chara->SetTargetId(0);
+                chara->SetRotation(defaultRotation);
             }
 
             activeStates[spawned.InstanceId] = state;
-            logManager?.Info($"ApplyMotion: '{spawned.DisplayName}' -> Timeline: {config.TimelineId}, Loop: {config.IsLoop}, Speed: {state.Speed:F2}x, Facial: {config.FacialTimelineId}, LookAt: {config.LookAtPlayer}");
+            logManager?.Info($"ApplyMotion: '{spawned.DisplayName}' -> Timeline: {config.TimelineId}, Loop: {config.IsLoop}, Speed: {state.Speed:F2}x, Facial: {config.FacialTimelineId}, LookAt: {config.LookAtPlayer}, BodyLimit: {config.BodyTurnAngleLimit}°");
         }
         catch (Exception ex)
         {
@@ -141,11 +150,13 @@ public unsafe class AnimationService : IDisposable
 
         try
         {
+            chara->SetTargetId(0);
             chara->Timeline.BaseOverride = 0;
             chara->Timeline.OverallSpeed = 1.0f;
             chara->Timeline.TimelineSequencer.SetSlotSpeed(0, 1.0f);
+            chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 1.0f);
+            chara->Timeline.TimelineSequencer.PlayTimeline(604); // 表情：素顔
             chara->StopTimeline(0);
-            chara->StopTimeline(2); // 表情スロットも停止
             chara->PlayTimeline(1, 0); // Default Idle
         }
         catch (Exception ex)
@@ -155,7 +166,7 @@ public unsafe class AnimationService : IDisposable
     }
 
     /// <summary>
-    /// 毎フレームのループ監視、速度維持、視線追従更新
+    /// 毎フレームのループ監視、速度維持、表情固定、視線追従更新
     /// </summary>
     private void OnFrameworkUpdate(IFramework _)
     {
@@ -176,7 +187,7 @@ public unsafe class AnimationService : IDisposable
 
                 state.TicksSinceApply++;
 
-                // 初期スポーン直後の非同期モデルロード(Glamourer/Penumbra)完了を待って、30フレーム(約0.5秒)後に再同期
+                // A. 初期スポーン直後の非同期モデルロード(Glamourer/Penumbra)完了を待って、30フレーム(約0.5秒)後に再同期
                 if (state.TicksSinceApply == 30)
                 {
                     if (state.TimelineId > 0)
@@ -185,18 +196,25 @@ public unsafe class AnimationService : IDisposable
                     }
                     if (state.FacialTimelineId > 0)
                     {
-                        chara->PlayTimeline(state.FacialTimelineId, 2);
+                        chara->Timeline.TimelineSequencer.PlayTimeline(state.FacialTimelineId);
+                        chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 0.0f);
                     }
                 }
 
-                // A. 速度維持 (ゲーム内部の更新で上書きされるのを防ぐ)
+                // B. モーション速度維持
                 if (state.Speed > 0.01f && MathF.Abs(state.Speed - 1.0f) > 0.01f)
                 {
                     chara->Timeline.OverallSpeed = state.Speed;
                     chara->Timeline.TimelineSequencer.SetSlotSpeed(0, state.Speed);
                 }
 
-                // B. ループ維持 (TickReplays)
+                // C. 表情スロットの速度0（固定）を維持
+                if (state.FacialTimelineId > 0)
+                {
+                    chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 0.0f);
+                }
+
+                // D. ループ維持 (TickReplays)
                 if (state.IsLoop && state.TimelineId > 0 && state.TicksSinceApply > 15)
                 {
                     if (chara->Timeline.BaseOverride != state.TimelineId)
@@ -205,7 +223,7 @@ public unsafe class AnimationService : IDisposable
                     }
                 }
 
-                // C. 視線追従 (LookAt Player)
+                // E. 視線追従 (LookAt Player) & 体幹角度制御
                 if (state.LookAtPlayer && localPlayer != null && myEntityId != 0)
                 {
                     float dx = myPos.X - chara->Position.X;
@@ -214,16 +232,34 @@ public unsafe class AnimationService : IDisposable
 
                     if (distSq <= state.LookAtMaxDistance * state.LookAtMaxDistance && distSq > 0.04f)
                     {
-                        // 1. ゲームネイティブの視線・首の追従
+                        // 1. 首・目線は常にネイティブでプレイヤーを追従！
                         chara->SetTargetId(myEntityId);
 
-                        // 2. 自キャラの方向へ滑らかに向き（体幹）を補正
-                        float targetRot = MathF.Atan2(dx, dz);
-                        float currentRot = chara->Rotation;
-                        float angleDiff = NormalizeAngle(targetRot - currentRot);
-                        float smoothedRot = currentRot + angleDiff * 0.15f;
+                        // 2. 体幹（全身）の回転制御
+                        if (state.BodyTurnAngleLimit <= 0.01f)
+                        {
+                            // 0度の場合：体は一切回さず、初期向きを厳格に維持（顔と目線のみ追従！）
+                            float currentRot = chara->Rotation;
+                            float angleDiff = NormalizeAngle(state.OriginalRotation - currentRot);
+                            if (MathF.Abs(angleDiff) > 0.01f)
+                            {
+                                chara->SetRotation(currentRot + angleDiff * 0.15f);
+                            }
+                        }
+                        else
+                        {
+                            // 角度制限がある場合：初期向きからの差分を制限角内にクランプ
+                            float targetRot = MathF.Atan2(dx, dz);
+                            float desiredDiff = NormalizeAngle(targetRot - state.OriginalRotation);
+                            float maxRad = state.BodyTurnAngleLimit * (MathF.PI / 180.0f);
+                            float clampedDiff = Math.Clamp(desiredDiff, -maxRad, maxRad);
+                            float targetClampedRot = NormalizeAngle(state.OriginalRotation + clampedDiff);
 
-                        chara->SetRotation(smoothedRot);
+                            float currentRot = chara->Rotation;
+                            float turnDiff = NormalizeAngle(targetClampedRot - currentRot);
+                            float smoothedRot = currentRot + turnDiff * 0.15f;
+                            chara->SetRotation(smoothedRot);
+                        }
                     }
                     else
                     {

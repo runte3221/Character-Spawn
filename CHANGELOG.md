@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.73] - 2026-10-03
+### Added
+- **LookAt Player の体幹回転制限スライダー (`BodyTurnAngleLimit`) (`Models/SceneData.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:
+  - `0°（Face & Eyes Only）`: 体幹は一切回さず初期向きを固定したまま、首と視線のみがプレイヤーを追従（周囲を回っても体がぐるぐる回るのを完全防止）。
+  - `> 0°（1°〜180°）`: 指定した許容角度の範囲内でのみ体幹もプレイヤーの方へ向け、制限角度（真後ろなど）を超えた場合は角度上限で止まり首のみが追従。
+  - LookAt のチェックを外した瞬間に `SetTargetId(0)` と初期回転への復帰を即座に発行し、リアルタイムでの解除を完全実現。
+- **モーションカテゴリ分類フィルター (`UI/SceneEditWindow.cs`, `Services/GameDataService.cs`)**:
+  - `All`, `Emotes`, `NPC`, `Monster`, `Battle`, `General` のカテゴリ選択ドロップダウンを追加。
+  - `human_sp/`, `event_base/`, `event/`, `speak/`, `resident/`, `idle_sp/` などの NPC 演技・会話・固有モーション（2,000件以上）に `[NPC]` タグを明記し、「NPC」カテゴリ選択やキーワード検索で簡単に抽出可能に。
+- **表情固定の完全動作化 (Brio DFC 準拠のフリーズ機構) (`Services/GameDataService.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:
+  - `Emote` シートの表情カテゴリ（`EmoteCategory == 3`）から「表情：笑顔」「表情：口をすぼめる」「表情：ウィンク右」など全29種類のゲーム内表情を日本語名で完全抽出。
+  - 表情タイムライン再生直後にスロット2（Facial）の再生速度を `0.0f` にフリーズ（一時停止）することで、ワンショット表情アニメーションが元に戻るのを防ぎ、待機モーションを動かしたまま表情だけを永久固定する機構を確立。
+  - 表情解除時は素顔（604）を再生して自然にデフォルト表情へ復帰。
+
 ## [0.1.72] - 2026-10-03
 ### Fixed
 - **表情選択（Facial Expression）の完全修正 (`Services/GameDataService.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:
