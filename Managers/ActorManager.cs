@@ -996,43 +996,49 @@ public unsafe class ActorManager : IDisposable
         // パイプライン A: 通常の Glamourer & Penumbra & Customize+ (AQR 準拠)
         // =========================================================================
 
-        // 1. Penumbra コレクションの適用 (Guid渡し & 直後 RedrawObject)
+        // 1. Penumbra コレクションの適用 (Guid渡し)
+        bool penSuccess = false;
         if (penumbraIpc.IsAvailable && !string.IsNullOrWhiteSpace(template.PenumbraCollectionName))
         {
-            bool penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
+            penSuccess = penumbraIpc.SetCollectionForActor(template.PenumbraCollectionName, actorIndex);
             logManager?.Info($"Penumbra SetCollection '{template.PenumbraCollectionName}' on Global#{actorIndex}: {penSuccess}");
-            if (penSuccess)
-            {
-                penumbraIpc.Redraw(actorIndex);
-            }
         }
 
         // 2. Glamourer デザインの適用 (Guid 指定または PlayerClone)
+        bool glamApplied = false;
         if (glamourerIpc.IsAvailable)
         {
             string? designString = template.GlamourerDesignString;
 
             if (!string.IsNullOrWhiteSpace(designString))
             {
-                bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
-                logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex} ('{spawned?.PuppetName}'): {glamSuccess}");
+                glamApplied = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
+                logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex} ('{spawned?.PuppetName}'): {glamApplied}");
             }
             else if (template.SourceType == CharacterSourceType.PlayerClone)
             {
                 var playerDesign = glamourerIpc.GetCustomization(0);
                 if (!string.IsNullOrWhiteSpace(playerDesign))
                 {
-                    bool glamSuccess = glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex, spawned?.PuppetName);
-                    logManager?.Info($"Applied player customization clone via Glamourer to Global#{actorIndex} ('{spawned?.PuppetName}'): {glamSuccess}");
+                    glamApplied = glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex, spawned?.PuppetName);
+                    logManager?.Info($"Applied player customization clone via Glamourer to Global#{actorIndex} ('{spawned?.PuppetName}'): {glamApplied}");
                 }
             }
         }
 
-        // 3. 武器の表示・非表示
+        // 3. Glamourer が適用されなかった場合のみ、Penumbra 側で明示的に Redraw をトリガー
+        // ※ Glamourer が適用された場合は、Glamourer 自身の再描画によって Penumbra コレクションが新しい外見で
+        // 一発同期適用されるため、直前の自キャラ骨格での不要な先行 Redraw を完全に排除し、武器やモデルの一瞬のチラつき・二重負荷を根絶
+        if (penSuccess && !glamApplied)
+        {
+            penumbraIpc.Redraw(actorIndex);
+        }
+
+        // 4. 武器の表示・非表示
         chara->DrawData.HideWeapons(!template.WeaponVisible);
         chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-        // 4. Customize+ Profile の適用
+        // 5. Customize+ Profile の適用
         ApplyCustomizePlusProfile(chara, actorIndex, template, spawned);
 
         if (spawned != null) spawned.IsReady = true;

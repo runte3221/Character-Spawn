@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.54] - 2026-10-03
+### Fixed
+- **Glamourer 適用前の先行 Penumbra Redraw 抑止による外見・武器の一瞬のチラつき解消**:
+  - **根本原因の完全解明 (`dalamud.log` 11:44〜11:45 解析)**:
+    - パイプライン A（通常の Glamourer + Penumbra テンプレート）において、Penumbra コレクションを紐付けた直後に `penumbraIpc.Redraw(actorIndex)` を呼んでいた。
+    - パペットはスポーン直後、安全な骨格確立のため自キャラの装備・武器が一旦コピーされる仕様となっている。
+    - Glamourer 適用前に Penumbra Redraw を呼ぶと、まだ「自キャラの装備・武器」の状態のアクターに対して Penumbra が先行して再描画を開始してしまう。
+    - その直後に Glamourer の `ApplyDesignToActor` が走り、二重のリロードと Penumbra Mod の非同期ディスク読み込みが競合し、数フレーム（約100ms）の間だけ自キャラの武器やモデルが画面にチラつく現象が発生していた。
+  - **解決策 (`Managers/ActorManager.cs`)**:
+    - Glamourer が適用される場合は、直前の不要な先行 `Penumbra.Redraw` をスキップするよう整流化。
+    - Glamourer 自身の再描画により、Penumbra コレクションが新しい外見で一発同期適用されるため、チラつきや二重描画負荷が完全に解消。
+    - Glamourer が未設定（Penumbra 単体）の場合のみフォールバックとして `Penumbra.Redraw` を呼ぶ安全ガードを設け、既存の Penumbra 単体運用も 100% 保証。
+  - **完全隔離の保証**:
+    - MCDF パイプライン、人型NPC パイプライン（`HumanoidNpcApplyJob`）、モンスター／デミヒューマン パイプライン、CustomizePlus パイプラインには一切触れていません。
+
 ## [0.1.53] - 2026-10-03
 ### Fixed
 - **クォート付き CSV 解析 (`ParseCsvLine`) の導入によるフォーギヴン・テスリーン等 17 体の Mob 欠損解消**:
