@@ -726,9 +726,7 @@ public unsafe class ActorManager : IDisposable
         bool glamSuccess = false;
         if (glamourerIpc != null && glamourerIpc.IsAvailable)
         {
-            var player = objectTable.Length > 0 ? objectTable[0] as ICharacter : null;
-            string? localPlayerName = player?.Name.TextValue;
-            glamSuccess = glamourerIpc.ApplyNpcAppearance(actorIndex, template.CustomizeData, template.NpcEquipmentModelIds, showHeadgear: true, spawned?.PuppetName, localPlayerName);
+            glamSuccess = glamourerIpc.ApplyNpcAppearance(actorIndex, template.CustomizeData, template.NpcEquipmentModelIds, showHeadgear: true, spawned?.PuppetName);
             logManager?.Info($"[Pipeline C: NPC] Glamourer ApplyNpcAppearance result on Global#{actorIndex}: {glamSuccess}");
         }
 

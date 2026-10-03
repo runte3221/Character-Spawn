@@ -49,9 +49,20 @@
   - [x] `Glamourer.GetStateBase64` および `Glamourer.GetStateBase64Name` の IPC サブスクライバーを追加。
   - [x] `GetState(actorIndex)` および `GetStateByName(actorName)` で `GetStateBase64` を最優先で呼び出し、取得した Base64 文字列を既存の `ParseDesignString` で `JObject` に復号する。
   - [x] `ApplyStateJObject` において、`CompressToBase64` で Base64 文字列（`string`）を生成して `ApplyState` に渡すことで、適用時も型境界トラブルを完全回避。
-- [ ] **ドキュメント・リリース**:
-  - [ ] `CHANGELOG.md` 更新（v0.1.46.0）
-  - [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.46.0`)
-  - [ ] 実機検証依頼（ユウギリ、カヌ・エ・センナの固有顔・髪型が正常描画されることの確認）
+- [x] **ドキュメント・リリース**:
+  - [x] `CHANGELOG.md` 更新（v0.1.46.0）
+  - [x] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.46.0`)
+  - [x] 実機検証: MCDF 適用時に影響（自キャラが出現）が発生したことを検知。直ちにロールバックを決定。
+
+## 6. 安定版復元（ロールバック）と独立アプローチによる慎重分析フェーズ (v0.1.47.0)
+- [x] **即時ロールバック**:
+  - `Services/GlamourerIpc.cs` および `Managers/ActorManager.cs` を MCDF が確実に動作していた v0.1.44.0 のコードベースに直ちに復元。
+- [x] **リリース実行**:
+  - `CHANGELOG.md` 更新（v0.1.47.0）
+  - 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.47.0`)
+- [ ] **MCDF・NPC・Monster の競合ゼロ保証分析**:
+  - MCDF パイプライン（Pipeline A/B）、Monster パイプライン（Pipeline D）、NPC パイプライン（Pipeline C）の各パイプラインの独立性を再確認。
+  - NPC 固有顔問題の根本原因（なぜ `ApplyState` で `ActorNotFound` が出たのか、なぜ直接書き込みだとサニタイズされるのか）を徹底調査。
+  - 既存パイプラインに一切の副作用を与えない安全確実な修正案を設計。
 
 

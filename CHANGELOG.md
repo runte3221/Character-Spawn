@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.47] - 2026-10-03
+### Reverted
+- **安全な安定状態への復元（ロールバック）**:
+  - v0.1.45〜v0.1.46 の変更により MCDF 適用時に影響（自キャラが出現する現象）が生じたため、MCDF および既存の各パイプラインが完全に正常動作していた v0.1.44.0 の安定状態に `Services/GlamourerIpc.cs` および `Managers/ActorManager.cs` を直ちに復元。
+  - NPC 固有顔問題の修正は既存機能に影響を与えない独立したアプローチで慎重に再設計・再実装を行う。
+
 ## [0.1.46] - 2026-10-03
 ### Fixed
 - **ValueTuple JObject 型不一致例外の根絶と GetStateBase64 黄金律導入（ユウギリ・カヌ・エ・センナ等のNPC固有顔・髪型の完全反映）**:

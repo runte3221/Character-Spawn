@@ -22,19 +22,16 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<Dictionary<Guid, string>>? getDesignListV2;
     private readonly ICallGateSubscriber<Guid, string, uint, ulong, int>? applyDesignNameV2Ulong;
     private readonly ICallGateSubscriber<Guid, string, uint, uint, int>? applyDesignNameV2Uint;
-    private readonly ICallGateSubscriber<object, string, uint, ulong, int>? applyStateNameV2Ulong;
-    private readonly ICallGateSubscriber<object, string, uint, uint, int>? applyStateNameV2Uint;
+    private readonly ICallGateSubscriber<string, string, uint, ulong, int>? applyStateNameV2Ulong;
+    private readonly ICallGateSubscriber<string, string, uint, uint, int>? applyStateNameV2Uint;
     private readonly ICallGateSubscriber<Guid, int, uint, ulong, int>? applyDesignV2Ulong;
     private readonly ICallGateSubscriber<Guid, int, uint, uint, int>? applyDesignV2Uint;
-    private readonly ICallGateSubscriber<object, int, uint, ulong, int>? applyStateV2Ulong;
-    private readonly ICallGateSubscriber<object, int, uint, uint, int>? applyStateV2Uint;
+    private readonly ICallGateSubscriber<string, int, uint, ulong, int>? applyStateV2Ulong;
+    private readonly ICallGateSubscriber<string, int, uint, uint, int>? applyStateV2Uint;
     private readonly ICallGateSubscriber<int, uint, ulong, int>? reapplyStateV2Ulong;
     private readonly ICallGateSubscriber<int, uint, uint, int>? reapplyStateV2Uint;
     private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
-    private readonly ICallGateSubscriber<int, uint, (int, string?)>? getStateBase64;
-    private readonly ICallGateSubscriber<string, uint, (int, string?)>? getStateBase64Name;
     private readonly ICallGateSubscriber<int, uint, (int, JObject?)>? getStateV2;
-    private readonly ICallGateSubscriber<string, uint, (int, JObject?)>? getStateNameV2;
     private readonly ICallGateSubscriber<int, (int, JObject?)>? getStateLegacy;
     private readonly ICallGateSubscriber<Guid, JObject?>? getDesignJObject;
     private readonly ICallGateSubscriber<int, uint, ulong, int>? revertStateV2Ulong;
@@ -78,19 +75,16 @@ public class GlamourerIpc
             getDesignJObject = pi.GetIpcSubscriber<Guid, JObject?>("Glamourer.GetDesignJObject");
             applyDesignNameV2Ulong = pi.GetIpcSubscriber<Guid, string, uint, ulong, int>("Glamourer.ApplyDesignName");
             applyDesignNameV2Uint = pi.GetIpcSubscriber<Guid, string, uint, uint, int>("Glamourer.ApplyDesignName");
-            applyStateNameV2Ulong = pi.GetIpcSubscriber<object, string, uint, ulong, int>("Glamourer.ApplyStateName");
-            applyStateNameV2Uint = pi.GetIpcSubscriber<object, string, uint, uint, int>("Glamourer.ApplyStateName");
+            applyStateNameV2Ulong = pi.GetIpcSubscriber<string, string, uint, ulong, int>("Glamourer.ApplyStateName");
+            applyStateNameV2Uint = pi.GetIpcSubscriber<string, string, uint, uint, int>("Glamourer.ApplyStateName");
             applyDesignV2Ulong = pi.GetIpcSubscriber<Guid, int, uint, ulong, int>("Glamourer.ApplyDesign");
             applyDesignV2Uint = pi.GetIpcSubscriber<Guid, int, uint, uint, int>("Glamourer.ApplyDesign");
-            applyStateV2Ulong = pi.GetIpcSubscriber<object, int, uint, ulong, int>("Glamourer.ApplyState");
-            applyStateV2Uint = pi.GetIpcSubscriber<object, int, uint, uint, int>("Glamourer.ApplyState");
+            applyStateV2Ulong = pi.GetIpcSubscriber<string, int, uint, ulong, int>("Glamourer.ApplyState");
+            applyStateV2Uint = pi.GetIpcSubscriber<string, int, uint, uint, int>("Glamourer.ApplyState");
             reapplyStateV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.ReapplyState");
             reapplyStateV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.ReapplyState");
             getCustomizationFromActor = pi.GetIpcSubscriber<int, string?>("Glamourer.GetCustomizationFromActor");
-            getStateBase64 = pi.GetIpcSubscriber<int, uint, (int, string?)>("Glamourer.GetStateBase64");
-            getStateBase64Name = pi.GetIpcSubscriber<string, uint, (int, string?)>("Glamourer.GetStateBase64Name");
             getStateV2 = pi.GetIpcSubscriber<int, uint, (int, JObject?)>("Glamourer.GetState");
-            getStateNameV2 = pi.GetIpcSubscriber<string, uint, (int, JObject?)>("Glamourer.GetStateName");
             getStateLegacy = pi.GetIpcSubscriber<int, (int, JObject?)>("Glamourer.GetState");
             revertStateV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
             revertStateV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.RevertState");
@@ -467,12 +461,11 @@ public class GlamourerIpc
             catch { }
         }
 
-        object payload = (object?)parsedNonGuidObj ?? targetStateStringIndex;
         if (applyStateV2Ulong != null)
         {
             try
             {
-                int res = applyStateV2Ulong.InvokeFunc(payload, actorIndex, 0, 7UL);
+                int res = applyStateV2Ulong.InvokeFunc(targetStateStringIndex, actorIndex, 0, 7UL);
                 log.Information($"Glamourer ApplyState (ulong flags=7) on actorIndex {actorIndex} ('{actorName}') result: {res}");
                 if (res == 0) return true;
             }
@@ -486,7 +479,7 @@ public class GlamourerIpc
         {
             try
             {
-                int res = applyStateV2Uint.InvokeFunc(payload, actorIndex, 0, 7U);
+                int res = applyStateV2Uint.InvokeFunc(targetStateStringIndex, actorIndex, 0, 7U);
                 log.Information($"Glamourer ApplyState (uint flags=7) on actorIndex {actorIndex} ('{actorName}') result: {res}");
                 if (res == 0) return true;
             }
@@ -556,36 +549,16 @@ public class GlamourerIpc
     {
         if (!IsAvailable) return null;
 
-        // 1. 最優先: GetStateBase64 (ALC / Newtonsoft.Json 型衝突を 100% 回避)
-        if (getStateBase64 != null)
-        {
-            try
-            {
-                var (ec, base64) = getStateBase64.InvokeFunc(actorIndex, 0);
-                if (ec == 0 && !string.IsNullOrWhiteSpace(base64))
-                {
-                    var jobj = ParseDesignString(base64);
-                    if (jobj != null) return jobj;
-                }
-                log.Information($"Glamourer GetStateBase64 on actorIndex {actorIndex} returned ec={ec}, base64Null={string.IsNullOrWhiteSpace(base64)}");
-            }
-            catch (Exception ex)
-            {
-                log.Warning($"Glamourer GetStateBase64 failed on actorIndex {actorIndex}: {ex.Message}");
-            }
-        }
-
         if (getStateV2 != null)
         {
             try
             {
                 var (ec, state) = getStateV2.InvokeFunc(actorIndex, 0);
                 if (ec == 0 && state != null) return state;
-                log.Information($"Glamourer GetState V2 on actorIndex {actorIndex} returned ec={ec}, stateNull={state == null}");
             }
             catch (Exception ex)
             {
-                log.Debug($"Glamourer GetState V2 failed on actorIndex {actorIndex}: {ex.Message}");
+                log.Debug($"Glamourer GetState V2 failed: {ex.Message}");
             }
         }
 
@@ -605,46 +578,6 @@ public class GlamourerIpc
         return null;
     }
 
-    public JObject? GetStateByName(string actorName)
-    {
-        if (!IsAvailable || string.IsNullOrWhiteSpace(actorName)) return null;
-
-        // 1. 最優先: GetStateBase64Name (ALC / Newtonsoft.Json 型衝突を 100% 回避)
-        if (getStateBase64Name != null)
-        {
-            try
-            {
-                var (ec, base64) = getStateBase64Name.InvokeFunc(actorName, 0);
-                if (ec == 0 && !string.IsNullOrWhiteSpace(base64))
-                {
-                    var jobj = ParseDesignString(base64);
-                    if (jobj != null) return jobj;
-                }
-                log.Information($"Glamourer GetStateBase64Name for '{actorName}' returned ec={ec}, base64Null={string.IsNullOrWhiteSpace(base64)}");
-            }
-            catch (Exception ex)
-            {
-                log.Warning($"Glamourer GetStateBase64Name failed for '{actorName}': {ex.Message}");
-            }
-        }
-
-        if (getStateNameV2 != null)
-        {
-            try
-            {
-                var (ec, state) = getStateNameV2.InvokeFunc(actorName, 0);
-                if (ec == 0 && state != null) return state;
-                log.Information($"Glamourer GetStateName V2 for '{actorName}' returned ec={ec}, stateNull={state == null}");
-            }
-            catch (Exception ex)
-            {
-                log.Debug($"Glamourer GetStateName V2 failed for '{actorName}': {ex.Message}");
-            }
-        }
-
-        return null;
-    }
-
     public enum NpcApplyResult
     {
         Applied,
@@ -657,7 +590,7 @@ public class GlamourerIpc
     /// 26バイト CustomizeData と 10スロットの EquipmentModelIds を Glamourer JObject にマッピングして適用
     /// スポーン直後でアクターのステートキャッシュがコールドな場合は、LocalPlayer (0) のステート構造をひな形としてディープコピーして即時適用する
     /// </summary>
-    public NpcApplyResult TryApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null, string? localPlayerName = null)
+    public NpcApplyResult TryApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null)
     {
         if (!IsAvailable) return NpcApplyResult.Failed;
 
@@ -667,18 +600,11 @@ public class GlamourerIpc
             // スポーン直後の新規パペット(actorIndex 200)は Glamourer 内部キャッシュがまだコールドで GetState が null になる。
             // そのため、自キャラ(LocalPlayer Index 0)のステート構造をひな形(Template)としてディープコピーして使用する！
             state = GetState(0)?.DeepClone() as JObject;
-            if (state == null && !string.IsNullOrWhiteSpace(localPlayerName))
-            {
-                state = GetStateByName(localPlayerName)?.DeepClone() as JObject;
-            }
-            log.Information($"Glamourer TryApplyNpcAppearance: Target actor #{actorIndex} state is cold, using LocalPlayer template for NPC transformation (template found: {state != null}).");
+            log.Information($"Glamourer TryApplyNpcAppearance: Target actor #{actorIndex} state is cold, using LocalPlayer template for NPC transformation.");
         }
 
         if (state == null)
-        {
-            log.Warning($"Glamourer TryApplyNpcAppearance: Both target actor #{actorIndex} and LocalPlayer (0 / '{localPlayerName}') returned null state.");
             return NpcApplyResult.StateNull;
-        }
 
         // 1. CustomizeData (26バイト) の適用
         if (customizeData != null && customizeData.Length >= 26 && state["Customize"] is JObject custObj)
@@ -708,68 +634,16 @@ public class GlamourerIpc
             if (eqObj["Weapon"] is JObject wv) wv["Apply"] = false;
         }
 
-        // 6. ApplyState で JObject を直接一括適用
-        bool success = ApplyStateJObject(state, actorIndex, actorName);
+        // 6. ApplyState で一括適用
+        string stateJson = state.ToString(Newtonsoft.Json.Formatting.None);
+        bool success = ApplyDesignToActor(stateJson, actorIndex, actorName);
         log.Information($"Glamourer TryApplyNpcAppearance on actor #{actorIndex} ('{actorName}') result: {success}");
         return success ? NpcApplyResult.Applied : NpcApplyResult.Failed;
     }
 
-    public bool ApplyStateJObject(JObject state, int actorIndex, string? actorName = null)
+    public bool ApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null)
     {
-        if (!IsAvailable || state == null) return false;
-        if (actorIndex <= 0)
-        {
-            log.Warning($"ApplyStateJObject: Refusing to apply to LocalPlayer or invalid index ({actorIndex}).");
-            return false;
-        }
-
-        // Base64 文字列として圧縮して渡す（ALC / Newtonsoft.Json 型境界を完全回避）
-        string? base64 = null;
-        try
-        {
-            base64 = CompressToBase64(state);
-        }
-        catch (Exception ex)
-        {
-            log.Warning($"Failed to compress state JObject to Base64: {ex.Message}");
-        }
-
-        object payload = (object?)base64 ?? state;
-
-        if (applyStateV2Ulong != null)
-        {
-            try
-            {
-                int res = applyStateV2Ulong.InvokeFunc(payload, actorIndex, 0, 7UL);
-                log.Information($"Glamourer ApplyState (ulong flags=7, isBase64={base64 != null}) on actorIndex {actorIndex} ('{actorName}') result: {res}");
-                if (res == 0) return true;
-            }
-            catch (Exception ex)
-            {
-                log.Warning($"Glamourer ApplyState V2 (ulong) failed for actorIndex {actorIndex}: {ex.Message}");
-            }
-        }
-
-        if (applyStateV2Uint != null)
-        {
-            try
-            {
-                int res = applyStateV2Uint.InvokeFunc(payload, actorIndex, 0, 7U);
-                log.Information($"Glamourer ApplyState (uint flags=7, isBase64={base64 != null}) on actorIndex {actorIndex} ('{actorName}') result: {res}");
-                if (res == 0) return true;
-            }
-            catch (Exception ex)
-            {
-                log.Warning($"Glamourer ApplyState V2 (uint) failed for actorIndex {actorIndex}: {ex.Message}");
-            }
-        }
-
-        return false;
-    }
-
-    public bool ApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null, string? localPlayerName = null)
-    {
-        return TryApplyNpcAppearance(actorIndex, customizeData, equipmentModelIds, showHeadgear, actorName, localPlayerName) == NpcApplyResult.Applied;
+        return TryApplyNpcAppearance(actorIndex, customizeData, equipmentModelIds, showHeadgear, actorName) == NpcApplyResult.Applied;
     }
 
     private static readonly (string Key, ulong EquipType)[] Slots =
