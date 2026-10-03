@@ -300,8 +300,8 @@ public class GameDataService
                 while ((line = reader.ReadLine()) != null)
                 {
                     if (string.IsNullOrWhiteSpace(line)) continue;
-                    var parts = line.Split(',');
-                    if (parts.Length < 9) continue;
+                    var parts = ParseCsvLine(line);
+                    if (parts.Count < 9) continue;
 
                     if (!uint.TryParse(parts[0], out var baseId)) continue;
                     uint.TryParse(parts[1], out var nameId);
@@ -377,6 +377,36 @@ public class GameDataService
 
         logManager?.Info($"Built Monster fallback cache: {list.Count} monsters loaded.");
         return list;
+    }
+
+    /// <summary>
+    /// クォート文字（"..."）内のカンマを保護する RFC 4180 / HDM 準拠の CSV 行パーサー
+    /// </summary>
+    private static List<string> ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        var sb = new StringBuilder();
+        bool inQuotes = false;
+
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(sb.ToString().Trim(' ', '\t', '"'));
+                sb.Clear();
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        result.Add(sb.ToString().Trim(' ', '\t', '"'));
+        return result;
     }
 
     private List<TimelineEntry> BuildTimelineCache()

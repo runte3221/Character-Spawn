@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.53] - 2026-10-03
+### Fixed
+- **クォート付き CSV 解析 (`ParseCsvLine`) の導入によるフォーギヴン・テスリーン等 17 体の Mob 欠損解消**:
+  - **根本原因の完全解明**:
+    - `mob-model-index.csv` 内の `"Tesleen, the Forgiven"`（フォーギヴン・テスリーン）等のデータ行において、ナイーブな `line.Split(',')` がクォート文字内のカンマを区切りと誤認し、カラムインデックスが後方にずれていた。
+    - その結果、本来 `ModelCharaId`（2632）が入るべき位置にテキスト `" the Forgiven\""` が渡り、`uint.TryParse` に失敗して行ごとスキップ（除外）されていた。
+    - 英語名にカンマを含む計 17 体（フォーギヴン・テスリーン、美眼／楽聖のインク＝ゾン、統制者ハシュマリム、背徳の皇帝マティウス、暗黒の雲ファムフリート、魔人ベリアス、聖天使アルテマ等）がすべて同様にリストから脱落していた。
+  - **解決策 (`Services/GameDataService.cs`)**:
+    - RFC 4180 / HDM 準拠の CSV 行パーサー関数 `ParseCsvLine` を新設。
+    - クォート文字（`"..."`）内のカンマを保護しつつ各フィールドを正しく分割し、前後のクォートや空白をトリム。
+    - これにより `BNpcName` シート（ID: 8300）からの日本語名「フォーギヴン・テスリーン」の解決およびモデル ID（2632）の読み込みが 100% 正常に機能し、全 17 体が一覧に復元。
+  - **完全隔離の保証**:
+    - 変更は `GameDataService.cs` の CSV 解析関数のみに留まり、Glamourer、Penumbra、CustomizePlus、NPC、スポーン処理パイプラインには一切触れていません。
+
 ## [0.1.52] - 2026-10-03
 ### Fixed
 - **Customize+ 公式一時プロファイル IPC (`SetTemporaryProfile`) への完全移行と設定ファイル汚染の根絶**:
