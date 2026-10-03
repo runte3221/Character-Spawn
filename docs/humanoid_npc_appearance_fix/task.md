@@ -22,7 +22,7 @@
   - `template.CustomizeData` が未設定のテンプレートであっても、`template.Name`（例: "ミューヌ", "ユウギリ"）からゲーム内 NPC データベースを即座に逆引きし、ENpcBaseId・外見データを自動解決して補完するフェイルセーフを追加。
 
 ## 3. リリース・検証フェーズ
-- [ ] `CHANGELOG.md` 更新（v0.1.44.0）
-- [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.44.0`)
-- [ ] GitHub Actions ビルド成功＆Fastly CDN キャッシュ失効の自動確認
+- [x] `CHANGELOG.md` 更新（v0.1.44.0）
+- [x] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.44.0`)
+- [x] GitHub Actions ビルド成功＆Fastly CDN キャッシュ失効の自動確認
 - [ ] ゲーム内実機でのミューヌ・ユウギリ正常スポーン確認
