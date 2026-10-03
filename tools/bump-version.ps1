@@ -42,7 +42,17 @@ if (Test-Path $repoJsonPath) {
     Write-Host "  Updated repo.json"
 }
 
-# 4. Strict Validation
+# 4. Update package.json
+$pkgJsonPath = Join-Path $repoRoot "package.json"
+if (Test-Path $pkgJsonPath) {
+    $rawPkg = Get-Content -Raw -Path $pkgJsonPath
+    $shortVer = $Version -replace '\.0$', ''
+    $updatedPkg = $rawPkg -replace '("version"\s*:\s*)"[^"]+"', "`$1`"$shortVer`""
+    Set-Content -Path $pkgJsonPath -Value $updatedPkg -NoNewline
+    Write-Host "  Updated package.json"
+}
+
+# 5. Strict Validation
 Write-Host "Validating all manifests..."
 
 # Validate CharacterSpawn.json
