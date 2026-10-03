@@ -213,6 +213,9 @@ public class GameDataService
                                            t.Id.ToString().Contains(query));
         }
 
+        // エモート（日常・戦闘エモート）を最優先で上位に表示
+        filtered = filtered.OrderByDescending(t => t.IsEmote).ThenBy(t => t.Id);
+
         return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
     }
 
@@ -492,13 +495,27 @@ public class GameDataService
             var key = row.Key.ExtractText();
             if (string.IsNullOrEmpty(key)) continue;
 
-            if (key.StartsWith("fac_", StringComparison.OrdinalIgnoreCase))
+            if (key.Contains("facial/", StringComparison.OrdinalIgnoreCase))
             {
-                list.Add(new TimelineEntry((ushort)row.RowId, key, $"Facial: {key}", false));
+                // "facial/pose/smile" -> "Smile"
+                string friendly = key;
+                if (friendly.StartsWith("facial/pose/", StringComparison.OrdinalIgnoreCase))
+                    friendly = friendly["facial/pose/".Length..];
+                else if (friendly.StartsWith("status/facial/", StringComparison.OrdinalIgnoreCase))
+                    friendly = friendly["status/facial/".Length..];
+                else if (friendly.StartsWith("facial/", StringComparison.OrdinalIgnoreCase))
+                    friendly = friendly["facial/".Length..];
+
+                if (!string.IsNullOrEmpty(friendly))
+                {
+                    friendly = char.ToUpperInvariant(friendly[0]) + friendly[1..];
+                }
+
+                list.Add(new TimelineEntry((ushort)row.RowId, key, $"{friendly} ({key})", false));
             }
         }
 
-        return list;
+        return list.OrderBy(t => t.Description).ToList();
     }
 
     public string GetTerritoryName(uint territoryId)

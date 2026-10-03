@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.72] - 2026-10-03
+### Fixed
+- **表情選択（Facial Expression）の完全修正 (`Services/GameDataService.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:
+  - `ActionTimeline` シートからの表情抽出条件を `facial/`（および `status/facial/`）に修正し、Smile, Angry, Wink, Laugh, Cry など全78種の表情を完全に検出・ロード。
+  - 表情の再生スロットをスロット0（Base）から **スロット2（Facial / ActionTimelineSlots.Facial）** へ変更し、待機モーションを阻害せず表情のみを独立して固定可能に修正。
+  - コンボボックスに分かりやすい表情名（例: `Smile (facial/pose/smile)`）を表示し、キーワード検索も可能に改善。
+- **プレイヤー視線・首・体追従（LookAt Player）の修正 (`Services/AnimationService.cs`)**:
+  - `ObjectTable.SearchById` による検索失敗（COM/GPoseアクターが通常テーブルから取得できない問題）を解消し、`NativeAddress` を用いて直接ネイティブアクターにアクセスする方式へ刷新。
+  - `SetTargetId(localPlayer.EntityId)` によるゲームエンジンネイティブの視線・首の追従と、8m以内の滑らかな体幹方位角補間を確実に実行。
+- **モーション速度（Speed）の適用・維持の修正 (`Services/AnimationService.cs`)**:
+  - `OverallSpeed` に加え、`TimelineSequencer.SetSlotSpeed(0, speed)` によるスロット0の速度強制適用を実装。
+  - ゲーム内部処理による速度上書きを防ぐため、毎フレームの `OnFrameworkUpdate` で指定速度を維持。
+- **モーション一覧件数の拡張とエモート最優先表示 (`Services/GameDataService.cs`, `UI/SceneEditWindow.cs`)**:
+  - 最大表示件数を 100件 から 500件 へ大幅拡張。
+  - 検索欄が空の初期状態で、プレイヤーに馴染み深い日常・戦闘エモート群をリスト最上位に優先ソートして表示。
+- **非同期モデルロード後のモーション再同期 (`Services/AnimationService.cs`)**:
+  - スポーン直後の Glamourer / Penumbra / MCDF のモデル展開完了に合わせて 30フレーム後に自動でモーションと表情を再同期・定着。
+
 ## [0.1.71] - 2026-10-03
 ### Added
 - **アクション・モーション再生基盤 ＆ 視線追従・表情固定対応 (`Services/AnimationService.cs`, `Managers/SceneManager.cs`, `UI/SceneEditWindow.cs`)**:

@@ -537,8 +537,8 @@ public class SceneEditWindow : Window, IDisposable
 
         if (gameDataService != null)
         {
-            var timelines = gameDataService.SearchTimelines(motionSearchQuery, 100);
-            if (ImGui.BeginListBox("##MotionList", new Vector2(-1, 140)))
+            var timelines = gameDataService.SearchTimelines(motionSearchQuery, 500);
+            if (ImGui.BeginListBox("##MotionList", new Vector2(-1, 180)))
             {
                 foreach (var t in timelines)
                 {
@@ -582,10 +582,17 @@ public class SceneEditWindow : Window, IDisposable
         if (gameDataService != null)
         {
             var facials = gameDataService.GetFacialExpressions();
-            ImGui.SetNextItemWidth(-1);
-            if (ImGui.BeginCombo("##FacialCombo", placement.Motion.FacialTimelineId > 0 ? $"Facial ID: {placement.Motion.FacialTimelineId}" : "Select Facial Expression..."))
+            string comboPreview = "(Default / None)";
+            if (placement.Motion.FacialTimelineId > 0)
             {
-                ImGui.InputTextWithHint("##SearchFacial", "Filter facial...", ref facialSearchQuery, 32);
+                var matched = facials.FirstOrDefault(f => f.Id == placement.Motion.FacialTimelineId);
+                comboPreview = matched != null ? $"[{matched.Id}] {matched.Description}" : $"Facial ID: {placement.Motion.FacialTimelineId}";
+            }
+
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.BeginCombo("##FacialCombo", comboPreview))
+            {
+                ImGui.InputTextWithHint("##SearchFacial", "Filter facial (e.g. smile, angry, wink, laugh)...", ref facialSearchQuery, 32);
                 ImGui.Separator();
 
                 if (ImGui.Selectable("(Default / None)", placement.Motion.FacialTimelineId == 0))
@@ -597,11 +604,14 @@ public class SceneEditWindow : Window, IDisposable
 
                 foreach (var f in facials)
                 {
-                    if (!string.IsNullOrWhiteSpace(facialSearchQuery) && !f.Key.Contains(facialSearchQuery, StringComparison.OrdinalIgnoreCase))
+                    if (!string.IsNullOrWhiteSpace(facialSearchQuery) &&
+                        !f.Description.Contains(facialSearchQuery, StringComparison.OrdinalIgnoreCase) &&
+                        !f.Key.Contains(facialSearchQuery, StringComparison.OrdinalIgnoreCase) &&
+                        !f.Id.ToString().Contains(facialSearchQuery))
                         continue;
 
                     bool isSelected = placement.Motion.FacialTimelineId == f.Id;
-                    if (ImGui.Selectable($"[{f.Id}] {f.Key}", isSelected))
+                    if (ImGui.Selectable($"[{f.Id}] {f.Description}", isSelected))
                     {
                         placement.Motion.FacialTimelineId = f.Id;
                         sceneManager.SaveScenes();
