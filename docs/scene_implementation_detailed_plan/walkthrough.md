@@ -141,4 +141,55 @@
   2. スポーン直後、MCDF が自キャラ（プレイヤー）の素体ではなく、MCDF に内包された本来の顔・髪型・衣装で 100% 確実に描画されることを確認（ログで `Phase 0 Deferred Glamourer ApplyDesign result: True` が出力されることを確認）。
   3. CustomizePlus の体型および Penumbra の MOD テクスチャも崩れず完璧に適用されていることを確認。
 
+---
+
+## 6. v0.1.62.0 不具合と解決策（FF14 公式名前規則違反による全IPC停止の完全復旧）
+
+### 1. 不具合事象
+- `v0.1.61.0` 更新後、Show を実行した際にモンスター・デミヒューマン以外の全アクター（Chonk、MCDF、NPC）の外見・体型が破壊され、素体化。
+### 2. ログ解析による根本原因
+- スロット固定化のために導入した `Actor CS00`, `Actor CS01` などのパペット名に含まれる数字（0〜9）が、FF14 の公式キャラクター名バリデーション規則（`VerifyPlayerName`）に違反。
+- ゲームエンジン内部で名前が `Character: A.C` などの不正文字列に破損。
+- その結果、Glamourer（`ec=2` InvalidActor）、Penumbra（`ec=16` InvalidIdentifier）、CustomizePlus（`ActorNotFoundException`）の全プラグイン IPC がアクターを見失い全停止。
+### 3. 解決策
+- 数字を完全排除し、FF14 公式名前規則（Forename/Surname 各3〜15文字、ASCII英字のみ、頭文字大文字）に 100% 適合する **英字フォネティックコード命名（`Puppet Alpha`, `Puppet Bravo` ... `Puppet Zulu`）** に全面移行。
+- COM スロット（#0〜#25）と 1対1 で決定論的に紐づけ、全プラグインがアクターを確実に認識できるように完全復旧。
+
+---
+
+## 7. v0.1.63.0 不具合と解決策（DirectX レンダラー競合クラッシュ 0xC0000005 の完全根絶）
+
+### 1. 不具合事象
+- `v0.1.62.0` 更新後、Show を実行した瞬間にゲームが強制終了（Access Violation 例外 `0xC0000005`）。
+### 2. クラッシュダンプ解析による根本原因
+- クラッシュアドレス: `ffxiv_dx11.exe+44CAAE`（`Client::Graphics::Scene::Weapon.vf105+0xDE`）
+- コールスタック:
+  `World.UpdateRender` -> `Weapon.UpdateRender` -> `CharacterBase.UpdateRender` -> `Weapon.vf105`
+- 直接の引き金:
+  1. **NPC における危険な Penumbra Redraw**: `HumanoidNpcApplyJob` で `penumbraIpc.Redraw` を呼んだ同フレームで `EnableDraw()` を呼んでいたため、非同期破棄中の武器 DrawObject に DirectX レンダラースレッドがアクセスして NULL 参照クラッシュ。
+  2. **初期スポーン時の激しい描画トグル**: COM 作成直後に無条件で即時 `EnableDraw()` を呼び、直後に NPC / モンスターで `DisableDraw()` する激しいトグルが発生し、レンダラーの描画ツリーと競合。
+  3. **モンスターへの存在しない武器操作**: 武器を持たないモンスター（`ModelCharaId > 0`）に対して `HideWeapons(true)` を呼び出し、内部ポインタが破損。
+### 3. 解決策
+- **安全な武器表示制御ヘルパー (`SafeSetWeaponVisibility`) の導入**:
+  - モンスター（`ModelCharaId > 0`）への武器操作を完全遮断。
+  - 人型アクターも `DrawObject != null`（描画オブジェクト生成済み）を確認した上で `HideWeapons` を呼び出し、未生成時・破棄時のクラッシュを物理遮断。
+- **NPC からの Penumbra Redraw 完全撤去**: HDM 準拠（Glamourer 適用 -> `DisableDraw` -> 2 ticks 待機後 `IsReadyToDraw` -> `EnableDraw`）に純化。
+- **初期スポーン時の即時 `EnableDraw()` 撤廃**: 各パイプラインの準備完了時に一度だけ呼ぶライフサイクルを確立。
+- **スタッガースポーン間隔の安全化**: `DefaultSpawnIntervalTicks` を 2 フレームから 4 フレーム（~66ms）に引き上げ、DirectX 競合を完全防止。
+
+---
+
+## 8. v0.1.64.0 不具合と解決策（Chonk 外見抜け・自キャラ素体化の完全根絶）
+
+### 1. 不具合事象
+- 男性キャラ（Chonk 等の Glamourer デザイン指定アクター）で、自キャラの見た目のまま CustomizePlus の体型だけが乗る外見崩れが発生。
+### 2. ログ解析による根本原因
+- `SourceType == Glamourer`（Chonk など）のアクターにおいて、COM スロット生成直後の 0 フレーム目に即座に `ApplyDesignToActor` を呼び出していた。
+- ゲームエンジンがアクターの `DrawObject` を確立する前に呼んだため、Glamourer 側で `ActorNotFound (ec=6)` となり外見デザインの適用に失敗。
+- 失敗時にもデザイン情報が `AppearanceDeferredJob` に引き継がれていなかったため、リトライされずに取り残され、自キャラ（素体）の見た目のまま CustomizePlus（体型プロファイル）だけが乗る外見崩れが発生していた。
+### 3. 解決策
+- 通常アクター（Glamourer / PlayerClone）にも `PendingGlamourerDesign` を設定し、即時適用が失敗した場合は `AppearanceDeferredJob` の **Phase 0**（2 ticks 待機後、最大30フレーム）で `DrawObject` 生成待機後に自動リトライする仕組みを統合。
+- MCDF と全く同様に、ゲームエンジンの準備完了を待って確実に Glamourer デザインが適用されてから Phase 1（Penumbra Redraw）→ Phase 2（CustomizePlus 確定注入）と同期実行されるように統一。
+- これにより、男性外見＋Chonk 体型が 100% 確実に同期適用される堅牢な動作を確立。
+
 
