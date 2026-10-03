@@ -89,3 +89,37 @@
 3. **自キャラ名ベースのテンプレート取得 (`GetStateName`)**:
    - `GetState(0)` で万一ステートが得られない場合のフェイルセーフとして、`clientState.LocalPlayer?.Name.TextValue` を用いた `GetStateName` を併用。
 
+---
+
+## 7. ValueTuple JObject 型境界例外の根絶と GetStateBase64 黄金律 (v0.1.46.0)
+
+### (1) 現象
+- v0.1.45.0 にアップデート後も、ユウギリやカヌ・エ・センナをスポーンさせた際、NPC固有の顔・髪型（アウラ固有顔や角尊の角・編み込み髪）が反映されず、プレイヤー汎用顔・髪型になってしまう。
+
+### (2) 決定的ログと原因の真相
+`dalamud.log` より:
+```
+Glamourer GetState V2 failed on actorIndex 0: IPC method Glamourer.GetState blew up when converting from ValueTuple`2 to System.ValueTuple`2[System.Int32,Newtonsoft.Json.Linq.JObject]
+Glamourer GetStateName V2 failed for 'Ruma Meow': IPC method Glamourer.GetStateName blew up when converting from ValueTuple`2 to System.ValueTuple`2[System.Int32,Newtonsoft.Json.Linq.JObject]
+Glamourer TryApplyNpcAppearance: Both target actor #200 and LocalPlayer (0 / 'Ruma Meow') returned null state.
+[Pipeline C: NPC] Glamourer NPC appearance failed or unavailable. Applying direct memory fallback...
+```
+
+1. **Newtonsoft.Json / ALC 型境界問題**:
+   - Dalamud プラグイン間では、それぞれ異なる AssemblyLoadContext や異なるバージョンの Newtonsoft.Json がロードされる場合がある。
+   - `pi.GetIpcSubscriber<int, uint, (int, JObject?)>("Glamourer.GetState")` を呼び出すと、Dalamud IPC の内部キャスト処理が、Glamourer 側でインスタンス化された `JObject` を CharacterSpawn 側の `JObject` に変換できず、`ValueTuple`2 to System.ValueTuple`2[...]` という型変換例外をスローする。
+   - これにより、`GetState(0)` および `GetStateName("Ruma Meow")` の両方が例外で失敗し、`state == null` となって Glamourer 適用がスキップされていた。
+2. **メモリ直接フォールバックによるサニタイズ**:
+   - Glamourer がスキップされたためフォールバック処理（メモリ直接書き込み）が走り、ゲームエンジンの `FilterCustomizeData` によって未解放のNPC固有顔・髪型番号がプレイヤー汎用パーツに丸め込まれていた。
+
+### (3) 根本解決策 (GetStateBase64 黄金律)
+1. **`Glamourer.GetStateBase64` / `GetStateBase64Name` IPC の採用**:
+   - 公式 IPC である `GetStateBase64` は `FuncSubscriber<int, uint, (int, string?)>` というシグネチャを持つ。
+   - `string`（文字列）は .NET のコア型であるため、プラグイン間の ALC 境界や Newtonsoft.Json バージョン相違の影響を一切受けず、100% 確実に Base64 文字列を取得できる。
+2. **既存の GZip デコーダ (`ParseDesignString`) による復号**:
+   - 取得した Base64 文字列を、プラグイン内に既存の実績ある `ParseDesignString`（GZip 解凍）で自プラグイン側の `JObject` に安全にパース。
+3. **`ApplyState` も Base64 文字列で適用**:
+   - `state` に NPC の CustomizeData と EquipmentModelIds をマッピング後、`CompressToBase64(state)` で Base64 文字列を生成して `ApplyState` に渡す。
+   - 取得から適用まで「型境界をまたぐ通信はすべて `string` (Base64) で行う」という AQuestReborn / HDM 黄金律を徹底した。
+
+

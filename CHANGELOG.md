@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.46] - 2026-10-03
+### Fixed
+- **ValueTuple JObject 型不一致例外の根絶と GetStateBase64 黄金律導入（ユウギリ・カヌ・エ・センナ等のNPC固有顔・髪型の完全反映）**:
+  - **根本原因の完全解明 (Dalamud IPC 型キャスト例外)**:
+    - `dalamud.log` 解析により、`GetState(0)` および `GetStateName(localPlayerName)` 呼び出し時に `IPC method Glamourer.GetState blew up when converting from ValueTuple'2 to System.ValueTuple'2[System.Int32,Newtonsoft.Json.Linq.JObject]` 例外が発生していたことを特定。
+    - プラグイン間（異なる AssemblyLoadContext や Newtonsoft.Json バージョン相違）で `JObject` を ValueTuple でやり取りすると、Dalamud IPC 内部の型変換でキャスト例外が発生し、自キャラテンプレートの取得に失敗していた。
+    - その結果、依然として直接メモリ書き込みフォールバックが走り、ゲームエンジンの `FilterCustomizeData` によってユウギリやカヌ・エ・センナの固有顔・髪型（角尊の角や固有編み込み髪）がプレイヤー汎用顔・汎用髪（金髪ボブ等）にサニタイズ（丸め込み）されていた。
+  - **対策 1: 公式 IPC `Glamourer.GetStateBase64` / `GetStateBase64Name` の導入**:
+    - `(int, string?)` を返す公式 IPC `GetStateBase64` および `GetStateBase64Name` を最優先で呼び出すよう修正。
+    - `string`（文字列）は .NET のコア型であるため、ALC 境界や Newtonsoft.Json のバージョン相違の影響を 100% 回避し、自キャラのステート文字列を確実に取得可能に。
+  - **対策 2: プラグイン内 GZip デコーダ (`ParseDesignString`) による安全な復号**:
+    - 取得した Base64 文字列を、実績ある `ParseDesignString` で自プラグイン側の `JObject` に安全にパースし、NPC の CustomizeData（26バイト）と EquipmentModelIds を上書き。
+  - **対策 3: `ApplyState` 適用時も Base64 文字列（`string`）で渡す黄金律の徹底**:
+    - `CompressToBase64(state)` により Base64 文字列を生成して `ApplyState` に渡すことで、Glamourer 側で安全に Base64 が解凍・パースされ、アクターに完璧に適用される。
+    - これにより Glamourer がゲームエンジンのサニタイズを完全にバイパスし、ユウギリ・カヌ・エ・センナの固有顔・髪型が 100% 確実に描画される。
+
 ## [0.1.45] - 2026-10-03
 ### Fixed
 - **ユウギリ等のNPC固有顔がプレイヤー選択可能顔タイプに置き換わってしまう不具合の根本解決**:

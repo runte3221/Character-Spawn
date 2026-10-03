@@ -31,6 +31,8 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<int, uint, ulong, int>? reapplyStateV2Ulong;
     private readonly ICallGateSubscriber<int, uint, uint, int>? reapplyStateV2Uint;
     private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
+    private readonly ICallGateSubscriber<int, uint, (int, string?)>? getStateBase64;
+    private readonly ICallGateSubscriber<string, uint, (int, string?)>? getStateBase64Name;
     private readonly ICallGateSubscriber<int, uint, (int, JObject?)>? getStateV2;
     private readonly ICallGateSubscriber<string, uint, (int, JObject?)>? getStateNameV2;
     private readonly ICallGateSubscriber<int, (int, JObject?)>? getStateLegacy;
@@ -85,6 +87,8 @@ public class GlamourerIpc
             reapplyStateV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.ReapplyState");
             reapplyStateV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.ReapplyState");
             getCustomizationFromActor = pi.GetIpcSubscriber<int, string?>("Glamourer.GetCustomizationFromActor");
+            getStateBase64 = pi.GetIpcSubscriber<int, uint, (int, string?)>("Glamourer.GetStateBase64");
+            getStateBase64Name = pi.GetIpcSubscriber<string, uint, (int, string?)>("Glamourer.GetStateBase64Name");
             getStateV2 = pi.GetIpcSubscriber<int, uint, (int, JObject?)>("Glamourer.GetState");
             getStateNameV2 = pi.GetIpcSubscriber<string, uint, (int, JObject?)>("Glamourer.GetStateName");
             getStateLegacy = pi.GetIpcSubscriber<int, (int, JObject?)>("Glamourer.GetState");
@@ -552,6 +556,25 @@ public class GlamourerIpc
     {
         if (!IsAvailable) return null;
 
+        // 1. 最優先: GetStateBase64 (ALC / Newtonsoft.Json 型衝突を 100% 回避)
+        if (getStateBase64 != null)
+        {
+            try
+            {
+                var (ec, base64) = getStateBase64.InvokeFunc(actorIndex, 0);
+                if (ec == 0 && !string.IsNullOrWhiteSpace(base64))
+                {
+                    var jobj = ParseDesignString(base64);
+                    if (jobj != null) return jobj;
+                }
+                log.Information($"Glamourer GetStateBase64 on actorIndex {actorIndex} returned ec={ec}, base64Null={string.IsNullOrWhiteSpace(base64)}");
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Glamourer GetStateBase64 failed on actorIndex {actorIndex}: {ex.Message}");
+            }
+        }
+
         if (getStateV2 != null)
         {
             try
@@ -562,7 +585,7 @@ public class GlamourerIpc
             }
             catch (Exception ex)
             {
-                log.Warning($"Glamourer GetState V2 failed on actorIndex {actorIndex}: {ex.Message}");
+                log.Debug($"Glamourer GetState V2 failed on actorIndex {actorIndex}: {ex.Message}");
             }
         }
 
@@ -586,6 +609,25 @@ public class GlamourerIpc
     {
         if (!IsAvailable || string.IsNullOrWhiteSpace(actorName)) return null;
 
+        // 1. 最優先: GetStateBase64Name (ALC / Newtonsoft.Json 型衝突を 100% 回避)
+        if (getStateBase64Name != null)
+        {
+            try
+            {
+                var (ec, base64) = getStateBase64Name.InvokeFunc(actorName, 0);
+                if (ec == 0 && !string.IsNullOrWhiteSpace(base64))
+                {
+                    var jobj = ParseDesignString(base64);
+                    if (jobj != null) return jobj;
+                }
+                log.Information($"Glamourer GetStateBase64Name for '{actorName}' returned ec={ec}, base64Null={string.IsNullOrWhiteSpace(base64)}");
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Glamourer GetStateBase64Name failed for '{actorName}': {ex.Message}");
+            }
+        }
+
         if (getStateNameV2 != null)
         {
             try
@@ -596,7 +638,7 @@ public class GlamourerIpc
             }
             catch (Exception ex)
             {
-                log.Warning($"Glamourer GetStateName V2 failed for '{actorName}': {ex.Message}");
+                log.Debug($"Glamourer GetStateName V2 failed for '{actorName}': {ex.Message}");
             }
         }
 
@@ -681,17 +723,30 @@ public class GlamourerIpc
             return false;
         }
 
+        // Base64 文字列として圧縮して渡す（ALC / Newtonsoft.Json 型境界を完全回避）
+        string? base64 = null;
+        try
+        {
+            base64 = CompressToBase64(state);
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Failed to compress state JObject to Base64: {ex.Message}");
+        }
+
+        object payload = (object?)base64 ?? state;
+
         if (applyStateV2Ulong != null)
         {
             try
             {
-                int res = applyStateV2Ulong.InvokeFunc(state, actorIndex, 0, 7UL);
-                log.Information($"Glamourer ApplyState JObject (ulong flags=7) on actorIndex {actorIndex} ('{actorName}') result: {res}");
+                int res = applyStateV2Ulong.InvokeFunc(payload, actorIndex, 0, 7UL);
+                log.Information($"Glamourer ApplyState (ulong flags=7, isBase64={base64 != null}) on actorIndex {actorIndex} ('{actorName}') result: {res}");
                 if (res == 0) return true;
             }
             catch (Exception ex)
             {
-                log.Warning($"Glamourer ApplyState JObject V2 (ulong) failed for actorIndex {actorIndex}: {ex.Message}");
+                log.Warning($"Glamourer ApplyState V2 (ulong) failed for actorIndex {actorIndex}: {ex.Message}");
             }
         }
 
@@ -699,13 +754,13 @@ public class GlamourerIpc
         {
             try
             {
-                int res = applyStateV2Uint.InvokeFunc(state, actorIndex, 0, 7U);
-                log.Information($"Glamourer ApplyState JObject (uint flags=7) on actorIndex {actorIndex} ('{actorName}') result: {res}");
+                int res = applyStateV2Uint.InvokeFunc(payload, actorIndex, 0, 7U);
+                log.Information($"Glamourer ApplyState (uint flags=7, isBase64={base64 != null}) on actorIndex {actorIndex} ('{actorName}') result: {res}");
                 if (res == 0) return true;
             }
             catch (Exception ex)
             {
-                log.Warning($"Glamourer ApplyState JObject V2 (uint) failed for actorIndex {actorIndex}: {ex.Message}");
+                log.Warning($"Glamourer ApplyState V2 (uint) failed for actorIndex {actorIndex}: {ex.Message}");
             }
         }
 

@@ -45,3 +45,16 @@
   1. `tools/release.ps1 0.1.45.0` で全自動リリース。
   2. ユウギリをスポーンさせ、固有のツノ・ウロコ・顔造形が完全に描画されることを確認。
 
+## 6. v0.1.46.0 改修計画（ValueTuple JObject 型不一致根絶と GetStateBase64 黄金律）
+- **根本原因**:
+  - `dalamud.log` 解析により、`pi.GetIpcSubscriber<int, uint, (int, JObject?)>("Glamourer.GetState")` で `converting from ValueTuple'2 to System.ValueTuple'2[System.Int32,Newtonsoft.Json.Linq.JObject]` 例外が発生し、自キャラテンプレートの取得に失敗していた。
+  - これはプラグイン間（ALC境界・Newtonsoft.Jsonアセンブリ境界）で `JObject` を ValueTuple でやり取りする際に Dalamud IPC 内部で発生する既知の型キャスト例外。
+- **改修方針**:
+  1. `Services/GlamourerIpc.cs`: `Glamourer.GetStateBase64` / `Glamourer.GetStateBase64Name`（`FuncSubscriber<int, uint, (int, string?)>`）を最優先利用。
+  2. 取得した Base64 文字列を既存の `ParseDesignString`（GZipデコード）で安全に `JObject` に復号。
+  3. `ApplyStateJObject` でも `CompressToBase64(state)` により Base64 文字列（`string`）として Glamourer に渡すことで、適用時の型境界トラブルも完全根絶。
+- **検証手順**:
+  1. `tools/release.ps1 0.1.46.0` で全自動リリース。
+  2. カヌ・エ・センナ、ユウギリをスポーンさせ、角尊の角・固有髪型、アウラ固有顔が 100% 確実に描画されることを確認。
+
+

@@ -39,5 +39,19 @@
   - [x] `ActorManager.cs` から `localPlayerName` を渡すように連携。
 - [x] `CHANGELOG.md` 更新（v0.1.45.0）
 - [x] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.45.0`)
-- [ ] ゲーム内実機でのユウギリ固有顔描画の確認
+- [x] ゲーム内実機でのログ検証: `GetState(0)` で `ValueTuple<int, JObject>` の型不一致例外（AssemblyLoadContext / Newtonsoft.Json バージョン境界）が発生し、依然として Glamourer 適用がスキップされていたことを特定！
+
+## 5. ValueTuple 型境界問題の根絶と GetStateBase64 黄金律導入フェーズ (v0.1.46.0)
+- [x] **原因究明**:
+  - Dalamud プラグイン間で `JObject` を ValueTuple で受け取ると、AssemblyLoadContext（ALC）や Newtonsoft.Json の参照境界により `converting from ValueTuple'2 to System.ValueTuple'2[System.Int32,Newtonsoft.Json.Linq.JObject]` 例外が発生する。
+  - 公式 IPC `Glamourer.GetStateBase64` および `Glamourer.GetStateBase64Name` は `(int, string?)` を返すため、型衝突が 100% 発生しない。
+- [x] **コード改修 (`GlamourerIpc.cs`)**:
+  - [x] `Glamourer.GetStateBase64` および `Glamourer.GetStateBase64Name` の IPC サブスクライバーを追加。
+  - [x] `GetState(actorIndex)` および `GetStateByName(actorName)` で `GetStateBase64` を最優先で呼び出し、取得した Base64 文字列を既存の `ParseDesignString` で `JObject` に復号する。
+  - [x] `ApplyStateJObject` において、`CompressToBase64` で Base64 文字列（`string`）を生成して `ApplyState` に渡すことで、適用時も型境界トラブルを完全回避。
+- [ ] **ドキュメント・リリース**:
+  - [ ] `CHANGELOG.md` 更新（v0.1.46.0）
+  - [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.46.0`)
+  - [ ] 実機検証依頼（ユウギリ、カヌ・エ・センナの固有顔・髪型が正常描画されることの確認）
+
 
