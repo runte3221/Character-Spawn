@@ -1,3 +1,5 @@
+using System;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
@@ -12,22 +14,35 @@ public class StageSceneTab
 {
     private readonly Configuration configuration;
     private readonly ActorManager actorManager;
+    private readonly SceneManager sceneManager;
     private readonly GameDataService gameDataService;
     private readonly IClientState clientState;
     private readonly IObjectTable objectTable;
     private readonly IPluginLog log;
     private readonly GizmoRenderer? gizmoRenderer;
 
-    private SpawnedActorData? selectedActor;
-    private string animSearchQuery = string.Empty;
-    private string facialSearchQuery = string.Empty;
-    private string newSceneName = "New Scene";
+    // UI state
+    private string newSceneName = "新しいシーン";
+    private SceneActorPlacement? selectedPlacement;
+    private string selectedTemplateIdForAdd = string.Empty;
 
-    public SpawnedActorData? SelectedActor => selectedActor;
+    public SceneActorPlacement? SelectedPlacement => selectedPlacement;
+    public SpawnedActorData? SelectedActor => selectedPlacement != null ? sceneManager.GetSpawnedActor(selectedPlacement.PlacementId) : null;
+
+    public void SyncPlacementTransformFromGizmo(Vector3 newPos, float newRot)
+    {
+        if (selectedPlacement != null)
+        {
+            selectedPlacement.Position = newPos;
+            selectedPlacement.Rotation = newRot;
+            sceneManager.SaveScenes();
+        }
+    }
 
     public StageSceneTab(
         Configuration configuration,
         ActorManager actorManager,
+        SceneManager sceneManager,
         GameDataService gameDataService,
         IClientState clientState,
         IObjectTable objectTable,
@@ -36,6 +51,7 @@ public class StageSceneTab
     {
         this.configuration = configuration;
         this.actorManager = actorManager;
+        this.sceneManager = sceneManager;
         this.gameDataService = gameDataService;
         this.clientState = clientState;
         this.objectTable = objectTable;
@@ -43,56 +59,75 @@ public class StageSceneTab
         this.gizmoRenderer = gizmoRenderer;
     }
 
-    public void SelectActor(SpawnedActorData? actor)
-    {
-        selectedActor = actor;
-    }
-
     public void Draw()
     {
-        ImGui.Columns(2, "StageColumns", true);
+        ImGui.Columns(2, "SceneColumns", true);
 
-        // Left Column: Active Spawned Actors & Scene Presets
+        // 左ペイン: シーン一覧・作成・全体操作
         DrawLeftPanel();
 
         ImGui.NextColumn();
 
-        // Right Column: Transform, Animation, Expression, and NamePlate Controls
+        // 右ペイン: 選択中シーンの配置キャラクター一覧・編集・追加
         DrawRightPanel();
 
         ImGui.Columns(1);
     }
 
+    #region Left Panel (Scene List & Global Actions)
+
     private void DrawLeftPanel()
     {
-        ImGui.TextUnformatted("Active Characters on Stage");
-        ImGui.SameLine();
-        if (ImGui.SmallButton("Despawn All"))
-        {
-            actorManager.DespawnAll();
-            selectedActor = null;
-        }
-
+        ImGui.TextUnformatted("シーン一覧 (Scene List)");
         ImGui.Separator();
 
-        var activeActors = actorManager.ActiveActors;
-        if (activeActors.Count == 0)
+        // 新規シーン作成バー
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - 80);
+        ImGui.InputText("##NewSceneName", ref newSceneName, 64);
+        ImGui.SameLine();
+        if (ImGui.Button("新規作成", new Vector2(70, 0)))
         {
-            ImGui.TextDisabled("No active characters spawned.");
-            ImGui.TextWrapped("Spawn a character from the 'Character Library' tab.");
+            if (!string.IsNullOrWhiteSpace(newSceneName))
+            {
+                uint territory = clientState.TerritoryType;
+                sceneManager.CreateScene(newSceneName.Trim(), territory);
+                newSceneName = "新しいシーン";
+            }
+        }
+
+        ImGui.Spacing();
+
+        // シーンリストボックス
+        if (sceneManager.Scenes.Count == 0)
+        {
+            ImGui.TextDisabled("登録されているシーンがありません。");
         }
         else
         {
-            if (ImGui.BeginListBox("##ActiveActorsList", new Vector2(-1, 140)))
+            if (ImGui.BeginListBox("##SceneListBox", new Vector2(-1, 220)))
             {
-                for (int i = 0; i < activeActors.Count; i++)
+                foreach (var scene in sceneManager.Scenes)
                 {
-                    var actor = activeActors[i];
-                    bool isSelected = selectedActor == actor;
+                    bool isSelected = sceneManager.SelectedScene?.Id == scene.Id;
+                    bool isSpawned = sceneManager.IsSceneSpawned(scene);
 
-                    if (ImGui.Selectable($"{actor.DisplayName}##Actor_{actor.InstanceId}", isSelected))
+                    string statusIcon = isSpawned ? "[●] " : "[ ] ";
+                    string label = $"{statusIcon}{scene.Name} ({scene.Placements.Count}体)##Scene_{scene.Id}";
+
+                    if (isSpawned)
                     {
-                        selectedActor = actor;
+                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.3f, 1.0f, 0.4f, 1.0f));
+                    }
+
+                    if (ImGui.Selectable(label, isSelected))
+                    {
+                        sceneManager.SelectedScene = scene;
+                        selectedPlacement = scene.Placements.FirstOrDefault();
+                    }
+
+                    if (isSpawned)
+                    {
+                        ImGui.PopStyleColor();
                     }
                 }
                 ImGui.EndListBox();
@@ -101,322 +136,303 @@ public class StageSceneTab
 
         ImGui.Spacing();
         ImGui.Separator();
-        ImGui.TextUnformatted("Scene Presets (Stagehand-like)");
-        ImGui.Separator();
 
-        ImGui.InputText("Scene Name", ref newSceneName, 64);
-
-        if (ImGui.Button("Save Current Stage as Scene", new Vector2(-1, 26)))
+        // 選択中シーンの一括操作ボタン
+        var curScene = sceneManager.SelectedScene;
+        if (curScene != null)
         {
-            SaveCurrentStageAsScene();
-        }
+            bool isCurrentSpawned = sceneManager.IsSceneSpawned(curScene);
 
-        ImGui.Spacing();
-
-        // Scene preset list
-        for (int i = 0; i < configuration.Scenes.Count; i++)
-        {
-            var scene = configuration.Scenes[i];
-            ImGui.PushID($"Scene_{scene.Id}");
-
-            ImGui.TextUnformatted($"[{scene.TerritoryName}] {scene.Name} ({scene.Actors.Count} actors)");
-
-            bool autoSpawn = scene.AutoSpawnOnZone;
-            if (ImGui.Checkbox("Auto-Spawn on Zone", ref autoSpawn))
+            if (isCurrentSpawned)
             {
-                scene.AutoSpawnOnZone = autoSpawn;
-                configuration.Save();
+                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.8f, 0.2f, 0.2f, 1.0f));
+                if (ImGui.Button("シーンを一括デスポーン (Despawn All)##SceneDespawn", new Vector2(-1, 32)))
+                {
+                    sceneManager.DespawnScene();
+                }
+                ImGui.PopStyleColor();
+            }
+            else
+            {
+                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.2f, 0.6f, 0.2f, 1.0f));
+                if (ImGui.Button("シーンを一括スポーン (Spawn All)##SceneSpawn", new Vector2(-1, 32)))
+                {
+                    sceneManager.SpawnScene(curScene);
+                }
+                ImGui.PopStyleColor();
             }
 
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Show"))
+            ImGui.Spacing();
+
+            // シーン情報編集
+            string editName = curScene.Name;
+            ImGui.TextUnformatted("シーン名編集:");
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.InputText("##EditSceneName", ref editName, 64))
             {
-                LoadScene(scene);
+                curScene.Name = editName;
+                sceneManager.SaveScenes();
             }
 
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Hide"))
+            string editDesc = curScene.Description;
+            ImGui.TextUnformatted("説明・メモ:");
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.InputText("##EditSceneDesc", ref editDesc, 128))
             {
-                actorManager.DespawnAll();
-                selectedActor = null;
+                curScene.Description = editDesc;
+                sceneManager.SaveScenes();
             }
 
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Delete"))
+            ImGui.Spacing();
+            if (ImGui.Button("このシーンを削除##DeleteScene", new Vector2(-1, 24)))
             {
-                configuration.Scenes.RemoveAt(i);
-                configuration.Save();
-                ImGui.PopID();
-                break;
+                sceneManager.DeleteScene(curScene);
+                selectedPlacement = null;
             }
-
-            ImGui.Separator();
-            ImGui.PopID();
         }
     }
+
+    #endregion
+
+    #region Right Panel (Placement Table & Editing)
 
     private void DrawRightPanel()
     {
-        if (selectedActor == null || !selectedActor.IsSpawned)
+        var curScene = sceneManager.SelectedScene;
+        if (curScene == null)
         {
-            ImGui.TextDisabled("No active character selected.");
-            ImGui.TextWrapped("Select a character from the active list to edit transform, animations, expressions, and settings.");
+            ImGui.TextDisabled("左側のリストからシーンを選択してください。");
             return;
         }
 
-        ImGui.TextColored(new Vector4(0.3f, 0.9f, 0.3f, 1.0f), $"Editing: {selectedActor.DisplayName}");
+        ImGui.TextUnformatted($"配置キャラクター管理: {curScene.Name}");
         ImGui.Separator();
 
-        // 1. Transform Section
-        DrawTransformSection();
-
-        ImGui.Spacing();
-        ImGui.Separator();
-
-        // 2. Animation & Expressions Section
-        DrawAnimationSection();
+        // 1. 新規キャラクター配置の追加セクション
+        DrawAddPlacementSection(curScene);
 
         ImGui.Spacing();
         ImGui.Separator();
 
-        // 3. NamePlate & Targetability Section
-        DrawNamePlateSection();
-    }
-
-    private void DrawTransformSection()
-    {
-        if (selectedActor == null) return;
-
-        ImGui.TextUnformatted("Transform (Position & Rotation)");
-
-        if (gizmoRenderer != null)
-        {
-            gizmoRenderer.DrawToolbar();
-            ImGui.Spacing();
-        }
-
-        var pos = selectedActor.Transform.Position;
-        var rot = selectedActor.Transform.Rotation;
-
-        bool changed = false;
-
-        float posX = pos.X;
-        float posY = pos.Y;
-        float posZ = pos.Z;
-        float rotDeg = rot * (180.0f / (float)Math.PI);
-
-        if (ImGui.DragFloat("X", ref posX, 0.05f)) changed = true;
-        ImGui.SameLine();
-        DrawStepButtons(ref posX, ref changed);
-
-        if (ImGui.DragFloat("Y", ref posY, 0.05f)) changed = true;
-        ImGui.SameLine();
-        DrawStepButtons(ref posY, ref changed);
-
-        if (ImGui.DragFloat("Z", ref posZ, 0.05f)) changed = true;
-        ImGui.SameLine();
-        DrawStepButtons(ref posZ, ref changed);
-
-        if (ImGui.DragFloat("Yaw Rotation", ref rotDeg, 1.0f, -180.0f, 180.0f))
-        {
-            rot = rotDeg * ((float)Math.PI / 180.0f);
-            changed = true;
-        }
-
-        if (changed)
-        {
-            actorManager.UpdateActorTransform(selectedActor, new Vector3(posX, posY, posZ), rot);
-        }
+        // 2. 配置キャラクター一覧テーブル
+        DrawPlacementTable(curScene);
 
         ImGui.Spacing();
+        ImGui.Separator();
 
-        if (ImGui.Button("Snap to Local Player"))
+        // 3. 選択された配置アクターの詳細編集（座標・向き）
+        DrawSelectedPlacementInspector(curScene);
+    }
+
+    private void DrawAddPlacementSection(SceneData scene)
+    {
+        ImGui.TextUnformatted("配置キャラクターの追加 (Add Actor):");
+
+        var templates = configuration.Templates;
+        if (templates.Count == 0)
         {
-            var p = objectTable.Length > 0 ? objectTable[0] : null;
-            if (p != null)
+            ImGui.TextDisabled("キャラクターテンプレートがありません。先に「Character」タブで作成してください。");
+            return;
+        }
+
+        // テンプレート選択コンボ
+        var currentTemplate = templates.FirstOrDefault(t => t.Id == selectedTemplateIdForAdd);
+        string previewName = currentTemplate != null ? currentTemplate.Name : "テンプレートを選択...";
+
+        ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X - 220);
+        if (ImGui.BeginCombo("##SelectTemplateCombo", previewName))
+        {
+            foreach (var t in templates)
             {
-                actorManager.UpdateActorTransform(selectedActor, p.Position, p.Rotation);
+                bool isSelected = selectedTemplateIdForAdd == t.Id;
+                if (ImGui.Selectable($"{t.Name} ({t.SourceType})##T_{t.Id}", isSelected))
+                {
+                    selectedTemplateIdForAdd = t.Id;
+                }
             }
+            ImGui.EndCombo();
         }
 
         ImGui.SameLine();
-
-        if (ImGui.Button("Place 1.5m in Front"))
+        if (ImGui.Button("現在地に配置して追加##AddAtMe", new Vector2(210, 0)))
         {
-            var p = objectTable.Length > 0 ? objectTable[0] : null;
-            if (p != null)
+            var targetTemplate = templates.FirstOrDefault(t => t.Id == selectedTemplateIdForAdd) ?? templates.FirstOrDefault();
+            if (targetTemplate != null)
             {
-                var forward = new Vector3((float)Math.Sin(p.Rotation), 0, (float)Math.Cos(p.Rotation));
-                var targetPos = p.Position + (forward * 1.5f);
-                actorManager.UpdateActorTransform(selectedActor, targetPos, p.Rotation + (float)Math.PI);
+                var (pos, rot) = GetPlayerTransform();
+                var placement = sceneManager.AddPlacement(scene, targetTemplate, pos, rot);
+                selectedPlacement = placement;
             }
         }
     }
 
-    private void DrawStepButtons(ref float val, ref bool changed)
+    private void DrawPlacementTable(SceneData scene)
     {
-        if (ImGui.SmallButton("-0.1")) { val -= 0.1f; changed = true; }
-        ImGui.SameLine();
-        if (ImGui.SmallButton("+0.1")) { val += 0.1f; changed = true; }
-    }
+        ImGui.TextUnformatted($"配置アクター一覧 ({scene.Placements.Count}体)");
 
-    private void DrawAnimationSection()
-    {
-        if (selectedActor == null) return;
-
-        ImGui.TextUnformatted("Animation & Motion (ActionTimeline)");
-
-        var anim = selectedActor.Animation;
-
-        ImGui.InputText("Search Motions", ref animSearchQuery, 64);
-        var searchResults = gameDataService.SearchTimelines(animSearchQuery, 8);
-
-        if (ImGui.BeginListBox("##AnimTimelineList", new Vector2(-1, 90)))
+        if (scene.Placements.Count == 0)
         {
-            foreach (var entry in searchResults)
+            ImGui.TextDisabled("このシーンには配置アクターが登録されていません。");
+            return;
+        }
+
+        var flags = ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY;
+        if (ImGui.BeginTable("PlacementTable", 6, flags, new Vector2(-1, 160)))
+        {
+            ImGui.TableSetupColumn("状態", ImGuiTableColumnFlags.WidthFixed, 45);
+            ImGui.TableSetupColumn("表示名", ImGuiTableColumnFlags.WidthStretch, 2);
+            ImGui.TableSetupColumn("テンプレート", ImGuiTableColumnFlags.WidthStretch, 2);
+            ImGui.TableSetupColumn("座標 (X, Y, Z)", ImGuiTableColumnFlags.WidthStretch, 3);
+            ImGui.TableSetupColumn("操作", ImGuiTableColumnFlags.WidthFixed, 90);
+            ImGui.TableSetupColumn("削除", ImGuiTableColumnFlags.WidthFixed, 45);
+            ImGui.TableHeadersRow();
+
+            for (int i = 0; i < scene.Placements.Count; i++)
             {
-                bool isSelected = anim.TimelineId == entry.Id;
-                if (ImGui.Selectable($"[{entry.Id}] {entry.Key} - {entry.Description}", isSelected))
+                var placement = scene.Placements[i];
+                bool isSpawned = sceneManager.IsPlacementSpawned(placement.PlacementId);
+                var template = configuration.Templates.FirstOrDefault(t => t.Id == placement.CharacterTemplateId);
+
+                ImGui.TableNextRow();
+                ImGui.PushID($"Placement_{placement.PlacementId}");
+
+                // 1. 状態
+                ImGui.TableNextColumn();
+                if (isSpawned)
                 {
-                    anim.TimelineId = entry.Id;
-                    anim.TimelineName = entry.Key;
-                    actorManager.ApplyActorAnimation(selectedActor);
+                    ImGui.TextColored(new Vector4(0.2f, 1.0f, 0.3f, 1.0f), "スポーン中");
                 }
-            }
-            ImGui.EndListBox();
-        }
-
-        bool isLoop = anim.IsLoop;
-        if (ImGui.Checkbox("Seamless Loop Animation", ref isLoop))
-        {
-            anim.IsLoop = isLoop;
-            actorManager.ApplyActorAnimation(selectedActor);
-        }
-
-        bool lookAt = anim.LookAtPlayer;
-        if (ImGui.Checkbox("Track Player Head / Eyes (LookAt)", ref lookAt))
-        {
-            anim.LookAtPlayer = lookAt;
-        }
-
-        ImGui.Spacing();
-        ImGui.TextUnformatted("Facial Expression:");
-
-        var facials = gameDataService.GetFacialExpressions();
-        if (ImGui.BeginListBox("##FacialList", new Vector2(-1, 80)))
-        {
-            foreach (var f in facials.Take(20))
-            {
-                bool isSelected = anim.FacialExpressionId == f.Id;
-                if (ImGui.Selectable($"[{f.Id}] {f.Key}", isSelected))
+                else
                 {
-                    anim.FacialExpressionId = f.Id;
-                    anim.FacialExpressionName = f.Key;
-                    actorManager.ApplyActorAnimation(selectedActor);
+                    ImGui.TextDisabled("停止");
                 }
-            }
-            ImGui.EndListBox();
-        }
-    }
 
-    private void DrawNamePlateSection()
-    {
-        if (selectedActor == null) return;
-
-        ImGui.TextUnformatted("NamePlate & Targetability");
-
-        var np = selectedActor.NamePlate;
-        bool showPlate = np.Show;
-        if (ImGui.Checkbox("Show NamePlate", ref showPlate))
-        {
-            np.Show = showPlate;
-        }
-
-        string customName = np.CustomName;
-        if (ImGui.InputText("Display Name", ref customName, 64))
-        {
-            np.CustomName = customName;
-        }
-
-        bool targetable = selectedActor.IsTargetable;
-        if (ImGui.Checkbox("Targetable (Click to Select)", ref targetable))
-        {
-            selectedActor.IsTargetable = targetable;
-            actorManager.ApplyTargetable(selectedActor);
-        }
-
-        ImGui.Spacing();
-        if (ImGui.Button("Delete this Character", new Vector2(-1, 24)))
-        {
-            actorManager.DespawnCharacter(selectedActor);
-            selectedActor = null;
-        }
-    }
-
-    private void SaveCurrentStageAsScene()
-    {
-        var active = actorManager.ActiveActors;
-        if (active.Count == 0) return;
-
-        var scene = new ScenePreset
-        {
-            Name = string.IsNullOrWhiteSpace(newSceneName) ? "Scene" : newSceneName,
-            TerritoryTypeId = clientState.TerritoryType,
-            TerritoryName = $"Zone {clientState.TerritoryType}",
-            AutoSpawnOnZone = false,
-            Actors = active.Select(a => new SpawnedActorData
-            {
-                TemplateId = a.TemplateId,
-                DisplayName = a.DisplayName,
-                Transform = new TransformData
+                // 2. 表示名
+                ImGui.TableNextColumn();
+                bool isSelected = selectedPlacement?.PlacementId == placement.PlacementId;
+                string dName = !string.IsNullOrWhiteSpace(placement.CustomDisplayName) ? placement.CustomDisplayName : (template?.Name ?? "不明");
+                if (ImGui.Selectable($"{dName}##Select_{placement.PlacementId}", isSelected, ImGuiSelectableFlags.SpanAllColumns))
                 {
-                    Position = a.Transform.Position,
-                    Rotation = a.Transform.Rotation,
-                    Scale = a.Transform.Scale
-                },
-                Animation = new AnimationSettings
-                {
-                    TimelineId = a.Animation.TimelineId,
-                    TimelineName = a.Animation.TimelineName,
-                    IsLoop = a.Animation.IsLoop,
-                    FacialExpressionId = a.Animation.FacialExpressionId,
-                    FacialExpressionName = a.Animation.FacialExpressionName,
-                    LookAtPlayer = a.Animation.LookAtPlayer
-                },
-                NamePlate = new NamePlateSettings
-                {
-                    Show = a.NamePlate.Show,
-                    CustomName = a.NamePlate.CustomName
-                },
-                IsTargetable = a.IsTargetable
-            }).ToList()
-        };
-
-        configuration.Scenes.Add(scene);
-        configuration.Save();
-        log.Information($"Saved scene preset '{scene.Name}' with {scene.Actors.Count} actors.");
-    }
-
-    private void LoadScene(ScenePreset scene)
-    {
-        actorManager.DespawnAll();
-
-        foreach (var actorData in scene.Actors)
-        {
-            var template = configuration.Templates.FirstOrDefault(t => t.Id == actorData.TemplateId);
-            if (template != null)
-            {
-                var spawned = actorManager.SpawnCharacter(template, actorData.Transform.Position, actorData.Transform.Rotation);
-                if (spawned != null)
-                {
-                    spawned.Animation = actorData.Animation;
-                    spawned.NamePlate = actorData.NamePlate;
-                    spawned.IsTargetable = actorData.IsTargetable;
-
-                    actorManager.ApplyActorAnimation(spawned);
-                    actorManager.ApplyTargetable(spawned);
+                    selectedPlacement = placement;
                 }
+
+                // 3. テンプレート名
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted(template?.Name ?? "削除されたテンプレート");
+
+                // 4. 座標
+                ImGui.TableNextColumn();
+                ImGui.TextUnformatted($"({placement.Position.X:F1}, {placement.Position.Y:F1}, {placement.Position.Z:F1})");
+
+                // 5. 個別スポーン／デスポーン操作
+                ImGui.TableNextColumn();
+                if (isSpawned)
+                {
+                    if (ImGui.SmallButton("デスポーン##PDespawn"))
+                    {
+                        sceneManager.DespawnPlacement(placement);
+                    }
+                }
+                else
+                {
+                    if (ImGui.SmallButton("スポーン##PSpawn"))
+                    {
+                        sceneManager.SpawnPlacement(scene, placement);
+                    }
+                }
+
+                // 6. 削除
+                ImGui.TableNextColumn();
+                if (ImGui.SmallButton("削除##PDel"))
+                {
+                    sceneManager.RemovePlacement(scene, placement);
+                    if (selectedPlacement?.PlacementId == placement.PlacementId)
+                    {
+                        selectedPlacement = scene.Placements.FirstOrDefault();
+                    }
+                    ImGui.PopID();
+                    break;
+                }
+
+                ImGui.PopID();
+            }
+
+            ImGui.EndTable();
+        }
+    }
+
+    private void DrawSelectedPlacementInspector(SceneData scene)
+    {
+        if (selectedPlacement == null)
+        {
+            ImGui.TextDisabled("上の表から編集する配置アクターを選択してください。");
+            return;
+        }
+
+        ImGui.TextUnformatted($"配置アクター詳細設定: {selectedPlacement.CustomDisplayName}");
+
+        // 表示名
+        string cName = selectedPlacement.CustomDisplayName;
+        if (ImGui.InputText("個別表示名", ref cName, 64))
+        {
+            selectedPlacement.CustomDisplayName = cName;
+            sceneManager.SaveScenes();
+        }
+
+        // 座標編集
+        var pos = selectedPlacement.Position;
+        if (ImGui.DragFloat3("座標 (X, Y, Z)", ref pos, 0.05f))
+        {
+            selectedPlacement.Position = pos;
+            sceneManager.SaveScenes();
+
+            // スポーン中の場合は即座にゲーム内アクターの位置も同期
+            var spawned = sceneManager.GetSpawnedActor(selectedPlacement.PlacementId);
+            if (spawned != null)
+            {
+                actorManager.UpdateActorTransform(spawned, pos, selectedPlacement.Rotation);
             }
         }
+
+        // 回転編集
+        float rot = selectedPlacement.Rotation;
+        if (ImGui.SliderAngle("向き (Rotation)", ref rot, -180f, 180f))
+        {
+            selectedPlacement.Rotation = rot;
+            sceneManager.SaveScenes();
+
+            var spawned = sceneManager.GetSpawnedActor(selectedPlacement.PlacementId);
+            if (spawned != null)
+            {
+                actorManager.UpdateActorTransform(spawned, selectedPlacement.Position, rot);
+            }
+        }
+
+        // 自キャラ現在位置を再取得
+        if (ImGui.Button("自キャラの現在座標・向きを適用##ApplyMyPos"))
+        {
+            var (myPos, myRot) = GetPlayerTransform();
+            selectedPlacement.Position = myPos;
+            selectedPlacement.Rotation = myRot;
+            sceneManager.SaveScenes();
+
+            var spawned = sceneManager.GetSpawnedActor(selectedPlacement.PlacementId);
+            if (spawned != null)
+            {
+                actorManager.UpdateActorTransform(spawned, myPos, myRot);
+            }
+        }
+    }
+
+    #endregion
+
+    private (Vector3 Position, float Rotation) GetPlayerTransform()
+    {
+        var localPlayer = objectTable.Length > 0 ? objectTable[0] : null;
+        if (localPlayer != null)
+        {
+            return (localPlayer.Position, localPlayer.Rotation);
+        }
+        return (Vector3.Zero, 0f);
     }
 }

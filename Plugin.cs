@@ -43,6 +43,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HeadTrackingManager headTrackingManager;
     private readonly NamePlateController namePlateController;
     private readonly ActorManager actorManager;
+    private readonly SceneManager sceneManager;
 
     private readonly GizmoRenderer gizmoRenderer;
     private readonly CharacterLibraryTab libraryTab;
@@ -70,13 +71,14 @@ public sealed class Plugin : IDalamudPlugin
         timelineManager = new TimelineManager(Log);
         headTrackingManager = new HeadTrackingManager(ObjectTable, Log);
         actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser, PluginInterface, customizePlusIpc, gameDataService, Framework);
+        sceneManager = new SceneManager(PluginInterface, ClientState, logManager, actorManager, Configuration);
         namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
 
         // UI
         gizmoRenderer = new GizmoRenderer(GameGui, Configuration);
         logTab = new LogTab(logManager);
         libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, actorManager, ObjectTable, TargetManager, Log, logManager, customizePlusIpc, gizmoRenderer);
-        stageTab = new StageSceneTab(Configuration, actorManager, gameDataService, ClientState, ObjectTable, Log, gizmoRenderer);
+        stageTab = new StageSceneTab(Configuration, actorManager, sceneManager, gameDataService, ClientState, ObjectTable, Log, gizmoRenderer);
         mainWindow = new MainWindow(Configuration, libraryTab, stageTab, logTab, gizmoRenderer, actorManager, Log);
 
         WindowSystem.AddWindow(mainWindow);
@@ -138,6 +140,7 @@ public sealed class Plugin : IDalamudPlugin
                     gizmoRenderer.Render(targetActor, (newPos, newRot) =>
                     {
                         actorManager.UpdateActorTransform(targetActor, newPos, newRot);
+                        stageTab.SyncPlacementTransformFromGizmo(newPos, newRot);
                     });
                 }
             }
@@ -206,6 +209,7 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.RemoveAllWindows();
         mainWindow.Dispose();
         namePlateController.Dispose();
+        sceneManager.Dispose();
         actorManager.Dispose();
     }
 }

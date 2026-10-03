@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.55] - 2026-10-03
+### Added
+- **Phase 1: シーン・配置管理基盤（Scene）の実装と複数体配置管理**:
+  - **データモデル設計 (`Models/SceneData.cs`)**:
+    - シーンデータ（`SceneData`）、配置アクター（`SceneActorPlacement`）の構造を新設。
+    - 将来フェーズ（Phase 2: モーション・視線、Phase 3: ネームプレート、Phase 4: 3Dサウンド、Phase 5: マップアセット消去）のプロパティを最初から先行内包し、後方互換性を 100% 保証。
+  - **シーンマネージャー (`Managers/SceneManager.cs`)**:
+    - シーン設定の JSON 永続化（`scenes.json`）。
+    - 第1工程の `ActorManager.SpawnCharacter` と連携し、空き COM スロットを用いた複数体アクターの一括スポーン・個別スポーン・デスポーンを統括管理。
+    - テリトリーチェンジ（ゾーン移動・テレポ）検知時の安全な自動全消去（クリーンアップ）を実装。
+  - **UI 全面実装 (`UI/StageSceneTab.cs`)**:
+    - **左ペイン**: シーン一覧、新規作成、シーン名／説明文編集、シーン削除、一括スポーン／デスポーン。
+    - **右ペイン**: ライブラリのテンプレートを選択して「自キャラ現在地に配置」追加、配置アクター一覧テーブル、リアルタイム座標ドラッグ／回転スライダー編集、個別スポーン／デスポーン／削除。
+    - **3D ギズモ双方向同期**: 画面上の 3D ギズモで動かした座標・回転が、配置アクターデータと設定ファイルへ即座に反映されるリアルタイム連動（`SyncPlacementTransformFromGizmo`）を実装。
+  - **完全隔離の保証**:
+    - 第1工程のコアロジック（外見、Glamourer、Penumbra、MCDF、人型NPC、モンスター、CustomizePlus）は完全不可侵（変更なし）として保持し、下位サービスとして呼び出すのみの安全アーキテクチャを徹底。
+
 ## [0.1.54] - 2026-10-03
 ### Fixed
 - **Glamourer 適用前の先行 Penumbra Redraw 抑止による外見・武器の一瞬のチラつき解消**:
