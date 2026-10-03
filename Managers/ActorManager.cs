@@ -518,6 +518,7 @@ public unsafe class ActorManager : IDisposable
                     customizePlusIpc.DeleteTemporaryProfile(actor.TemporaryCustomizePlusGuid.Value);
                     actor.TemporaryCustomizePlusGuid = null;
                 }
+                customizePlusIpc.DeleteTemporaryProfileOnCharacter((ushort)actor.GlobalIndex);
             }
 
             if (actor.NativeAddress != 0)
@@ -1038,8 +1039,8 @@ public unsafe class ActorManager : IDisposable
     }
 
     /// <summary>
-    /// Customize+ Profile (テンプレート指定 または MCDF内包) をパペット名とワールドIDで紐付け (Caraxi / AQR 準拠)
-    /// インデックス指定を行わないため、自キャラ(LocalPlayer Index 0)への誤爆は物理的に完全不可能
+    /// Customize+ Profile (テンプレート指定 または MCDF内包) を公式一時プロファイル IPC で適用
+    /// ユーザーの設定ファイル (profiles/*.json) を一切汚染せず、メモリ上だけで安全にパペットに注入
     /// </summary>
     private void ApplyCustomizePlusProfile(Character* chara, int actorIndex, CharacterTemplate template, SpawnedActorData? spawned, string? fallbackMcdfCPlusData = null)
     {
@@ -1047,13 +1048,23 @@ public unsafe class ActorManager : IDisposable
 
         try
         {
-            ushort worldId = chara != null ? (ushort)chara->HomeWorld : (ushort)0;
-            string puppetName = spawned?.PuppetName ?? string.Empty;
-
-            // 既存の紐付け解除
-            if (spawned?.AssignedCustomizePlusGuid.HasValue == true && !string.IsNullOrEmpty(puppetName))
+            // 既存の一時プロファイルがあれば削除
+            if (spawned?.TemporaryCustomizePlusGuid.HasValue == true)
             {
-                customizePlusIpc.RemovePlayerCharacter(spawned.AssignedCustomizePlusGuid.Value, puppetName, worldId);
+                customizePlusIpc.DeleteTemporaryProfile(spawned.TemporaryCustomizePlusGuid.Value);
+                spawned.TemporaryCustomizePlusGuid = null;
+            }
+            customizePlusIpc.DeleteTemporaryProfileOnCharacter((ushort)actorIndex);
+
+            // 過去バージョンで残骸となった恒久プロファイル紐付けがあれば解除
+            if (spawned?.AssignedCustomizePlusGuid.HasValue == true)
+            {
+                ushort worldId = chara != null ? (ushort)chara->HomeWorld : (ushort)0;
+                string puppetName = spawned.PuppetName ?? string.Empty;
+                if (!string.IsNullOrEmpty(puppetName))
+                {
+                    customizePlusIpc.RemovePlayerCharacter(spawned.AssignedCustomizePlusGuid.Value, puppetName, worldId);
+                }
                 spawned.AssignedCustomizePlusGuid = null;
             }
 
@@ -1061,18 +1072,15 @@ public unsafe class ActorManager : IDisposable
             if (!string.IsNullOrWhiteSpace(template.CustomizePlusProfileGuid) &&
                 Guid.TryParse(template.CustomizePlusProfileGuid, out var profileGuid))
             {
-                if (!string.IsNullOrEmpty(puppetName))
+                var tempGuid = customizePlusIpc.SetTemporaryProfileByGuid((ushort)actorIndex, profileGuid);
+                if (tempGuid.HasValue && spawned != null)
                 {
-                    bool ok = customizePlusIpc.AddPlayerCharacter(profileGuid, puppetName, worldId);
-                    if (ok && spawned != null)
-                    {
-                        spawned.AssignedCustomizePlusGuid = profileGuid;
-                        logManager?.Info($"CustomizePlus: Mapped profile '{template.CustomizePlusProfileName ?? profileGuid.ToString()}' ({profileGuid}) to puppet '{puppetName}' (World: {worldId}).");
-                    }
-                    else
-                    {
-                        logManager?.Warning($"CustomizePlus: Failed to map profile '{profileGuid}' to puppet '{puppetName}'.");
-                    }
+                    spawned.TemporaryCustomizePlusGuid = tempGuid.Value;
+                    logManager?.Info($"CustomizePlus: Applied temporary profile '{template.CustomizePlusProfileName ?? profileGuid.ToString()}' ({profileGuid}) as temp {tempGuid.Value} on actor index {actorIndex}.");
+                }
+                else
+                {
+                    logManager?.Warning($"CustomizePlus: Failed to apply temporary profile '{profileGuid}' on actor index {actorIndex}.");
                 }
             }
             // 2. MCDF に内包された CustomizePlus データ
@@ -1092,26 +1100,26 @@ public unsafe class ActorManager : IDisposable
                     }
                 }
 
-                // MCDF のプロファイル JSON から Guid を取得して紐付け試行
                 try
                 {
                     var parsed = Newtonsoft.Json.Linq.JObject.Parse(cPlusJson);
-                    if (parsed["UniqueId"] != null && Guid.TryParse(parsed["UniqueId"]!.ToString(), out var mcdfProfileGuid))
+                    parsed["Enabled"] = true; // 強制有効化
+                    string jsonToInject = parsed.ToString(Newtonsoft.Json.Formatting.None);
+
+                    var tempGuid = customizePlusIpc.SetTemporaryProfile((ushort)actorIndex, jsonToInject);
+                    if (tempGuid.HasValue && spawned != null)
                     {
-                        if (!string.IsNullOrEmpty(puppetName))
-                        {
-                            bool ok = customizePlusIpc.AddPlayerCharacter(mcdfProfileGuid, puppetName, worldId);
-                            if (ok && spawned != null)
-                            {
-                                spawned.AssignedCustomizePlusGuid = mcdfProfileGuid;
-                                logManager?.Info($"CustomizePlus: Mapped MCDF profile {mcdfProfileGuid} to puppet '{puppetName}'.");
-                            }
-                        }
+                        spawned.TemporaryCustomizePlusGuid = tempGuid.Value;
+                        logManager?.Info($"CustomizePlus: Applied MCDF temporary profile as temp {tempGuid.Value} on actor index {actorIndex}.");
+                    }
+                    else
+                    {
+                        logManager?.Warning($"CustomizePlus: Failed to apply MCDF temporary profile on actor index {actorIndex}.");
                     }
                 }
                 catch (Exception ex)
                 {
-                    logManager?.Warning($"Could not map MCDF CustomizePlus profile: {ex.Message}");
+                    logManager?.Warning($"Could not parse/apply MCDF CustomizePlus profile: {ex.Message}");
                 }
             }
         }

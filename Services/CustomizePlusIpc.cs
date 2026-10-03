@@ -47,6 +47,7 @@ public class CustomizePlusIpc
 
     private List<CustomizePlusProfileInfo> cachedProfiles = new();
     private DateTime lastProfilesFetch = DateTime.MinValue;
+    private bool hasCleanedUpResiduals = false;
 
     public bool IsAvailable
     {
@@ -118,6 +119,13 @@ public class CustomizePlusIpc
         lastProfilesFetch = DateTime.UtcNow;
         try
         {
+            // 初回または強制リフレッシュ時に過去の残骸パペット設定を自己修復
+            if (!hasCleanedUpResiduals || forceRefresh)
+            {
+                hasCleanedUpResiduals = true;
+                CleanupPuppetArtifacts();
+            }
+
             if (getProfileList != null)
             {
                 var list = getProfileList.InvokeFunc();
@@ -163,7 +171,20 @@ public class CustomizePlusIpc
         if (!IsAvailable || setTemporaryProfileOnCharacter == null) return null;
         try
         {
-            var (ec, guid) = setTemporaryProfileOnCharacter.InvokeFunc(gameObjectIndex, profileJson);
+            // プロファイルが CustomizePlus 側で無効化されていてもパペットに確実に適用されるよう Enabled: true を保証
+            string finalJson = profileJson;
+            try
+            {
+                var parsed = Newtonsoft.Json.Linq.JObject.Parse(profileJson);
+                if (parsed["Enabled"] == null || parsed["Enabled"]!.Value<bool>() == false)
+                {
+                    parsed["Enabled"] = true;
+                    finalJson = parsed.ToString(Newtonsoft.Json.Formatting.None);
+                }
+            }
+            catch { }
+
+            var (ec, guid) = setTemporaryProfileOnCharacter.InvokeFunc(gameObjectIndex, finalJson);
             if (ec == 0 && guid.HasValue)
             {
                 log.Info($"CustomizePlus: Set temporary profile {guid.Value} on actor index {gameObjectIndex}");
@@ -183,6 +204,39 @@ public class CustomizePlusIpc
         var json = GetProfileJson(uniqueId);
         if (string.IsNullOrEmpty(json)) return null;
         return SetTemporaryProfile(gameObjectIndex, json);
+    }
+
+    /// <summary>
+    /// 過去バージョンで AddPlayerCharacter によりユーザーの正規プロファイル設定ファイルに
+    /// 書き込まれてしまった "Actor " パペット残骸エントリを検知・自動削除する自己修復機能
+    /// </summary>
+    public int CleanupPuppetArtifacts()
+    {
+        if (!IsAvailable || getProfileList == null || removePlayerCharacter == null) return 0;
+        int cleanedCount = 0;
+        try
+        {
+            var list = getProfileList.InvokeFunc();
+            if (list != null)
+            {
+                foreach (var p in list)
+                {
+                    if (p.Characters == null || p.Characters.Count == 0) continue;
+                    var puppetChars = p.Characters.Where(c => !string.IsNullOrEmpty(c.Name) && c.Name.StartsWith("Actor ")).ToList();
+                    foreach (var c in puppetChars)
+                    {
+                        log.Information($"CustomizePlus self-healing: Removing residual puppet character '{c.Name}' (World: {c.WorldId}) from profile {p.UniqueId} ({p.Name})");
+                        int ec = removePlayerCharacter.InvokeFunc(p.UniqueId, c.Name, c.WorldId);
+                        if (ec == 0) cleanedCount++;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Warning($"Error during CustomizePlus puppet artifact cleanup: {ex.Message}");
+        }
+        return cleanedCount;
     }
 
     public bool DeleteTemporaryProfile(Guid uniqueId)

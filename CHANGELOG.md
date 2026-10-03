@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.52] - 2026-10-03
+### Fixed
+- **Customize+ 公式一時プロファイル IPC (`SetTemporaryProfile`) への完全移行と設定ファイル汚染の根絶**:
+  - **根本原因の完全解明 (`CustomizePlus.dll` 逆アセンブル解析)**:
+    1. **恒久プロファイル書き換え (`AddPlayerCharacter`) の副作用**:
+       - スポーン時に `AddPlayerCharacter` を呼んでいたため、CustomizePlus がディスク上の `profiles/*.json` の `Characters` 配列に `"Actor Ac"` 等を追記し、毎度 `SaveProfile()` を実行していた。
+       - これによりユーザーの正規設定ファイルがゴミデータで汚染され、プロファイル変更通知がゲーム全体に飛び交うことで自キャラや他アクターのボーン姿勢崩れ・カクつきを誘発していた。
+    2. **プロファイル無効化（Disabled）の壁**:
+       - ユーザー環境で対象プロファイルが `"Enabled": false` の場合、紐付けても骨格変形が一切行われなかった。
+    3. **MCDF 外部プロファイルの未登録失敗**:
+       - MCDF 内包プロファイルはユーザーの環境に登録されていない外部データであるため、`AddPlayerCharacter` が `ec=3`（ProfileNotFound）で失敗していた。
+  - **解決策**:
+    - **公式一時プロファイル IPC (`SetTemporaryProfileOnCharacter` / `SetTemporaryProfileByGuid`) への完全移行**:
+      - メモリ上だけでパペットのアクターインデックス（Index 200）にプロファイルを注入。ユーザーの設定ファイルへのディスク書き込みは一切行われない（汚染ゼロ）。
+      - プロファイル JSON の `"Enabled"` を強制的に `true` に補正して注入するため、無効化中のプロファイルでもパペットに 100% 確実に適用。
+      - MCDF 内包の Customize+ データも同様に直接一時プロファイルとして注入可能に。
+    - **設定ファイル汚染の自己修復機能 (`CleanupPuppetArtifacts`)**:
+      - 過去バージョンでユーザーの正規プロファイルに書き込まれて残骸化した `"Actor "` エントリを自動検知し、安全に削除して設定ファイルを元の状態にクリーンアップ。
+    - **他パイプライン（Glamourer, Penumbra, Monster）への影響ゼロを保証（完全隔離）**。
+
 ## [0.1.51] - 2026-10-03
 ### Fixed
 - **Glamourer ApplyState への Base64 圧縮データ渡しと連続スポーン時の外見ズレ（直前キャラ表示・自キャラ化）の完全解消**:
