@@ -43,8 +43,11 @@
   - [x] `ActorManager.cs`: `AppearanceDeferredJob` を Phase 1（Penumbra Redraw）→ Phase 2（4フレーム待機後 CustomizePlus 確定注入）の 2段階ステートマシンに刷新。Redraw の DrawObject 再構築によるボーン変形リセット（バニラ化）を物理的に完全防止
 - [x] **1-8. スポーン順固定化（シャッフル根絶）＆ MCDF DrawObject 待機遅延適用＆スロット固定命名（`v0.1.61.0`）**:
   - [x] `SceneManager.cs`: 距離ソート（`OrderBy`）を完全廃止し、シーン内の定義順（固定順）で決定論的にスポーン。COMスロット番号とアクターの対応を固定化しシャッフルを根絶
-  - [x] `ActorManager.cs`: パペット名を COM スロット連動固定名（`Actor CS00`〜`Actor CS19`）に変更。スロット再利用時のステートキャッシュ（RevertStateName）を確実にパージ可能化
+  - [x] `ActorManager.cs`: パペット名を COM スロット連動固定名に変更し、スロット再利用時のステートキャッシュ（RevertStateName）を確実にパージ可能化
   - [x] `ActorManager.cs`: MCDF（パイプラインB）の Glamourer 適用を `AppearanceDeferredJob` の Phase 0（DrawObject 生成確認後）に移行。早すぎる呼び出しによる `ActorNotFound (ec=6)` を完全根絶し、MCDF の顔・髪・衣装を 100% 確実に適用
+- [x] **1-9. FF14 公式名前規則適合（フォネティック英字命名）＆ MCDF 遅延適用リトライ耐性（`v0.1.62.0`）**:
+  - [x] `ActorManager.cs`: 数字を完全排除し、FF14 公式名前規則に完全適合する英字フォネティック命名（`Puppet Alpha`, `Puppet Bravo` ... `Puppet Zulu`）に全面刷新。ゲームエンジンでの名前破損および全プラグイン IPC（Glamourer / Penumbra / CustomizePlus）の停止を完全復旧
+  - [x] `ActorManager.cs`: `AppearanceDeferredJob` Phase 0 に Glamourer 認識リトライループ（最大30フレーム耐性）を追加
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか

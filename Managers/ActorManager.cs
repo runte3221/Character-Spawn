@@ -169,14 +169,53 @@ public unsafe class ActorManager : IDisposable
         CurrentPreviewActor = null;
     }
 
+    private static readonly string[] SlotSurnames = new[]
+    {
+        "Alpha",    // COM#0
+        "Bravo",    // COM#1
+        "Charlie",  // COM#2
+        "Delta",    // COM#3
+        "Echo",     // COM#4
+        "Foxtrot",  // COM#5
+        "Golf",     // COM#6
+        "Hotel",    // COM#7
+        "India",    // COM#8
+        "Juliet",   // COM#9
+        "Kilo",     // COM#10
+        "Lima",     // COM#11
+        "Mike",     // COM#12
+        "November", // COM#13
+        "Oscar",    // COM#14
+        "Papa",     // COM#15
+        "Quebec",   // COM#16
+        "Romeo",    // COM#17
+        "Sierra",   // COM#18
+        "Tango",    // COM#19
+        "Uniform",  // COM#20
+        "Victor",   // COM#21
+        "Whiskey",  // COM#22
+        "Xray",     // COM#23
+        "Yankee",   // COM#24
+        "Zulu"      // COM#25
+    };
+
     private string GetPuppetName(ushort comIdx)
     {
         // HDM & AQR 黄金律:
-        // FF14 の PlayerIdentifier / VerifyPlayerName 規則: Forename + " " + Surname, 各15文字以内, 合計20文字以内, 純粋な ASCII 英字のみ
-        // COM スロット番号 (0〜19等) と 1対1 に対応する決定論的 ASCII 英名 "Actor CS00", "Actor CS01", ... を生成する。
+        // FF14 の PlayerIdentifier / VerifyPlayerName 規則:
+        // Forename + " " + Surname, 各3〜15文字以内, 合計20文字以内, 純粋な ASCII 英字のみ
+        // 【重要】数字（0〜9）は FF14 の PlayerName で厳格に禁止されており、数字が入ると名前破損（Character: A.C）を引き起こし全IPCが停止する！
+        // したがって、COM スロット番号 (0〜25等) と 1対1 に対応する英字フォネティックコード "Puppet Alpha", "Puppet Bravo", ... を生成する。
         // これにより、同じスロットを再利用した際にも同一名で Glamourer / Penumbra のステートキャッシュを 100% 確実にリバート・パージ可能。
         // ※頭上のネームプレート表示やUI表示は SpawnedActorData.DisplayName / NamePlate.CustomName (template.Name) が保持されるため完全に日本語で表示される。
-        return $"Actor CS{comIdx:D2}";
+        if (comIdx < SlotSurnames.Length)
+        {
+            return $"Puppet {SlotSurnames[comIdx]}";
+        }
+        int s = comIdx - SlotSurnames.Length;
+        char c1 = (char)('A' + ((s / 26) % 26));
+        char c2 = (char)('a' + (s % 26));
+        return $"Puppet Extra{c1}{c2}";
     }
 
     /// <summary>
@@ -922,17 +961,34 @@ public unsafe class ActorManager : IDisposable
                                 continue;
                             }
 
+                            bool glamSuccess = false;
                             if (glamourerIpc.IsAvailable)
                             {
-                                bool glamSuccess = glamourerIpc.ApplyDesignToActor(job.PendingGlamourerDesign, actorIndex, job.Spawned.PuppetName);
+                                glamSuccess = glamourerIpc.ApplyDesignToActor(job.PendingGlamourerDesign, actorIndex, job.Spawned.PuppetName);
                                 logManager?.Info($"[AppearanceDeferredJob Phase 0] Deferred Glamourer ApplyDesign for '{job.Spawned.DisplayName}' on Global#{actorIndex} result: {glamSuccess} (after {job.Ticks} ticks).");
                             }
 
-                            job.GlamourerApplied = true;
-                            // HDM 黄金律: ApplyDesign 直後に DisableDraw を行い、DrawObject を強制再構築する！
-                            try { chara->GameObject.DisableDraw(); } catch { }
-                            job.Ticks = 0;
-                            continue;
+                            if (glamSuccess)
+                            {
+                                job.GlamourerApplied = true;
+                                // HDM 黄金律: ApplyDesign 直後に DisableDraw を行い、DrawObject を強制再構築する！
+                                try { chara->GameObject.DisableDraw(); } catch { }
+                                job.Ticks = 0;
+                                continue;
+                            }
+                            else if (job.Ticks < 30)
+                            {
+                                // まだゲームエンジンまたは Glamourer が認識していなければ次フレームでリトライ
+                                continue;
+                            }
+                            else
+                            {
+                                logManager?.Warning($"[AppearanceDeferredJob Phase 0] Deferred Glamourer timed out on Global#{actorIndex}. Proceeding to Redraw...");
+                                job.GlamourerApplied = true;
+                                job.DrawRebuilt = true;
+                                job.Ticks = 0;
+                                continue;
+                            }
                         }
 
                         // Phase 0 後の DrawObject 再構築待ち

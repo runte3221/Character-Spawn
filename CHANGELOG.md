@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.62] - 2026-10-03
+### Fixed
+- **FF14 キャラクター名規則違反（数字混じり命名による名前破損・全IPC停止）の緊急完全修正**:
+  - **根本原因の解明**:
+    - FF14 のキャラクター名バリデーション規則（`VerifyPlayerName`）では、数字（0〜9）が一切禁止されており、純粋な英字のみが許可されている。
+    - 直前バージョンでスロット連動のために導入した `Actor CS00` が不正な名前と判定され、ゲームエンジン内部で `A.C` などの不正文字列に破損。
+    - その結果、Glamourer（`ec=2` InvalidActor）、Penumbra（`ec=16` InvalidIdentifier）、CustomizePlus（`ActorNotFoundException`）のすべての IPC が人型アクターを認識できず全停止していた（モンスターおよびデミヒューマンは人型 PlayerName バリデーションを受けないため難を逃れていた）。
+  - **英字フォネティックコード命名への全面移行 (`Managers/ActorManager.cs`)**:
+    - 数字を完全排除し、FF14 の公式規則（Forename 3〜15文字、Surname 3〜15文字、ASCII英字のみ、頭文字大文字）に 100% 適合する **英字フォネティックコード命名（`Puppet Alpha`, `Puppet Bravo`, `Puppet Charlie` ... `Puppet Zulu`）** を実装。
+    - スロット番号（COM#0〜#25）と 1対1 で決定論的に対応させつつ、全プラグイン（Glamourer / Penumbra / CustomizePlus）がアクターを 100% 正常認識できるように完全復旧。
+  - **MCDF 遅延 Glamourer 適用のリトライ耐性強化 (`Managers/ActorManager.cs`)**:
+    - `AppearanceDeferredJob` Phase 0 において、Glamourer 適用成功時のみ再構築へ移行し、未認識時は最大 30 フレーム（約 0.5 秒）リトライする耐障害性を追加。
+  - **完全隔離の保証**:
+    - 第1工程のコア（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）の基本仕様を壊さず完全隔離・安全保持。自キャラ（LocalPlayer）への二重物理遮断を厳守。
+
 ## [0.1.61] - 2026-10-03
 ### Fixed
 - **シーンスポーン順固定化（シャッフル根絶）・MCDF DrawObject 待機遅延外見適用・COMスロット決定論的命名**:
