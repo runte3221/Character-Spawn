@@ -272,4 +272,94 @@ Applied Humanoid NPC appearance fallback on Global#200 after 60 ticks.
    - 待機時間は DrawObject の DisableDraw → EnableDraw の 2 ticks のみとなり、合計わずか 4 ticks（約0.06秒）で NPC 外見の適用が完了。
    - タイムアウト待ち（60 ticks）や遅延フォールバックが一切発生しなくなり、連続スポーン時でもズレることなく瞬時に本来の NPC 外見が適用される！
 
+---
+
+## 12. 人型NPC不具合の全変遷と類似トラブル混同防止マトリクス（完全決定版）
+
+今後同様の不具合が発生した際に、過去の類似事例と混同して誤った対応を取らないよう、これまでに発生したすべての事象・類似点・根本的な相違点・判定基準を網羅した完全記録。
+
+### (1) 全フェーズ対比マトリクス
+
+| バージョン | 表面上の症状 | 類似しているが全く異なる【真因】 | 解決策 |
+|---|---|---|---|
+| **v0.1.44 以前** | 人型NPCをスポーンすると**自キャラの姿**になる | **Glamourer コールドステートトラップ**<br>スポーン直後のパペットは Glamourer 内部キャッシュが未生成のため `GetState` が null を返し、即座に関数を抜けて素体（自キャラ）のまま残っていた。 | 自キャラ（`GetState(0)`）をディープコピーして即座に上書き適用するアプローチを導入。 |
+| **v0.1.45** | ミューヌは出たが、ユウギリ等の固有顔が**プレイヤー汎用顔（金髪ボブ等）**になる | **ゲームエンジンのサニタイズ（FilterCustomizeData）**<br>Glamourer IPC の型不一致（`string` vs `object`）で IPC が失敗し、フォールバック（メモリ直接書き込み）が走った結果、ゲームエンジンによって未解放の顔番号（201等）が汎用顔に強制丸め込みされた。 | Glamourer IPC の購読型を修正し、JObject 直接適用メソッドを新設。 |
+| **v0.1.46** | カヌ・エ・センナ、ユウギリが**汎用顔または自キャラ**になる | **ValueTuple JObject ALC 型境界例外**<br>Dalamud プラグイン間で `ValueTuple<int, JObject>` をやり取りする際、Newtonsoft.Json の AssemblyLoadContext（ALC）境界で型キャスト例外が発生し、ステート取得が失敗していた。 | 文字列通信の公式 IPC `Glamourer.GetStateBase64` を採用し、通信をすべて Base64 文字列に統一。 |
+| **v0.1.47〜0.1.48** | MCDF 適用時に自キャラ化する副作用が発生 / NPC が依然として汎用顔 | **パイプライン共通化の罠 & Cold-Spawn Race**<br>MCDF と NPC で共通の `ApplyDesignToActor` を通していたため、NPC 用の改修が MCDF を破壊。また 0 フレーム目ではパペットが未登録で必ず失敗していた。 | パイプライン完全分離（Pipeline C新設）。HDM 準拠の非同期待機キュー `HumanoidNpcApplyJob` を新設し、認識されるまでフレームリトライ。 |
+| **v0.1.49** | 60 ticks 待ってもパペットが認識されず**自キャラ**になる | **パペット名の日本語文字トラップ**<br>`GetPuppetName` がテンプレート名「ユウギリ」から `"ユウギリ Cnpc"` という日本語文字を含む内部名を生成していたため、Glamourer の `VerifyPlayerName`（ASCII英字のみ）で弾かれ、永久に `ActorNotFound` になっていた。 | HDM 準拠の純粋 ASCII 英字プレイヤー名（`"Actor Aa"`, `"Actor Ab"`）を生成。 |
+| **v0.1.50** | ミューヌとユウギリが**自キャラ（水着ミコッテ）**でスポーン | **ENpc ResidentId vs BaseId の空間乖離 & DrawObject 未再構築**<br>1. UI リストが `ENpcResident`（ユウギリ=1007097）だったが、外見データは `ENpcBase`（ユウギリ=1011896）から引いており、ID 不一致で自キャラデータがテンプレートに保存されていた。<br>2. Glamourer ApplyFlag が 7UL（Once）で永続化されず、かつ適用後に DrawObject 強制再構築（`RedrawGuise`）を行っていなかったため、自キャラの 3D モデルが残存していた。 | 1. `BuildNpcCache` を `ENpcBase` 主軸走査に変更し、名前からの自動自己修復機構を実装。<br>2. HDM と同一の `6UL`（Equipment \| Customization）永続フラグ、および適用後の `DisableDraw` → 2 ticks 待機 → `EnableDraw` を実装。 |
+| **v0.1.51 (今回)** | ミューヌは出たが、カヌエセンナを押すとミューヌが出る。**連続スポーンで直前のキャラが出たり自キャラに戻る** | **ApplyState 引数型不一致（Base64 期待 vs 生 JSON 渡し）& タイムアウト遅延の重なり**<br>`Glamourer.dll` の `StateApi.ApplyState(string)` は Base64 圧縮文字列を期待するが、生の JSON 文字列を渡していたため毎フレーム `result: 7`（InvalidState）で例外終了。その結果 60 ticks タイムアウト後に無理やり Direct Memory Fallback と Penumbra Redraw が走り、連続スポーン時に前のキャラの遅延描画が新キャラに重なってズレていた。 | `TryApplyNpcAppearance` で `CompressToBase64(state)` を通して Base64 圧縮文字列を渡すように修正。Glamourer が 0 ticks（即時）で Success を返し、わずか 4 ticks（約0.06秒）で完全描画完了。 |
+
+---
+
+### (2) 「自キャラの姿になる」症状の真因識別チャート
+
+「自キャラの姿でスポーンする」という現象は過去に 4 回発生しているが、**内部で起きている原因は毎回まったく異なる**。
+次回同様の事象が発生した場合は、以下のログ確認ポイントで即座に真因を特定すること：
+
+```text
+Q1: CharacterSpawn.json の template.CustomizeData[0] (Race) は何になっているか？
+├─ 自キャラの Race (例: 4=ミコッテ) になっている
+│   └─ 【原因】ENpc ResidentId と BaseId の乖離 (v0.1.50 の問題)。
+│      外見データ取得元が ENpcBase.RowId ではなく ENpcResident.RowId になっている。
+│      解決: ENpcBase 主軸で検索キャッシュを作り、名前逆引きで BaseId を解決する。
+│
+└─ 正しい NPC の Race (例: 2=エレゼン, 6=アウラ) になっている
+    │
+    ├─ Q2: dalamud.log で Glamourer ApplyState の戻り値 (result) はいくつか？
+    │   ├─ result: 7 (InvalidState) かつ "Unknown Error decoding Base64" 例外が出ている
+    │   │   └─ 【原因】データ形式不一致 (v0.1.51 の問題)。
+    │   │      ApplyState に生 JSON 文字列を渡している。
+    │   │      解決: CompressToBase64(state) で GZip 圧縮 Base64 文字列を渡す。
+    │   │
+    │   ├─ result: 2 (ActorNotFound) または GetState が null で 60 ticks タイムアウト
+    │   │   └─ 【原因】パペット名の ASCII 違反 (v0.1.49 の問題)。
+    │   │      GameObject.SetName に日本語文字が含まれており Glamourer が弾いている。
+    │   │      解決: "Actor Aa" などの純粋 ASCII 英字プレイヤー名にする。
+    │   │
+    │   └─ result: 0 (Success) なのに見た目が自キャラのまま
+    │       └─ 【原因】DrawObject が再構築されていない (v0.1.50 の問題)。
+    │          ApplyState 成功直後に DisableDraw → 2 ticks 待機 → EnableDraw を実行していない。
+    │          解決: RedrawGuise シーケンスを確実に実行してエンジン側のモデルを破棄・再生成させる。
+```
+
+---
+
+### (3) 「NPC 固有顔・髪型がプレイヤー汎用顔（金髪ボブ等）になる」症状の真因識別
+
+- **現象**: 服や体格は変わっているが、カヌ・エ・センナのツノ・編み込み髪型や、ユウギリのアウラ固有顔（Face 201）が反映されず、プレイヤー作成可能な普通の顔・髪型になってしまう。
+- **真因**:
+  - **ゲームエンジン内の `FilterCustomizeData` によるサニタイズ（強制置換）**。
+  - 直接メモリ書き込み（`chara->DrawData.CustomizeData`）を行うと、ゲームエンジンが「このプレイヤー種族・部族では選択不可能な顔番号」と判断して汎用顔に丸め込んでしまう。
+  - **Glamourer 経由で適用された場合は、Glamourer がエンジンのサニタイズを完全にバイパスするため、固有顔・髪型が 100% 保持される**。
+  - したがって、「汎用顔になる」＝「**Glamourer 適用が何らかの理由でスキップまたは失敗し、フォールバックの直接メモリ書き込みが走っている**」ことを意味する。
+  - ログで `[Pipeline C: NPC] Glamourer NPC appearance timed out after 60 ticks` が出ていないか確認すること。
+
+---
+
+### (4) 「連続スポーンで直前のキャラが出たり処理がズレる」症状の真因識別
+
+- **現象**: プレビュー一覧でキャラ A をスポーン後、デスポーンせずにキャラ B をスポーンするとキャラ A が出たり、次々とクリックすると前のキャラが表示され、最終的に自キャラになる。
+- **真因**:
+  - **Glamourer が毎フレーム失敗（result: 7）し、60 ticks（約1秒）のタイムアウト待ちキューが滞留していること**。
+  - タイムアウト待ちの間に次のキャラが要求されると、ゲームスレッド上で遅延した Direct Memory Fallback や `Penumbra.Redraw` が後から発火し、新しく生成されたパペットに前回の外見を上書きしてしまう。
+  - **正常時は Glamourer が 0 ticks（即時）で Success を返すため、待機時間は DrawObject 再構築の 2 ticks（約0.03秒）しか存在せず、連続スポーンしても絶対にズレない**。
+  - ログで `Glamourer NPC appearance timed out after 60 ticks` が多発していないか確認すること。
+
+---
+
+### (5) 今後の保守・改修時の絶対遵守ルール (黄金律)
+
+1. **Pipeline の完全隔離**:
+   - MCDF（Pipeline A/B）、Monster / Demihuman（Pipeline D）、人型NPC（Pipeline C）はそれぞれ完全に独立したパイプラインである。
+   - 人型NPCの改修時に、MCDF や Monster が通る共通メソッド（`ApplyDesignToActor` 等）のシグネチャや引数型を絶対に変更しないこと。
+2. **Glamourer 通信はすべて Base64 (GZip 圧縮) 文字列で行う**:
+   - `ApplyState` に渡すデータは、生の JSON ではなく必ず **`CompressToBase64(state)`** を通すこと。
+   - プラグイン間で `JObject` などの複合型を直接 IPC でやり取りすると、Newtonsoft.Json の ALC 境界例外が発生するため、外部 IPC 通信はすべて `string`（Base64）で行うこと。
+3. **パペット名は常に ASCII 英字プレイヤー名（`"Actor Aa"`）を維持する**:
+   - ゲームエンジン内部名に日本語を使用しないこと（ネームプレートや UI 表示は `DisplayName` で日本語を維持する）。
+4. **NPC データは常に `ENpcBase` を主軸として取り扱う**:
+   - `ENpcResident` は配置・名称用テーブルであり、外見データ（`ModelChara`, `Race`, `Face`, `Equipment`）はすべて `ENpcBase` に存在する。ID は常に `ENpcBase.RowId` を正とすること。
+
+
 
