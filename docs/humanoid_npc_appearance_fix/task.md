@@ -93,19 +93,19 @@
 - [x] **根本原因 2: Glamourer ApplyFlag (6UL) と DrawObject 強制再構築 (`RedrawGuise`)**:
   - HDM は `ApplyState` に `6UL`（Equipment | Customization）を渡し、`Once (1)` を除外して永続適用していた。
   - さらに `ApplyState` 直後に `DisableDraw` → 2 ticks 待機 → `EnableDraw`（`RedrawGuise`）を実行し、ゲームエンジンの DrawObject を NPC 外見で強制再構築していた。
-- [ ] **コード改修 (`Services/GameDataService.cs`)**:
-  - [ ] `BuildNpcCache` を `ENpcBase` 主ループに変更し、リスト ID を `ENpcBase.RowId`（BaseId）にする。
-  - [ ] 既存 ResidentId や名前から正しい BaseId を解決するフェイルセーフを追加。
-- [ ] **コード改修 (`Services/GlamourerIpc.cs`)**:
-  - [ ] `ApplyState` のフラグを HDM と同一の `6UL`（Equipment | Customization）に変更。
-  - [ ] 不要な全スロット強制 `ForceAllApply` を排除し、NPC スロットのみ確実に適用。
-- [ ] **コード改修 (`Managers/ActorManager.cs`)**:
-  - [ ] 人型NPCスポーン時、保存済みテンプレートが自キャラデータで汚染されている場合の自動リフレッシュを追加。
-  - [ ] `HumanoidNpcApplyJob` で Glamourer 適用成功後に `DisableDraw` → 2 ticks 待機 → `EnableDraw`（DrawObject 強制再構築）を実行。
-- [ ] **ドキュメント更新とリリース**:
-  - [ ] `docs/humanoid_npc_appearance_fix/` の 3 ファイル更新
-  - [ ] `CHANGELOG.md` 更新（v0.1.50.0）
-  - [ ] `tools/release.ps1 0.1.50.0` 実行
+- [x] **コード改修 (`Services/GameDataService.cs`)**:
+  - [x] `BuildNpcCache` を `ENpcBase` 主ループに変更し、リスト ID を `ENpcBase.RowId`（BaseId）にする。
+  - [x] 既存 ResidentId や名前から正しい BaseId を解決するフェイルセーフを追加。
+- [x] **コード改修 (`Services/GlamourerIpc.cs`)**:
+  - [x] `ApplyState` のフラグを HDM と同一の `6UL`（Equipment | Customization）に変更。
+  - [x] 不要な全スロット強制 `ForceAllApply` を排除し、NPC スロットのみ確実に適用。
+- [x] **コード改修 (`Managers/ActorManager.cs`)**:
+  - [x] 人型NPCスポーン時、保存済みテンプレートが自キャラデータで汚染されている場合の自動リフレッシュを追加。
+  - [x] `HumanoidNpcApplyJob` で Glamourer 適用成功後に `DisableDraw` → 2 ticks 待機 → `EnableDraw`（DrawObject 強制再構築）を実行。
+- [x] **ドキュメント更新とリリース**:
+  - [x] `docs/humanoid_npc_appearance_fix/` の 3 ファイル更新
+  - [x] `CHANGELOG.md` 更新（v0.1.50.0）
+  - [x] `tools/release.ps1 0.1.50.0` 実行
 
 
 
