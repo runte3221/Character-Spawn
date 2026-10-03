@@ -56,6 +56,9 @@ public class SceneManager : IDisposable
     /// </summary>
     private readonly Dictionary<Guid, SpawnedActorData> spawnedSceneActors = new();
 
+    private SceneData? pendingAutoSpawnScene;
+    private int pendingAutoSpawnTicks = 0;
+
     public SceneManager(
         IDalamudPluginInterface pluginInterface,
         IClientState clientState,
@@ -80,19 +83,60 @@ public class SceneManager : IDisposable
 
     private void OnTerritoryChanged(uint territoryType)
     {
+        // 1. 移動前のシーンを即座に安全クリーンアップ
         if (ActiveSpawnedScene != null || spawnedSceneActors.Count > 0)
         {
             logManager?.Info($"Territory changed to {territoryType}. Automatically despawning active scene '{ActiveSpawnedScene?.Name}'.");
             DespawnScene();
         }
 
-        // Auto Spawn: 対象エリアに入ったら自動的にスポーンする
+        pendingAutoSpawnScene = null;
+        pendingAutoSpawnTicks = 0;
+
+        // 2. Auto Spawn 対象シーンの探索 (ロード画面中は実行せず、ローディング完了を待機)
         var autoScene = Scenes.FirstOrDefault(s => s.TerritoryId == territoryType && s.AutoSpawn);
         if (autoScene != null)
         {
-            logManager?.Info($"Auto-spawning scene '{autoScene.Name}' for territory {territoryType}");
-            SpawnScene(autoScene);
+            logManager?.Info($"Territory {territoryType}: Scene '{autoScene.Name}' is marked for Auto Spawn. Waiting for world and LocalPlayer to fully load...");
+            pendingAutoSpawnScene = autoScene;
+            pendingAutoSpawnTicks = 60; // 自キャラ出現後 60 フレーム (約1秒) 待機して安全スポーン
         }
+    }
+
+    /// <summary>
+    /// Framework.Update ごとに呼び出され、ゾーンロード完了待機と安全な Auto Spawn を実行
+    /// </summary>
+    public void UpdateFrame()
+    {
+        if (pendingAutoSpawnScene == null)
+            return;
+
+        // ログイン状態およびゾーンIDの一致確認
+        if (!clientState.IsLoggedIn || clientState.TerritoryType != pendingAutoSpawnScene.TerritoryId)
+        {
+            return;
+        }
+
+        // 自キャラ (LocalPlayer) がワールドに完全に生成され、有効なアドレスを持っているか確認
+        var localPlayer = clientState.LocalPlayer;
+        if (localPlayer == null || localPlayer.Address == nint.Zero)
+        {
+            return;
+        }
+
+        // 安全マージン待機カウントダウン (ゾーン暗転明けの確実な待機)
+        if (pendingAutoSpawnTicks > 0)
+        {
+            pendingAutoSpawnTicks--;
+            return;
+        }
+
+        // 安全確認完了: スポーン実行
+        var sceneToSpawn = pendingAutoSpawnScene;
+        pendingAutoSpawnScene = null;
+
+        logManager?.Info($"World stabilized and LocalPlayer ready. Auto-spawning scene '{sceneToSpawn.Name}' on territory {clientState.TerritoryType}.");
+        SpawnScene(sceneToSpawn);
     }
 
     #region Persistence (Load / Save)
@@ -441,6 +485,7 @@ public class SceneManager : IDisposable
     public void Dispose()
     {
         clientState.TerritoryChanged -= OnTerritoryChanged;
+        pendingAutoSpawnScene = null;
         DespawnScene();
     }
 }

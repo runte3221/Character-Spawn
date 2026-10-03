@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.57] - 2026-10-03
+### Fixed
+- **エリア移動（テレポ）時の Auto Spawn 競合およびローディング中スポーンによるゲーム強制終了 (C0000005) の解消**:
+  - **根本原因の完全解明 (`dalamud_appcrash_20261003_140458_771_22856.log` および `dalamud.old.log` 解析)**:
+    - ゾーン移動時、`ClientState.TerritoryChanged` イベントは画面暗転・ローディング中に即座に発火する。
+    - このタイミングでは、ゲームワールド上に自キャラ（LocalPlayer）のネイティブ GameObject や描画モデルがまだ生成されておらず、`Local player not found` エラーが発生していた。
+    - さらに、`Plugin.cs`（旧 `OnTerritoryChanged`）と `SceneManager.cs` で `TerritoryChanged` が二重購読されており、一方が `SpawnScene` を試みる直後に他方が `actorManager.DespawnAll()` を呼ぶ二重競合が発生。
+    - 不完全に生成・破棄されたオブジェクトに対してゲームエンジンの DirectX レンダラーが OrientedBounds を計算しようとした結果、`Client::Graphics::Scene::Weapon.UpdateRender` で NULL ポインタ参照（0xC0000005）を引き起こしゲームが強制終了していた。
+  - **解決策**:
+    - `Plugin.cs` の不要な旧 `OnTerritoryChanged` 購読を完全削除し、ゾーン移動制御を `SceneManager` に一本化。
+    - `ClientState.TerritoryChanged` 時は旧シーンの安全なデスポーン（クリーンアップ）のみを即座に行い、Auto Spawn はローディング画面中には一切実行しないよう分離。
+    - `Framework.Update`（メインスレッド）にて、ゾーン移動後に `ClientState.IsLoggedIn` かつ `LocalPlayer` が正常にロード完了したことを検知後、60フレーム（約1秒）の安全マージンを待機してから確実に `SpawnScene` を実行する「遅延安定オートスポーン」を実装。
+  - **完全隔離の保証**:
+    - 第1工程のコアロジック（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）は完全不可侵（変更なし）を厳守。
+
 ## [0.1.56] - 2026-10-03
 ### Added
 - **Stagehand 準拠の UI レイアウト全面刷新と Scene Edit 独立ウィンドウの新設**:

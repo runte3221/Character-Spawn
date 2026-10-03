@@ -105,7 +105,6 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleUI;
 
         Framework.Update += OnFrameworkUpdate;
-        ClientState.TerritoryChanged += OnTerritoryChanged;
 
         // 過去のセッションで自キャラがGlamourerによって誤変身させられていた場合の自動復元 (メインスレッド上で安全に実行)
         Framework.RunOnFrameworkThread(() =>
@@ -162,6 +161,7 @@ public sealed class Plugin : IDalamudPlugin
         try
         {
             actorManager.UpdateFrame();
+            sceneManager.UpdateFrame();
         }
         catch (Exception ex)
         {
@@ -169,41 +169,9 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private void OnTerritoryChanged(uint territoryType)
-    {
-        actorManager.DespawnAll();
-
-        if (!Configuration.AutoRestoreScenesOnZoneChange)
-            return;
-
-        var autoScenes = Configuration.Scenes.Where(s => s.TerritoryTypeId == territoryType && s.AutoSpawnOnZone).ToList();
-        foreach (var scene in autoScenes)
-        {
-            logManager.Info($"Auto-spawning scene '{scene.Name}' for territory {territoryType}");
-            foreach (var actorData in scene.Actors)
-            {
-                var template = Configuration.Templates.FirstOrDefault(t => t.Id == actorData.TemplateId);
-                if (template != null)
-                {
-                    var spawned = actorManager.SpawnCharacter(template, actorData.Transform.Position, actorData.Transform.Rotation);
-                    if (spawned != null)
-                    {
-                        spawned.Animation = actorData.Animation;
-                        spawned.NamePlate = actorData.NamePlate;
-                        spawned.IsTargetable = actorData.IsTargetable;
-
-                        actorManager.ApplyActorAnimation(spawned);
-                        actorManager.ApplyTargetable(spawned);
-                    }
-                }
-            }
-        }
-    }
-
     public void Dispose()
     {
         Framework.Update -= OnFrameworkUpdate;
-        ClientState.TerritoryChanged -= OnTerritoryChanged;
 
         CommandManager.RemoveHandler(CommandName);
         CommandManager.RemoveHandler(ShortCommandName);
