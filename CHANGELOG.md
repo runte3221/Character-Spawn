@@ -19,6 +19,8 @@ All notable changes to this project will be documented in this file.
     - 約1万種のアクションタイムラインおよびエモートのリアルタイムインクリメンタル検索・選択リストボックスを実装。
     - ループトグル、速度スライダー、表情選択ドロップダウン、視線追従（LookAt Player）チェックボックスを完備。
     - 設定変更の瞬間に目の前にスポーン中のキャラクターへ即座に反映され、シーンへ自動保存される快適な編集体験を実現。
+### Fixed
+- `UI/SceneEditWindow.cs` における `GameDataService` の名前空間インポート抜け（CS0246）および `AnimationService.cs` におけるキャラクター回転呼び出しの型安全化修正。
 
 ## [0.1.70] - 2026-10-03
 ### Added

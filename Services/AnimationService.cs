@@ -201,7 +201,8 @@ public unsafe class AnimationService : IDisposable
                         float diff = NormalizeAngle(targetRot - currentRot);
                         float smoothedRot = currentRot + diff * 0.15f;
 
-                        chara->GameObject.SetRotation(smoothedRot);
+                        chara->SetTargetId(localPlayer.EntityId);
+                        chara->SetRotation(smoothedRot);
                     }
                     else
                     {
@@ -210,7 +211,7 @@ public unsafe class AnimationService : IDisposable
                         float diff = NormalizeAngle(state.OriginalRotation - currentRot);
                         if (MathF.Abs(diff) > 0.01f)
                         {
-                            chara->GameObject.SetRotation(currentRot + diff * 0.1f);
+                            chara->SetRotation(currentRot + diff * 0.1f);
                         }
                     }
                 }
