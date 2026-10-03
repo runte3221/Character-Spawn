@@ -26,5 +26,5 @@
 
 - [x] **6. 検証とリリース (`v0.1.65.0`)**
   - [x] 各パイプライン（MCDF、NPC、モンスター、Chonk）への非干渉確認
-  - [ ] `tools/release.ps1 0.1.65.0` での自動リリース、CI/CD 成功確認
+  - [x] `tools/release.ps1 0.1.65.0` での自動リリース、CI/CD 成功確認
   - [x] `walkthrough.md` の確定・Git 同期
