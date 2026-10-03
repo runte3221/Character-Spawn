@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.64] - 2026-10-03
+### Fixed
+- **Chonk 等の Glamourer デザイン指定アクターにおける遅延外見適用・リトライ耐性強化（外見抜け・自キャラ素体化の完全根絶）**:
+  - **根本原因の解明**:
+    - `SourceType == Glamourer`（Chonk など）のアクターにおいて、COM スロット生成直後の 0 フレーム目に即座に `ApplyDesignToActor` を呼び出していた。
+    - ゲームエンジンがアクターの `DrawObject` を確立する前に Glamourer を呼ぶと、Glamourer 側で `ActorNotFound (ec=6)` となり外見デザインの適用に失敗するケースがあった。
+    - 失敗時にもデザイン情報が `AppearanceDeferredJob` に引き継がれていなかったため、リトライされずに取り残され、自キャラ（素体）の見た目のまま CustomizePlus（体型プロファイル）だけが乗るという外見崩れが発生していた。
+  - **遅延外見適用＆リトライステートマシンへの統合 (`Managers/ActorManager.cs`)**:
+    - `ApplyAppearanceDirect` において、通常アクター（Glamourer / PlayerClone）にも `PendingGlamourerDesign` を設定し、即時適用が失敗した場合は `AppearanceDeferredJob` の **Phase 0** で `DrawObject` 生成待機後に自動リトライ（最大 30 フレーム）する仕組みを実装。
+    - MCDF と全く同様に、ゲームエンジンの準備完了を待って確実に Glamourer デザインが適用されてから Phase 1（Penumbra Redraw）→ Phase 2（CustomizePlus 確定注入）と同期実行されるように統一。
+  - **完全隔離の保証**:
+    - 第1工程のコア（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）の基本仕様を壊さず完全隔離・安全保持。自キャラ（LocalPlayer）への二重物理遮断を厳守。
+
 ## [0.1.63] - 2026-10-03
 ### Fixed
 - **DirectX レンダラー競合クラッシュ（`Weapon.UpdateRender` / `Weapon.vf105` 0xC0000005）の完全根絶**:

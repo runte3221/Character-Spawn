@@ -52,7 +52,9 @@
   - [x] `ActorManager.cs`: `SafeSetWeaponVisibility` ヘルパーを導入。モンスター（`ModelCharaId > 0`）への武器操作を完全遮断し、人型アクターも DrawObject 生成確認後にのみ安全に適用
   - [x] `ActorManager.cs`: スポーン初期化時（COM作成直後）の不要な即時 `EnableDraw()` を撤廃し、未初期化 DrawObject がレンダラーに晒される競合を根絶
   - [x] `ActorManager.cs`: `HumanoidNpcApplyJob` から不要かつ有害な `penumbraIpc.Redraw` を完全撤去（非同期破棄中の EnableDraw による `Weapon.vf105` クラッシュを物理的に根絶）
-  - [x] `SceneManager.cs`: スタッガースポーン間隔（`DefaultSpawnIntervalTicks`）を 2 フレームから 4 フレーム（~66ms）に引き上げ、複数キャラ同時スポーン時の DirectX レンダラー負荷・競合を完全防止
+- [x] **1-11. 通常アクター（Chonk等）の遅延外見適用＆リトライ耐性統合（`v0.1.64.0`）**:
+  - [x] `ActorManager.cs`: `ApplyAppearanceDirect` で通常アクター（Glamourer / PlayerClone）にも `PendingGlamourerDesign` を設定。即時適用が `ec=6 (ActorNotFound)` で失敗した場合でも、`AppearanceDeferredJob` Phase 0 で自動リトライ（最大 30 フレーム）して 100% 確実に外見を適用
+  - [x] `ActorManager.cs`: Glamourer 適用完了後に CustomizePlus（Phase 2）が適用される同期パイプラインを確立し、「自キャラ素体＋CustomizePlus」の外見崩れを完全根絶
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか

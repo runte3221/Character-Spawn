@@ -1285,12 +1285,14 @@ public unsafe class ActorManager : IDisposable
 
         // 2. Glamourer デザインの適用 (Guid 指定または PlayerClone)
         bool glamApplied = false;
+        string? activeDesignString = null;
         if (glamourerIpc.IsAvailable)
         {
             string? designString = template.GlamourerDesignString;
 
             if (!string.IsNullOrWhiteSpace(designString))
             {
+                activeDesignString = designString;
                 glamApplied = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
                 logManager?.Info($"Glamourer ApplyDesign result on Global#{actorIndex} ('{spawned?.PuppetName}'): {glamApplied}");
             }
@@ -1299,16 +1301,16 @@ public unsafe class ActorManager : IDisposable
                 var playerDesign = glamourerIpc.GetCustomization(0);
                 if (!string.IsNullOrWhiteSpace(playerDesign))
                 {
+                    activeDesignString = playerDesign;
                     glamApplied = glamourerIpc.ApplyDesignToActor(playerDesign, actorIndex, spawned?.PuppetName);
                     logManager?.Info($"Applied player customization clone via Glamourer to Global#{actorIndex} ('{spawned?.PuppetName}'): {glamApplied}");
                 }
             }
         }
 
-        // 3. Glamourer が適用されなかった場合のみ、Penumbra 側で明示的に Redraw をトリガー
-        // ※ Glamourer が適用された場合は、Glamourer 自身の再描画によって Penumbra コレクションが新しい外見で
-        // 一発同期適用されるため、直前の自キャラ骨格での不要な先行 Redraw を完全に排除し、武器やモデルの一瞬のチラつき・二重負荷を根絶
-        if (penSuccess && !glamApplied)
+        // 3. Glamourer が適用されず、かつデザイン指定もない場合のみ、Penumbra 側で明示的に Redraw をトリガー
+        // ※ デザイン指定がある場合は Phase 0 の遅延 Glamourer 適用で同期されるため先行 Redraw を抑止
+        if (penSuccess && !glamApplied && string.IsNullOrWhiteSpace(activeDesignString))
         {
             penumbraIpc.Redraw(actorIndex);
         }
@@ -1319,7 +1321,7 @@ public unsafe class ActorManager : IDisposable
         // 5. Customize+ Profile の初期適用
         ApplyCustomizePlusProfile(chara, actorIndex, template, spawned);
 
-        // 6. 統合アピアランス遅延安定化キューへ登録 (Glamourer モデル再構築完了後の CustomizePlus 体型復元 & Penumbra 確定)
+        // 6. 統合アピアランス遅延安定化キューへ登録 (Glamourer 遅延リトライ & モデル再構築完了後の CustomizePlus 体型復元 & Penumbra 確定)
         if (spawned != null)
         {
             appearanceDeferredJobs.RemoveAll(j => j.Spawned == spawned || j.GlobalIndex == (ushort)actorIndex);
@@ -1328,6 +1330,9 @@ public unsafe class ActorManager : IDisposable
                 Spawned = spawned,
                 GlobalIndex = (ushort)actorIndex,
                 Template = template,
+                PendingGlamourerDesign = activeDesignString,
+                GlamourerApplied = glamApplied,
+                DrawRebuilt = glamApplied,
                 HasPenumbra = penSuccess,
                 HasCustomizePlus = !string.IsNullOrWhiteSpace(template.CustomizePlusProfileGuid),
                 Ticks = 0
