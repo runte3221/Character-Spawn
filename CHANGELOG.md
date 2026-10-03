@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.56] - 2026-10-03
+### Added
+- **Stagehand 準拠の UI レイアウト全面刷新と Scene Edit 独立ウィンドウの新設**:
+  - **メインウィンドウ「Scene」タブのフォルダ階層化・コンパクト化**:
+    - **左ペイン**: フォルダ階層ツリービュー（`Solution Nine`, `My House` 等の展開／折りたたみ対応）、下部に `New Scene`、`New Folder`（モーダル入力）、`Delete` を配置。
+    - **右ペイン**: `Scene Name` 編集、`Location`（現在または紐付けゾーン名表示）、`Auto Spawn` チェックボックス（対象エリア突入時の自動スポーン制御）。
+    - **操作ボタン**: `[Show]` / `[Hide]` トグルボタン（シーンのスポーン状態に応じて自動切り替え）、`[Edit]` ボタン（シーン編集ウィンドウ展開）。
+  - **シーン編集独立ウィンドウ (`SceneEditWindow`)**:
+    - 上部タブ: `[Spawn]`, `[Scene]`, `[Animation]`。
+    - **全タブ共通上段**: どのタブを開いていても常に最上段に配置される統合アクター管理エリア。
+      - 4モードギズモツールバー: Select (`MousePointer`), Translate (`ArrowsUpDownLeftRight`), Rotate (`SyncAlt`), Scale (`ExpandAlt`)。
+      - テンプレート選択コンボボックス + `[+Add]` ボタン（自キャラ現在地へ即座に追加）。
+      - アクター一覧リスト: 紫色の人型アイコン (`User`) + 表示名（Custom Name 優先） + 右端の目のアイコン（`Eye` / `EyeSlash` で単体アクターのスポーン／デスポーン即時切り替え）。
+      - リスト右下に `[Delete]` ボタン。
+    - **下段 `[Spawn]` タブ**:
+      - `Character Name`（読み取り専用・表示のみ）。
+      - `Custom Name`（カスタムネームプレート入力欄） & 表示チェックボックス。
+      - `Custom Title`（カスタム称号入力欄） & 表示チェックボックス。
+      - `Translation` (X, Y, Z ドラッグ / 入力)。
+      - `Rotation` (度数法角度入力 / スライダー)。
+      - `Scale` (アクター拡大縮小入力)。
+      - `[Apply Own Transform]` ボタン（自キャラの現在座標・向きを取得して即座に適用）。
+    - **下段 `[Scene]` / `[Animation]` タブ**: Phase 2（モーション・表情・接近リアクション）および Phase 5（マップアセット消去）用の独立プレースホルダー。
+  - **完全隔離の保証**:
+    - 第1工程のコアロジック（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）は完全不可侵（変更なし）を厳守。
+
 ## [0.1.55] - 2026-10-03
 ### Added
 - **Phase 1: シーン・配置管理基盤（Scene）の実装と複数体配置管理**:

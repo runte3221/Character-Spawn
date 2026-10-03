@@ -20,6 +20,14 @@
   - [x] 配置キャラクターの追加（第1工程のキャラクターライブラリから選択して現在地に配置）
   - [x] 配置キャラクター一覧テーブル、個別スポーン/デスポーン/削除
   - [x] 座標・回転のドラッグ／スライダー編集と 3D ギズモ連携（`actorManager.UpdateActorTransform`）
+- [x] **1-4. Stagehand 準拠 UI レイアウト刷新と別ウィンドウ展開**:
+  - [x] メインウィンドウ「Scene」タブ: フォルダ階層ツリービュー (`Solution Nine`, `My House` 等の展開・折りたたみ)、`New Scene`, `New Folder`, `Delete`
+  - [x] メインウィンドウ右ペイン: `Scene Name`, `Location` (ゾーン名表示), `[x] Auto Spawn`, `[Show]/[Hide]` トグルボタン, `[Edit]` ボタン
+  - [x] 別ウィンドウ展開 (`UI/SceneEditWindow.cs`):
+    - [x] 上部タブ: `[Spawn]`, `[Scene]`, `[Animation]`
+    - [x] 全タブ共通上段: 4モードギズモ切替 (Select, Translate, Rotate, Scale) + テンプレート選択コンボ + `[+Add]`
+    - [x] アクター一覧リスト: 紫色の人アイコン + Custom Name (または Character Name) + 右端の目のアイコン (表示/非表示即時トグル) + 右下 `[Delete]`
+    - [x] 下段 `[Spawn]` タブ: Character Name (表示専用), Custom Name / Custom Title 入力 & チェックボックス, Translation (X,Y,Z), Rotation (角度), Scale, `[Apply Own Transform]` ボタン
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか

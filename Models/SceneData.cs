@@ -12,7 +12,10 @@ public class SceneData
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "新規シーン";
+    public string FolderPath { get; set; } = string.Empty; // フォルダ階層 (例: "My House/2F")
     public uint TerritoryId { get; set; } = 0; // 0 = ゾーン制限なし（どこでもスポーン可能）
+    public string TerritoryName { get; set; } = string.Empty; // 表示用テリトリー名 (例: "中央森林")
+    public bool AutoSpawn { get; set; } = false; // 対象エリアに入ったら自動的にスポーンする
     public string Description { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
@@ -54,6 +57,16 @@ public class SceneActorPlacement
     /// 配置向き・回転 (Y軸ラジアン)
     /// </summary>
     public float Rotation { get; set; } = 0f;
+
+    /// <summary>
+    /// 配置スケール (デフォルト 1.0f)
+    /// </summary>
+    public float Scale { get; set; } = 1.0f;
+
+    /// <summary>
+    /// 個別アクターの表示／非表示（目のアイコン切り替え）
+    /// </summary>
+    public bool IsVisible { get; set; } = true;
 
     /// <summary>
     /// Phase 2: モーション・視線・表情・接近リアクション設定
@@ -100,9 +113,11 @@ public class SceneActorMotionConfig
 /// </summary>
 public class SceneActorNamePlateConfig
 {
+    public bool ShowCustomName { get; set; } = true; // [x] Custom Name (ネームプレート表示)
+    public bool ShowCustomTitle { get; set; } = false; // [ ] Custom Title (称号表示)
+    public string CustomTitle { get; set; } = string.Empty; // カスタム称号文字列
     public bool HideNamePlate { get; set; } = false;
     public bool HideTitle { get; set; } = false;
-    public string CustomTitle { get; set; } = string.Empty;
 }
 
 /// <summary>

@@ -10,6 +10,12 @@ using CharacterSpawn.Models;
 
 namespace CharacterSpawn.Managers;
 
+public class SceneSaveData
+{
+    public List<SceneData> Scenes { get; set; } = new();
+    public List<string> Folders { get; set; } = new();
+}
+
 public class SceneManager : IDisposable
 {
     private readonly IDalamudPluginInterface pluginInterface;
@@ -26,9 +32,19 @@ public class SceneManager : IDisposable
     public List<SceneData> Scenes { get; private set; } = new();
 
     /// <summary>
+    /// フォルダ一覧 (例: "My House", "My House/1F", "Solution Nine")
+    /// </summary>
+    public List<string> Folders { get; private set; } = new();
+
+    /// <summary>
     /// 現在選択／編集中のシーン
     /// </summary>
     public SceneData? SelectedScene { get; set; }
+
+    /// <summary>
+    /// 現在選択中の配置アクター（別ウィンドウ編集用）
+    /// </summary>
+    public SceneActorPlacement? SelectedPlacement { get; set; }
 
     /// <summary>
     /// 現在スポーン中のシーン
@@ -69,6 +85,14 @@ public class SceneManager : IDisposable
             logManager?.Info($"Territory changed to {territoryType}. Automatically despawning active scene '{ActiveSpawnedScene?.Name}'.");
             DespawnScene();
         }
+
+        // Auto Spawn: 対象エリアに入ったら自動的にスポーンする
+        var autoScene = Scenes.FirstOrDefault(s => s.TerritoryId == territoryType && s.AutoSpawn);
+        if (autoScene != null)
+        {
+            logManager?.Info($"Auto-spawning scene '{autoScene.Name}' for territory {territoryType}");
+            SpawnScene(autoScene);
+        }
     }
 
     #region Persistence (Load / Save)
@@ -80,17 +104,43 @@ public class SceneManager : IDisposable
             if (File.Exists(scenesFilePath))
             {
                 var json = File.ReadAllText(scenesFilePath);
-                var loaded = JsonConvert.DeserializeObject<List<SceneData>>(json);
-                if (loaded != null)
+                var token = Newtonsoft.Json.Linq.JToken.Parse(json);
+                if (token is Newtonsoft.Json.Linq.JArray)
                 {
-                    Scenes = loaded;
-                    logManager?.Info($"Loaded {Scenes.Count} scenes from {scenesFilePath}.");
-                    if (SelectedScene == null && Scenes.Count > 0)
+                    // 旧フォーマット: List<SceneData>
+                    var loaded = JsonConvert.DeserializeObject<List<SceneData>>(json);
+                    if (loaded != null)
                     {
-                        SelectedScene = Scenes[0];
+                        Scenes = loaded;
                     }
-                    return;
                 }
+                else
+                {
+                    // 新フォーマット: SceneSaveData (Scenes + Folders)
+                    var loadedData = JsonConvert.DeserializeObject<SceneSaveData>(json);
+                    if (loadedData != null)
+                    {
+                        Scenes = loadedData.Scenes ?? new();
+                        Folders = loadedData.Folders ?? new();
+                    }
+                }
+
+                // シーン内の FolderPath から未登録のフォルダも自動マージ
+                foreach (var scene in Scenes)
+                {
+                    if (!string.IsNullOrWhiteSpace(scene.FolderPath) && !Folders.Contains(scene.FolderPath))
+                    {
+                        AddFolderInternal(scene.FolderPath);
+                    }
+                }
+
+                logManager?.Info($"Loaded {Scenes.Count} scenes and {Folders.Count} folders from {scenesFilePath}.");
+                if (SelectedScene == null && Scenes.Count > 0)
+                {
+                    SelectedScene = Scenes[0];
+                    SelectedPlacement = SelectedScene.Placements.FirstOrDefault();
+                }
+                return;
             }
         }
         catch (Exception ex)
@@ -98,15 +148,20 @@ public class SceneManager : IDisposable
             logManager?.Error($"Failed to load scenes: {ex.Message}");
         }
 
-        // デフォルト空リスト
         Scenes = new List<SceneData>();
+        Folders = new List<string>();
     }
 
     public void SaveScenes()
     {
         try
         {
-            var json = JsonConvert.SerializeObject(Scenes, Formatting.Indented);
+            var data = new SceneSaveData
+            {
+                Scenes = this.Scenes,
+                Folders = this.Folders
+            };
+            var json = JsonConvert.SerializeObject(data, Formatting.Indented);
             File.WriteAllText(scenesFilePath, json);
             logManager?.Info($"Saved {Scenes.Count} scenes to {scenesFilePath}.");
         }
@@ -118,22 +173,65 @@ public class SceneManager : IDisposable
 
     #endregion
 
+    #region Folder Management
+
+    public void AddFolder(string folderPath)
+    {
+        if (string.IsNullOrWhiteSpace(folderPath)) return;
+        folderPath = folderPath.Trim().Replace('\\', '/');
+        if (!Folders.Contains(folderPath))
+        {
+            AddFolderInternal(folderPath);
+            SaveScenes();
+        }
+    }
+
+    private void AddFolderInternal(string folderPath)
+    {
+        var parts = folderPath.Split('/');
+        var current = "";
+        foreach (var p in parts)
+        {
+            if (string.IsNullOrWhiteSpace(p)) continue;
+            current = string.IsNullOrEmpty(current) ? p : $"{current}/{p}";
+            if (!Folders.Contains(current))
+            {
+                Folders.Add(current);
+            }
+        }
+    }
+
+    public void DeleteFolder(string folderPath)
+    {
+        Folders.RemoveAll(f => f == folderPath || f.StartsWith(folderPath + "/"));
+        foreach (var s in Scenes.Where(s => s.FolderPath == folderPath || s.FolderPath.StartsWith(folderPath + "/")))
+        {
+            s.FolderPath = "";
+        }
+        SaveScenes();
+    }
+
+    #endregion
+
     #region Scene CRUD
 
-    public SceneData CreateScene(string name = "新規シーン", uint territoryId = 0)
+    public SceneData CreateScene(string name = "新規シーン", uint territoryId = 0, string territoryName = "", string folderPath = "")
     {
         var scene = new SceneData
         {
             Id = Guid.NewGuid(),
             Name = name,
             TerritoryId = territoryId,
+            TerritoryName = territoryName,
+            FolderPath = folderPath,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
         Scenes.Add(scene);
         SelectedScene = scene;
+        SelectedPlacement = null;
         SaveScenes();
-        logManager?.Info($"Created new scene '{name}' ({scene.Id}).");
+        logManager?.Info($"Created new scene '{name}' in folder '{folderPath}' ({scene.Id}).");
         return scene;
     }
 
@@ -221,6 +319,9 @@ public class SceneManager : IDisposable
             if (IsPlacementSpawned(placement.PlacementId))
                 continue;
 
+            if (!placement.IsVisible)
+                continue;
+
             var spawned = SpawnPlacementInternal(placement);
             if (spawned != null)
             {
@@ -252,6 +353,27 @@ public class SceneManager : IDisposable
         }
         spawnedSceneActors.Clear();
         ActiveSpawnedScene = null;
+    }
+
+    /// <summary>
+    /// 特定の配置キャラクターの表示／非表示（目のアイコン）を切り替え
+    /// </summary>
+    public void TogglePlacementVisibility(SceneData scene, SceneActorPlacement placement)
+    {
+        placement.IsVisible = !placement.IsVisible;
+        SaveScenes();
+
+        if (IsSceneSpawned(scene))
+        {
+            if (!placement.IsVisible)
+            {
+                DespawnPlacement(placement);
+            }
+            else
+            {
+                SpawnPlacement(scene, placement);
+            }
+        }
     }
 
     /// <summary>
@@ -300,6 +422,7 @@ public class SceneManager : IDisposable
         var spawned = actorManager.SpawnCharacter(template, placement.Position, placement.Rotation);
         if (spawned != null)
         {
+            spawned.Transform.Scale = placement.Scale > 0 ? placement.Scale : 1.0f;
             if (!string.IsNullOrWhiteSpace(placement.CustomDisplayName))
             {
                 spawned.DisplayName = placement.CustomDisplayName;

@@ -68,6 +68,19 @@ public unsafe class GizmoRenderer
         }
         if (isRotate) ImGui.PopStyleColor();
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Rotate (Rotate along X, Y, Z rings)");
+
+        ImGui.SameLine();
+
+        // 4. Scale (Expand / Shrink)
+        bool isScale = configuration.CurrentGizmoMode == GizmoMode.Scale;
+        if (isScale) ImGui.PushStyleColor(ImGuiCol.Button, activeCol);
+        if (ImGuiComponents.IconButton("##GizmoScaleBtn", FontAwesomeIcon.ExpandAlt))
+        {
+            configuration.CurrentGizmoMode = GizmoMode.Scale;
+            configuration.Save();
+        }
+        if (isScale) ImGui.PopStyleColor();
+        if (ImGui.IsItemHovered()) ImGui.SetTooltip("Scale (Resize character)");
     }
 
     private bool isHoveredOrUsing = false;
@@ -144,10 +157,13 @@ public unsafe class GizmoRenderer
                          Matrix4x4.CreateFromQuaternion(rotQuat) *
                          Matrix4x4.CreateTranslation(pos);
 
-            // 操作モード: Translate (軸矢印 + XY/XZ/YZ平面Quad) / RotateY (水平回転リング: キャラクターの向き変更に最適化)
-            var op = configuration.CurrentGizmoMode == GizmoMode.Rotate
-                ? ImGuizmoOperation.RotateY
-                : ImGuizmoOperation.Translate;
+            // 操作モード: Translate / Rotate / Scale
+            var op = configuration.CurrentGizmoMode switch
+            {
+                GizmoMode.Rotate => ImGuizmoOperation.RotateY,
+                GizmoMode.Scale => ImGuizmoOperation.Scale,
+                _ => ImGuizmoOperation.Translate
+            };
 
             var mode = ImGuizmoMode.World;
 

@@ -467,4 +467,26 @@ public class GameDataService
 
         return list;
     }
+
+    public string GetTerritoryName(uint territoryId)
+    {
+        if (territoryId == 0) return "制限なし (どこでも)";
+        try
+        {
+            var sheet = dataManager.GetExcelSheet<TerritoryType>();
+            if (sheet != null && sheet.TryGetRow(territoryId, out var row))
+            {
+                var placeName = row.PlaceName.ValueNullable?.Name.ExtractText();
+                if (!string.IsNullOrWhiteSpace(placeName))
+                    return placeName;
+
+                var placeZone = row.PlaceNameZone.ValueNullable?.Name.ExtractText();
+                if (!string.IsNullOrWhiteSpace(placeZone))
+                    return placeZone;
+            }
+        }
+        catch { }
+
+        return $"エリア {territoryId}";
+    }
 }

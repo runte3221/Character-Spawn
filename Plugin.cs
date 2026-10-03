@@ -50,6 +50,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly StageSceneTab stageTab;
     private readonly LogTab logTab;
     private readonly MainWindow mainWindow;
+    private readonly SceneEditWindow sceneEditWindow;
 
     public Plugin()
     {
@@ -77,11 +78,16 @@ public sealed class Plugin : IDalamudPlugin
         // UI
         gizmoRenderer = new GizmoRenderer(GameGui, Configuration);
         logTab = new LogTab(logManager);
+        sceneEditWindow = new SceneEditWindow(Configuration, sceneManager, actorManager, ClientState, ObjectTable, gizmoRenderer);
         libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, actorManager, ObjectTable, TargetManager, Log, logManager, customizePlusIpc, gizmoRenderer);
-        stageTab = new StageSceneTab(Configuration, actorManager, sceneManager, gameDataService, ClientState, ObjectTable, Log, gizmoRenderer);
+        stageTab = new StageSceneTab(Configuration, actorManager, sceneManager, gameDataService, ClientState, ObjectTable, Log, () =>
+        {
+            sceneEditWindow.IsOpen = true;
+        });
         mainWindow = new MainWindow(Configuration, libraryTab, stageTab, logTab, gizmoRenderer, actorManager, Log);
 
         WindowSystem.AddWindow(mainWindow);
+        WindowSystem.AddWindow(sceneEditWindow);
 
         // Commands
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
@@ -208,6 +214,7 @@ public sealed class Plugin : IDalamudPlugin
 
         WindowSystem.RemoveAllWindows();
         mainWindow.Dispose();
+        sceneEditWindow.Dispose();
         namePlateController.Dispose();
         sceneManager.Dispose();
         actorManager.Dispose();
