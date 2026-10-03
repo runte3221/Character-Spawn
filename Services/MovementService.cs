@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using CharacterSpawn.Models;
 using CharacterSpawn.Managers;
 
@@ -314,6 +315,35 @@ public unsafe class MovementService : IDisposable
     }
 
     /// <summary>
+    /// 指定座標の直下にある地面・階段・床の高さ（Y座標）をゲームエンジンのBGCollisionレイキャストで検出
+    /// </summary>
+    /// <param name="pos">判定対象の座標</param>
+    /// <param name="groundY">検出された床・階段の上面Y座標</param>
+    /// <param name="upOffset">頭上からのレイキャスト開始高さ（デフォルト: 2.5m）</param>
+    /// <param name="maxDistance">真下への最大探索距離（デフォルト: 6.0m）</param>
+    /// <returns>地面が検出されたかどうか</returns>
+    public static bool TryGetGroundHeight(Vector3 pos, out float groundY, float upOffset = 2.5f, float maxDistance = 6.0f)
+    {
+        groundY = pos.Y;
+        try
+        {
+            Vector3 origin = new Vector3(pos.X, pos.Y + upOffset, pos.Z);
+            Vector3 direction = new Vector3(0, -1, 0);
+
+            if (BGCollisionModule.RaycastMaterialFilter(origin, direction, out var hit, maxDistance))
+            {
+                groundY = hit.Point.Y;
+                return true;
+            }
+        }
+        catch
+        {
+            // ネイティブアクセス例外を安全に吸収
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 目標座標に向かって向きを補間し、前進する
     /// </summary>
     /// <returns>目標に到達したかどうか</returns>
@@ -329,6 +359,16 @@ public unsafe class MovementService : IDisposable
         // 停止距離に到達
         if (horizDist <= stopDistance)
         {
+            // 停止時も足元を階段・地面に接地
+            if (TryGetGroundHeight(curPos, out float gY))
+            {
+                if (MathF.Abs(gY - curPos.Y) > 0.01f)
+                {
+                    state.CurrentPosition = new Vector3(curPos.X, gY, curPos.Z);
+                    actorManager.UpdateActorTransform(actor, state.CurrentPosition, state.CurrentRotation);
+                }
+            }
+
             // プレイヤーをターゲットにしている場合、足元の高さを合わせ、立ち止まってプレイヤーの方を向く
             if (isPlayerTarget)
             {
@@ -367,33 +407,66 @@ public unsafe class MovementService : IDisposable
         Vector3 moveDir = new Vector3(diff.X / horizDist, 0, diff.Z / horizDist);
         Vector3 newPos = curPos + moveDir * moveStep;
 
-        // Y座標（高度）の地形適応・段差追従
-        // プレイヤーや目的地が段差・階段の上にある場合、水平距離の比率でゆっくり上げると段差の地面に埋もれるため、
-        // 上り（diff.Y > 0）の時は素早く高度をターゲットに追従（段差を踏み越えるように上昇）させる。
-        float yDiff = diff.Y;
-        if (MathF.Abs(yDiff) > 0.01f)
+        // =========================================================================
+        // Y座標（高度）の地形適応・階段／段差オートスナップ (BGCollision Raycast)
+        // =========================================================================
+        if (TryGetGroundHeight(newPos, out float groundY))
         {
-            if (yDiff > 0f)
+            float heightDiff = groundY - curPos.Y;
+            if (heightDiff > 0f)
             {
-                // 上り（段差を上がる）: 地面に埋もれないよう、垂直上昇速度（5.0m/s）でターゲット高さに速やかに追従
-                float maxUpStep = 5.0f * deltaTime;
-                newPos.Y = curPos.Y + MathF.Min(yDiff, maxUpStep);
+                // 階段の上り・段差の上昇:
+                // 階段の1段〜2段（0.45m以内）は足元を瞬時に踏み面にスナップしてめり込みを100%防止！
+                // それ以上の急激な段差であっても、毎秒最大 10m の垂直速度で素早く追従
+                if (heightDiff <= 0.45f)
+                {
+                    newPos.Y = groundY;
+                }
+                else
+                {
+                    newPos.Y = curPos.Y + MathF.Min(heightDiff, 10.0f * deltaTime);
+                }
             }
             else
             {
-                // 下り（段差を降りる）: 宙に浮き続けないよう、水平の移動進捗に合わせて自然に降下
-                if (horizDist > 0.01f)
+                // 階段の下り・段差の降下:
+                // 階段の1段〜2段（0.45m以内）は瞬時にステップ面に接地させて宙浮きを防止！
+                // 高所からの落差であっても、毎秒最大 10m の垂直降下速度で滑らかに接地
+                if (heightDiff >= -0.45f)
                 {
-                    float yStep = (yDiff / horizDist) * moveStep;
-                    // 水平距離が停止距離に近づいたら、残り高度差も確実に合わせる
-                    if (horizDist <= stopDistance + 0.6f)
+                    newPos.Y = groundY;
+                }
+                else
+                {
+                    newPos.Y = curPos.Y + MathF.Max(heightDiff, -10.0f * deltaTime);
+                }
+            }
+        }
+        else
+        {
+            // レイキャストがヒットしない特殊な空中・エリア境界等のフォールバック
+            float yDiff = diff.Y;
+            if (MathF.Abs(yDiff) > 0.01f)
+            {
+                if (yDiff > 0f)
+                {
+                    float maxUpStep = 5.0f * deltaTime;
+                    newPos.Y = curPos.Y + MathF.Min(yDiff, maxUpStep);
+                }
+                else
+                {
+                    if (horizDist > 0.01f)
                     {
-                        float maxDownStep = 5.0f * deltaTime;
-                        newPos.Y = curPos.Y + MathF.Max(yDiff, -maxDownStep);
-                    }
-                    else
-                    {
-                        newPos.Y = curPos.Y + yStep;
+                        float yStep = (yDiff / horizDist) * moveStep;
+                        if (horizDist <= stopDistance + 0.6f)
+                        {
+                            float maxDownStep = 5.0f * deltaTime;
+                            newPos.Y = curPos.Y + MathF.Max(yDiff, -maxDownStep);
+                        }
+                        else
+                        {
+                            newPos.Y = curPos.Y + yStep;
+                        }
                     }
                 }
             }

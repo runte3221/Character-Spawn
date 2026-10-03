@@ -1069,6 +1069,10 @@ public class SceneEditWindow : Window, IDisposable
             if (ImGui.Button("📍 自キャラ位置を追加##AddPlayerPosWp"))
             {
                 var (pPos, _) = GetPlayerTransform();
+                if (MovementService.TryGetGroundHeight(pPos, out float gY))
+                {
+                    pPos.Y = gY;
+                }
                 move.Waypoints.Add(new SceneActorWaypoint
                 {
                     Position = pPos,
@@ -1082,6 +1086,10 @@ public class SceneEditWindow : Window, IDisposable
             {
                 var spawned = sceneManager.GetSpawnedActor(placement.PlacementId);
                 Vector3 addPos = spawned != null ? spawned.Transform.Position : placement.Position;
+                if (MovementService.TryGetGroundHeight(addPos, out float gY))
+                {
+                    addPos.Y = gY;
+                }
                 move.Waypoints.Add(new SceneActorWaypoint
                 {
                     Position = addPos,
