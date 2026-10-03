@@ -672,10 +672,9 @@ public class SceneEditWindow : Window, IDisposable
         string? activeModelPrefix = null;
         if (template != null && template.ModelCharaId > 0 && gameDataService != null)
         {
-            uint modelNum = gameDataService.GetModelNumber(template.ModelCharaId);
-            if (modelNum > 0)
+            string? pfx = gameDataService.GetModelPrefix(template.ModelCharaId);
+            if (!string.IsNullOrEmpty(pfx))
             {
-                string pfx = $"m{modelNum:D4}";
                 if (ImGui.Checkbox($"固有・共通アクションのみ ({template.Name})##ModelSpecificMotions", ref onlyModelSpecificMotions))
                 {
                 }

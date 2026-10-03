@@ -207,10 +207,13 @@ public class GameDataService
 
         IEnumerable<TimelineEntry> filtered = cachedTimelines;
 
-        // モデル固有プレフィックスによる絞り込み (例: "m0015", "m1001", "m0024")
+        // モデル固有プレフィックスによる絞り込み (例: "m0024", "d1016")
         if (!string.IsNullOrWhiteSpace(modelPrefix))
         {
-            filtered = filtered.Where(t => t.Key.Contains(modelPrefix, StringComparison.OrdinalIgnoreCase) || IsCommonMonsterAction(t.Key));
+            string numPart = modelPrefix.Length > 1 && char.IsLetter(modelPrefix[0]) ? modelPrefix.Substring(1) : modelPrefix;
+            filtered = filtered.Where(t => t.Key.Contains(modelPrefix, StringComparison.OrdinalIgnoreCase) ||
+                                           (!string.IsNullOrEmpty(numPart) && t.Key.Contains(numPart, StringComparison.OrdinalIgnoreCase)) ||
+                                           IsCommonMonsterAction(t.Key));
         }
 
         // カテゴリ絞り込み
@@ -243,6 +246,28 @@ public class GameDataService
                            .ThenBy(t => t.Id);
 
         return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
+    }
+
+    public string? GetModelPrefix(uint modelCharaId)
+    {
+        if (modelCharaId == 0) return null;
+        try
+        {
+            var sheet = dataManager.GetExcelSheet<ModelChara>();
+            if (sheet != null && sheet.TryGetRow(modelCharaId, out var row))
+            {
+                // Type 1: Human (c****), Type 2: DemiHuman (d****), Type 3: Monster (m****)
+                char pfx = row.Type switch
+                {
+                    2 => 'd',
+                    3 => 'm',
+                    _ => 'm'
+                };
+                return $"{pfx}{row.Model:D4}";
+            }
+        }
+        catch { }
+        return null;
     }
 
     public uint GetModelNumber(uint modelCharaId)
@@ -624,6 +649,12 @@ public class GameDataService
             else
             {
                 desc = $"[General] {key}";
+            }
+
+            if (key.Contains("1016", StringComparison.OrdinalIgnoreCase) ||
+                key.Contains("succubus", StringComparison.OrdinalIgnoreCase))
+            {
+                logManager?.Info($"[SuccubusTimeline] RowId: {id}, Key: '{key}', Slot: {row.Slot}, Desc: '{desc}'");
             }
 
             list.Add(new TimelineEntry(id, key, desc, isEmote));

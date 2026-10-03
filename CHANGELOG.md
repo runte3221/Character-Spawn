@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.80] - 2026-10-04
+### Improved
+- **デミヒューマン（サキュバス種等）固有モーション抽出の完全対応 ＆ 判定強化 (`Services/GameDataService.cs`, `UI/SceneEditWindow.cs`)**:
+  - `ModelChara.Type == 2`（DemiHuman）の骨格プレフィックス（`d****`）に対応した `GetModelPrefix` を新設。サキュバス（`d1016`）やモーグリ等のデミヒューマンに対して、正しく固有プレフィックスを生成するよう改善。
+  - 「固有・共通アクションのみ」のフィルタリングにおいて、プレフィックスだけでなくモデル番号数値（例: `1016`）による柔軟な部分一致検索を実装し、デミヒューマン固有アクション（特殊技・待機・戦闘動作）の漏れを根絶。
+  - サキュバス等の ActionTimeline キーを起動時キャッシュ生成時にログ記録するトレーサビリティを追加。
+
 ## [0.1.79] - 2026-10-04
 ### Fixed
 - **シーン非表示（Hide）→再表示（Show）時における LookAt Custom Spawn 視線追従の維持修正 (`Managers/SceneManager.cs`, `Services/AnimationService.cs`)**:

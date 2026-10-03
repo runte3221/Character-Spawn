@@ -1,6 +1,6 @@
 {
   "name": "character-spawn",
-  "version": "0.1.79",
+  "version": "0.1.80",
   "description": "Spawn and control custom characters, NPCs, and monsters locally in FFXIV",
   "author": "runte3221",
   "license": "MIT",
