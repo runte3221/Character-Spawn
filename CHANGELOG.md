@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.75] - 2026-10-03
+### Fixed
+- **待機・モーション切り替えの連続適用不具合修正 (`Services/AnimationService.cs`, `Managers/SceneManager.cs`)**:
+  - `[4]normal/idle_inactive1` から `[3]normal/idle` に切り替えた後、再度 `[4]` を選んだ際に `[3]` のまま維持されてしまう問題を修正。
+  - `CharacterModes.AnimLock` の常時適用を廃止し、通常モード（`Normal`）のまま `TimelineSequencer.PlayTimeline` を単独使用する HDM 準拠の割り込み再生へ刷新。
+  - スポーン直後の 30 フレーム遅延再同期を「初期スポーン時（`isInitialSpawn`）」のみに限定し、UI での手動切り替え時にワンショットモーションが途中でリセット・キャンセルされる現象を完全解消。
+- **モンスター・マウント・ミニオンの共通アクション抽出対応 (`Services/GameDataService.cs`)**:
+  - 「固有・共通アクションのみ」チェックボックスを有効化した際、モデル固有技（`mon_sp/m0024/...`）だけでなく、モンスター共通の基本動作（歩行 `normal/walk`、走行 `normal/run`、通常待機 `normal/idle`、敵対待機 `battle/idle`、通常攻撃 `battle/attack`、被弾 `damage/`、死亡 `dead/` 等）を漏れなく同時に抽出・表示するように改善。
+  - `[Monster]` カテゴリ分類にも共通モンスターアクションを含めるよう最適化。
+- **Animation タブの UI レイアウト全面刷新 ＆ 文字被り解消 (`UI/SceneEditWindow.cs`)**:
+  - 「固有・共通アクションのみ」チェックボックスを独立した行へ配置し、長いモーション名やアクター名でもチェックボックスや文字が被って潰れる問題を完全解消。
+  - `Loop Motion` と `Speed`、および `LookAt Player` 有効時の `Distance` と `Body Turn` をインデント付きの整然とした 2 列レイアウトへ再構成し、各スライダーとリセットボタンの視認性・操作性を向上。
+
 ## [0.1.74] - 2026-10-03
 ### Added
 - **LookAt Player の追従距離制御 ＆ 範囲外での完全追従解除 (`Models/SceneData.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:

@@ -207,10 +207,10 @@ public class GameDataService
 
         IEnumerable<TimelineEntry> filtered = cachedTimelines;
 
-        // モデル固有プレフィックスによる絞り込み (例: "m0015", "m1001", "c0901")
+        // モデル固有プレフィックスによる絞り込み (例: "m0015", "m1001", "m0024")
         if (!string.IsNullOrWhiteSpace(modelPrefix))
         {
-            filtered = filtered.Where(t => t.Key.Contains(modelPrefix, StringComparison.OrdinalIgnoreCase));
+            filtered = filtered.Where(t => t.Key.Contains(modelPrefix, StringComparison.OrdinalIgnoreCase) || IsCommonMonsterAction(t.Key));
         }
 
         // カテゴリ絞り込み
@@ -254,6 +254,38 @@ public class GameDataService
         }
         catch { }
         return 0;
+    }
+
+    public static bool IsCommonMonsterAction(string key)
+    {
+        if (string.IsNullOrEmpty(key)) return false;
+
+        // 基本移動・待機
+        if (key.StartsWith("normal/idle", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("normal/walk", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("normal/run", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("normal/sprint", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("normal/bt_idle", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // 戦闘待機・通常攻撃
+        if (key.StartsWith("battle/idle", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("battle/attack", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // 被弾・死亡
+        if (key.StartsWith("damage/", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("dead/", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // ジャンプ・威嚇・咆哮・察知
+        if (key.StartsWith("jump/", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("notice/", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("roar/", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("threat/", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return false;
     }
 
     public IReadOnlyList<TimelineEntry> GetFacialExpressions()
@@ -529,7 +561,7 @@ public class GameDataService
             {
                 desc = $"[NPC] {key}";
             }
-            else if (key.StartsWith("mon_sp/", StringComparison.OrdinalIgnoreCase))
+            else if (key.StartsWith("mon_sp/", StringComparison.OrdinalIgnoreCase) || IsCommonMonsterAction(key))
             {
                 desc = $"[Monster] {key}";
             }

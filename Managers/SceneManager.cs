@@ -512,7 +512,7 @@ public class SceneManager : IDisposable
             if (animationService != null && placement.Motion != null &&
                 (placement.Motion.TimelineId > 0 || placement.Motion.FacialTimelineId > 0 || placement.Motion.LookAtPlayer))
             {
-                animationService.ApplyMotion(spawned, placement.Motion, placement.Rotation);
+                animationService.ApplyMotion(spawned, placement.Motion, placement.Rotation, isInitialSpawn: true);
             }
 
             return spawned;

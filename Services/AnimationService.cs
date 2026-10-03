@@ -34,6 +34,7 @@ public unsafe class AnimationService : IDisposable
         public float LookAtMaxDistance { get; set; } = 8.0f;
         public float OriginalRotation { get; set; }
         public int TicksSinceApply { get; set; }
+        public bool IsInitialSpawn { get; set; } = false;
     }
 
     private readonly ConcurrentDictionary<string, ActiveAnimationState> activeStates = new();
@@ -57,7 +58,7 @@ public unsafe class AnimationService : IDisposable
     /// <summary>
     /// 指定の配置アクターにモーション・表情・視線設定を適用
     /// </summary>
-    public void ApplyMotion(SpawnedActorData spawned, SceneActorMotionConfig config, float defaultRotation)
+    public void ApplyMotion(SpawnedActorData spawned, SceneActorMotionConfig config, float defaultRotation, bool isInitialSpawn = false)
     {
         if (spawned == null || spawned.NativeAddress == 0) return;
 
@@ -78,12 +79,15 @@ public unsafe class AnimationService : IDisposable
                 BodyTurnAngleLimit = config.BodyTurnAngleLimit,
                 LookAtMaxDistance = config.LookAtMaxDistance > 0.1f ? config.LookAtMaxDistance : 8.0f,
                 OriginalRotation = defaultRotation,
-                TicksSinceApply = 0
+                TicksSinceApply = 0,
+                IsInitialSpawn = isInitialSpawn
             };
 
             // 1. 基本モーションの再生 (スロット0: Base)
             if (config.TimelineId > 0)
             {
+                chara->SetMode(CharacterModes.Normal, 0);
+
                 if (config.IsLoop)
                 {
                     chara->Timeline.BaseOverride = config.TimelineId;
@@ -97,11 +101,9 @@ public unsafe class AnimationService : IDisposable
                 chara->Timeline.OverallSpeed = state.Speed;
                 chara->Timeline.TimelineSequencer.SetSlotSpeed(0, state.Speed);
 
-                // モーション切り替えが確実に即時反映されるようスロット0を停止しAnimLockモードで即時割り込み実行
+                // 即時反映: スロット0を停止しTimelineSequencerで直接再生 (HDM Loop / PlayAction 準拠)
                 chara->StopTimeline(0);
-                chara->SetMode(CharacterModes.AnimLock, 0);
                 chara->Timeline.TimelineSequencer.PlayTimeline(config.TimelineId);
-                chara->PlayTimeline(config.TimelineId, 0);
             }
             else
             {
@@ -111,7 +113,7 @@ public unsafe class AnimationService : IDisposable
                 chara->Timeline.OverallSpeed = 1.0f;
                 chara->Timeline.TimelineSequencer.SetSlotSpeed(0, 1.0f);
                 chara->StopTimeline(0);
-                chara->PlayTimeline(1, 0); // 1 = Default Idle
+                chara->Timeline.TimelineSequencer.PlayTimeline(1); // 1 = Default Idle
             }
 
             // 2. 表情の再生 ＆ フリーズ固定 (Brio DFC アーキテクチャ)
@@ -195,12 +197,11 @@ public unsafe class AnimationService : IDisposable
                 state.TicksSinceApply++;
 
                 // A. 初期スポーン直後の非同期モデルロード(Glamourer/Penumbra)完了を待って、30フレーム(約0.5秒)後に再同期
-                if (state.TicksSinceApply == 30)
+                if (state.IsInitialSpawn && state.TicksSinceApply == 30)
                 {
                     if (state.TimelineId > 0)
                     {
                         chara->Timeline.TimelineSequencer.PlayTimeline(state.TimelineId);
-                        chara->PlayTimeline(state.TimelineId, 0);
                     }
                     if (state.FacialTimelineId > 0)
                     {

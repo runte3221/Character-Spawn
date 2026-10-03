@@ -475,7 +475,7 @@ public class SceneEditWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.Spacing();
 
-        // 1. Loop & LookAt & Speed controls
+        // 1. Playback Controls (Loop & Speed)
         bool isLoop = placement.Motion.IsLoop;
         if (ImGui.Checkbox("Loop Motion##AnimLoop", ref isLoop))
         {
@@ -488,67 +488,12 @@ public class SceneEditWindow : Window, IDisposable
             ImGui.SetTooltip("Enables seamless infinite playback of this motion.");
         }
 
-        ImGui.SameLine(160);
-        bool lookAt = placement.Motion.LookAtPlayer;
-        if (ImGui.Checkbox("LookAt Player##AnimLookAt", ref lookAt))
-        {
-            placement.Motion.LookAtPlayer = lookAt;
-            sceneManager.SaveScenes();
-            ApplyCurrentMotion(placement);
-        }
-        if (ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip("Actor's head and eyes naturally turn toward the local player when nearby.");
-        }
-
-        if (lookAt)
-        {
-            float lookAtDist = placement.Motion.LookAtMaxDistance > 0.1f ? placement.Motion.LookAtMaxDistance : 8.0f;
-            ImGui.SetNextItemWidth(140);
-            if (ImGui.SliderFloat("Distance##AnimLookAtDist", ref lookAtDist, 1.0f, 30.0f, "%.1fm"))
-            {
-                placement.Motion.LookAtMaxDistance = lookAtDist;
-                sceneManager.SaveScenes();
-                ApplyCurrentMotion(placement);
-            }
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Reset##ResetLookAtDist"))
-            {
-                placement.Motion.LookAtMaxDistance = 8.0f;
-                sceneManager.SaveScenes();
-                ApplyCurrentMotion(placement);
-            }
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip("Distance at which the actor begins and stops tracking the player (Default: 8.0m).\nClick Reset to return to 8.0m.");
-            }
-
-            ImGui.SameLine(250);
-            float bodyTurn = placement.Motion.BodyTurnAngleLimit;
-            ImGui.SetNextItemWidth(140);
-            string turnFmt = bodyTurn <= 0.01f ? "0° (Face Only)" : "%.0f°";
-            if (ImGui.SliderFloat("Body Turn##AnimBodyTurn", ref bodyTurn, 0f, 180f, turnFmt))
-            {
-                placement.Motion.BodyTurnAngleLimit = bodyTurn;
-                sceneManager.SaveScenes();
-                ApplyCurrentMotion(placement);
-            }
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Reset##ResetBodyTurn"))
-            {
-                placement.Motion.BodyTurnAngleLimit = 0.0f;
-                sceneManager.SaveScenes();
-                ApplyCurrentMotion(placement);
-            }
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip("Maximum body rotation angle toward player.\n0° = Body never rotates (Face & Eyes only)\n45° = Body turns up to ±45°\n180° = Full body rotation toward player\nClick Reset to return to 0°.");
-            }
-        }
-
+        ImGui.SameLine(180);
         float speed = placement.Motion.Speed > 0.01f ? placement.Motion.Speed : 1.0f;
-        ImGui.SetNextItemWidth(140);
-        if (ImGui.SliderFloat("Speed##AnimSpeed", ref speed, 0.1f, 3.0f, "%.2fx"))
+        ImGui.TextUnformatted("Speed:");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(120);
+        if (ImGui.SliderFloat("##AnimSpeed", ref speed, 0.1f, 3.0f, "%.2fx"))
         {
             placement.Motion.Speed = speed;
             sceneManager.SaveScenes();
@@ -567,10 +512,80 @@ public class SceneEditWindow : Window, IDisposable
         }
 
         ImGui.Spacing();
+
+        // 2. LookAt Player Controls
+        bool lookAt = placement.Motion.LookAtPlayer;
+        if (ImGui.Checkbox("LookAt Player##AnimLookAt", ref lookAt))
+        {
+            placement.Motion.LookAtPlayer = lookAt;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Actor's head and eyes naturally turn toward the local player when nearby.");
+        }
+
+        if (lookAt)
+        {
+            ImGui.Indent(20.0f);
+
+            // Distance
+            float lookAtDist = placement.Motion.LookAtMaxDistance > 0.1f ? placement.Motion.LookAtMaxDistance : 8.0f;
+            ImGui.TextUnformatted("Distance:");
+            ImGui.SameLine(85);
+            ImGui.SetNextItemWidth(110);
+            if (ImGui.SliderFloat("##AnimLookAtDist", ref lookAtDist, 1.0f, 30.0f, "%.1fm"))
+            {
+                placement.Motion.LookAtMaxDistance = lookAtDist;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Reset##ResetLookAtDist"))
+            {
+                placement.Motion.LookAtMaxDistance = 8.0f;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Distance at which the actor begins and stops tracking the player (Default: 8.0m).\nClick Reset to return to 8.0m.");
+            }
+
+            // Body Turn
+            ImGui.SameLine(250);
+            float bodyTurn = placement.Motion.BodyTurnAngleLimit;
+            ImGui.TextUnformatted("Body Turn:");
+            ImGui.SameLine(335);
+            ImGui.SetNextItemWidth(120);
+            string turnFmt = bodyTurn <= 0.01f ? "0° (Face Only)" : "%.0f°";
+            if (ImGui.SliderFloat("##AnimBodyTurn", ref bodyTurn, 0f, 180f, turnFmt))
+            {
+                placement.Motion.BodyTurnAngleLimit = bodyTurn;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Reset##ResetBodyTurn"))
+            {
+                placement.Motion.BodyTurnAngleLimit = 0.0f;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Maximum body rotation angle toward player.\n0° = Body never rotates (Face & Eyes only)\n45° = Body turns up to ±45°\n180° = Full body rotation toward player\nClick Reset to return to 0°.");
+            }
+
+            ImGui.Unindent(20.0f);
+        }
+
+        ImGui.Spacing();
         ImGui.Separator();
         ImGui.Spacing();
 
-        // 2. Motion / ActionTimeline Selector
+        // 3. Motion / ActionTimeline Selector
         ImGui.TextUnformatted("Motion / ActionTimeline:");
         ImGui.SameLine();
         if (placement.Motion.TimelineId > 0)
@@ -591,7 +606,7 @@ public class SceneEditWindow : Window, IDisposable
             ImGui.TextDisabled("(None / Default Idle)");
         }
 
-        // 対象アクターがモンスター・マウント・ミニオン・デミヒューマン等の場合、モデル固有モーション絞り込みトグルを表示
+        // 対象アクターがモンスター・マウント・ミニオン・デミヒューマン等の場合、モデル固有モーション絞り込みトグルを表示（独立した行に配置）
         string? activeModelPrefix = null;
         if (template != null && template.ModelCharaId > 0 && gameDataService != null)
         {
@@ -599,13 +614,12 @@ public class SceneEditWindow : Window, IDisposable
             if (modelNum > 0)
             {
                 string pfx = $"m{modelNum:D4}";
-                ImGui.SameLine(320);
-                if (ImGui.Checkbox($"固有モーションのみ ({template.Name})##ModelSpecificMotions", ref onlyModelSpecificMotions))
+                if (ImGui.Checkbox($"固有・共通アクションのみ ({template.Name})##ModelSpecificMotions", ref onlyModelSpecificMotions))
                 {
                 }
                 if (ImGui.IsItemHovered())
                 {
-                    ImGui.SetTooltip($"Filters motions matching this actor's model ({pfx}).");
+                    ImGui.SetTooltip($"Filters motions matching this actor's model ({pfx}) and common monster actions (walk, run, battle idle, attack, damage, death).");
                 }
                 if (onlyModelSpecificMotions)
                 {
@@ -620,12 +634,12 @@ public class SceneEditWindow : Window, IDisposable
         }
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetTooltip("Filter motion category (All, Emotes, NPC Motions, Monsters, Battles)");
+            ImGui.SetTooltip("Filter motion category (All, Emotes, NPC Motions, Monsters, Battles, General)");
         }
 
         ImGui.SameLine();
         ImGui.SetNextItemWidth(-1);
-        ImGui.InputTextWithHint("##SearchMotion", "Search Motion / Emote (e.g. wave, talk, guard, dance)...", ref motionSearchQuery, 64);
+        ImGui.InputTextWithHint("##SearchMotion", "Search Motion / Emote (e.g. wave, talk, guard, dance, walk, attack)...", ref motionSearchQuery, 64);
 
         if (gameDataService != null)
         {
