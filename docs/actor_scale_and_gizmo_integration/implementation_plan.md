@@ -83,3 +83,17 @@
 4. **[Default Scale] リセットボタン**:
    - `SceneEditWindow` の [Apply Own Transform] の隣に `[Default Scale]` ボタンを配置。ワンクリックでテンプレート固有のサイズ（モンスター原寸や人型 1.0）へ瞬時に復元・保存。
 
+---
+
+## 6. 人型アクターのフレーム更新によるスケールリセット防止＆常時維持 (v0.1.67)
+
+### 6.1 課題と根本原因
+- **現象**: モンスターやデミヒューマンはサイズ変更がリアルタイムに維持されるが、人型アクター（NPC ユウギリや Chonk、プレイヤーキャラクローン等）はスライダーを動かしても変化しない、あるいは一瞬変化して即座に 1.0 に戻る。
+- **根本原因**: FFXIV ゲームエンジンの `Character::Update` / `Human::Update`（`ModelCharaId == 0` 専用の毎フレーム Tick）が、種族基準値および身長スライダーからボーン座標と描画スケールを毎フレーム再計算し、`DrawObject->Object.Scale` を `Vector3.One`（1.0f）に強制リセットしている。モンスター（`ModelCharaId > 0`）にはこの機構がないため維持されていた。
+
+### 6.2 実装方針 (Scale Enforcement)
+- `ActorManager.UpdateFrame` 内のアクティブアクター走査ループで、全スポーン済みアクターの `actor.Transform.Scale` を監視。
+- `DrawObject->Object.Scale` または `chara->GameObject.Scale` が `targetScale` と不一致（エンジンに 1.0f に書き戻された場合）であることを検知した場合にのみ、`chara->GameObject.Scale = targetScale` および `chara->GameObject.DrawObject->Object.Scale = new Vector3(targetScale)` を即座に再適用し、`NotifyTransformChanged()` を発火。
+- 不一致時のみ処理が走るため CPU 負荷はゼロ。人型モデルに対してもゲームエンジンの毎フレームリセットに打ち勝ち、安定したサイズ維持を実現。
+
+

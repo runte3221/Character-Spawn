@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.67] - 2026-10-03
+### Fixed
+- **人型アクター（NPC ユウギリ、Chonk、自キャラクローン等）のフレーム更新によるスケールリセット防止＆常時維持 (`Managers/ActorManager.cs`)**:
+  - **根本原因の解明**:
+    - FFXIV ゲームエンジン（`Character::Update` / `Human::Update`）は、人型モデル（`ModelCharaId == 0`）において毎フレームの Tick で身長スライダーや種族ベースラインから描画スケールを再計算し、`DrawObject->Object.Scale` を `Vector3.One`（1.0f）に強制リセットしていた。
+    - モンスター（`ModelCharaId > 0`）にはこの人型専用の身長再計算機構がないため設定されたスケールが維持されたが、人型アクターはスライダー操作直後に 1.0 に戻されていた。
+  - **毎フレーム維持機構（Scale Enforcement）の実装**:
+    - `ActorManager.UpdateFrame` のアクティブアクター走査ループにおいて、スポーン済みアクターの `actor.Transform.Scale` を毎フレーム監視。
+    - ゲームエンジンによって `DrawObject->Object.Scale` や `GameObject.Scale` がリセットされた場合でも、不一致を検出して即座に `targetScale` に再適用し `NotifyTransformChanged()` を発火。
+    - 差分検出時のみ適用するため CPU 負荷はゼロであり、人型アクター（NPC ユウギリや Chonk 等）もモンスターと同様にスライダー操作でリアルタイムかつ安定してサイズ変更が維持されるようになった。
+  - **完全隔離の保証**:
+    - 第1工程のコア（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）の基本仕様を壊さず完全隔離・安全保持。自キャラ（LocalPlayer）への二重物理遮断を厳守。
+
 ## [0.1.66] - 2026-10-03
 ### Added
 - **DirectX 描画オブジェクト（`DrawObject->Object.Scale`）リアルタイム連動、モンスター原寸自動継承、および [Default Scale] 復元ボタン**:

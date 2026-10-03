@@ -36,3 +36,10 @@
   - [x] `Plugin.cs` & `UI/StageSceneTab.cs`: `float? newScale` が非 null の時のみスケールを更新・保存するガードを配線
   - [x] `UI/SceneEditWindow.cs`: [Apply Own Transform] の隣に [Default Scale] ボタンを追加し、テンプレート固有のサイズにワンクリック復元
   - [x] ドキュメント更新、CHANGELOG.md 追記、`tools/release.ps1 0.1.66.0` でのリリース
+
+- [x] **8. 人型アクターのフレーム更新によるスケールリセット防止＆常時維持 (`v0.1.67.0`)**
+  - [x] 原因究明: FFXIV ゲームエンジンの `Character::Update` / `Human::Update` による人型モデル（`ModelCharaId == 0`）の毎フレーム `DrawObject->Object.Scale` の 1.0f 強制リセットを特定
+  - [x] `Managers/ActorManager.cs`: `UpdateFrame` 内のアクティブアクター走査ループで、全スポーン済みアクターの `actor.Transform.Scale` を毎フレーム監視し、不一致時に即座に再適用（Enforce）
+  - [x] 差分検出時のみ適用することで CPU 負荷ゼロ＆人型アクター（NPC ユウギリ、Chonk等）のリアルタイムサイズ変更の永続維持を実現
+  - [x] ドキュメント更新、CHANGELOG.md 追記、`tools/release.ps1 0.1.67.0` でのリリース
+

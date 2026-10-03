@@ -1096,6 +1096,22 @@ public unsafe class ActorManager : IDisposable
                 {
                     chara->GameObject.EnableDraw();
                 }
+
+                // 3. アクタースケール常時維持 (人型モデルの毎フレーム 1.0 リセット防止)
+                if (chara->GameObject.DrawObject != null)
+                {
+                    float targetScale = actor.Transform.Scale;
+                    if (targetScale > 0.001f)
+                    {
+                        var curScale = chara->GameObject.DrawObject->Object.Scale;
+                        if (MathF.Abs(curScale.X - targetScale) > 0.001f || MathF.Abs(chara->GameObject.Scale - targetScale) > 0.001f)
+                        {
+                            chara->GameObject.Scale = targetScale;
+                            chara->GameObject.DrawObject->Object.Scale = new Vector3(targetScale, targetScale, targetScale);
+                            try { chara->GameObject.DrawObject->NotifyTransformChanged(); } catch { }
+                        }
+                    }
+                }
             }
         }
         catch (Exception ex)
