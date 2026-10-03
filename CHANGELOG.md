@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.44] - 2026-10-03
+### Fixed
+- **人型NPC（ミューヌ、ユウギリ等）スポーン時に自キャラの姿で出現する不具合の根本解決**:
+  - **根本原因 (Glamourer コールドステートトラップ)**:
+    - HDM（Doll Master）の設計知見通り、スポーン直後の新規パペット（actorIndex 200）は Glamourer 内部のアクター状態キャッシュがまだ生成されておらず、`GetState(actorIndex)` が `null` を返す。
+    - そのため、外見上書き処理がスキップされ、アクター生成時に drawable 骨格確立のためにベースラインコピーされた自キャラ素体（`CopyFromCharacter(meNative)`）がそのまま描画されていた。
+  - **解決策 1: LocalPlayer ステートをテンプレートとする即時ディープコピー変身 (0ms)**:
+    - スポーン直後で対象アクターのステートがコールドな場合、常時存在する自キャラ（`GetState(0)`）のステート JObject をひな形としてディープコピー。
+    - NPC の 26バイト `CustomizeData` と 10スロットの `EquipmentModelIds` を上書きし、自キャラ固有の肌色・パラメータ汚染（Parameters/Materials）を完全に Strip。
+    - `ForceAllApply` を実行後、武器スロット（MainHand/OffHand）を明示的に解除（Unmanage）して `ApplyState` を呼ぶことで、待機ポーリングを挟まず 0ms で確実に NPC の姿に変身させる即時直列パイプラインを実現。
+  - **解決策 2: Glamourer 失敗時のダイレクトメモリフォールバック (`ApplyNpcAppearanceDirectFallback`)**:
+    - Glamourer IPC の戻り値を検証し、万一 IPC が失敗または利用不能な場合でも、メモリ上の `CustomizeData` と `EquipmentModelIds` を直接上書きして `CopyFromCharacter` を実行する安全網を導入。
+  - **解決策 3: NPC テンプレートデータの名前ベース自動解決補完**:
+    - `template.CustomizeData` が未設定の NPC テンプレートであっても、`template.Name`（例: "ミューヌ", "ユウギリ"）からゲーム内 NPC データベースを即座に逆引きし、ENpcBaseId・外見データを自動解決して補完するフォールバックを追加。
+
 ## [0.1.43] - 2026-10-03
 ### Fixed
 - **スポーンアクターの3Dモデル不可視化（ギズモのみ表示）の根本解決**:

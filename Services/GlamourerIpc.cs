@@ -298,6 +298,13 @@ public class GlamourerIpc
             {
                 if (prop.Value is JObject slotObj)
                 {
+                    // 武器スロット(MainHand/OffHand/Weapon)で明示的に Apply が false の場合は上書きしない
+                    if ((prop.Name == "MainHand" || prop.Name == "OffHand" || prop.Name == "Weapon") &&
+                        slotObj["Apply"] != null && !(bool)slotObj["Apply"]!)
+                    {
+                        continue;
+                    }
+
                     slotObj["Apply"] = true;
                     slotObj["ApplyStain"] = true;
                 }
@@ -579,14 +586,23 @@ public class GlamourerIpc
     }
 
     /// <summary>
-    /// HDM (HumanGuise.cs) 準拠の 1 フレーム非ブロッキング NPC 外見適用試行
+    /// HDM (HumanGuise.cs) 準拠の 1 フレーム非ブロッキング NPC 外見適用
     /// 26バイト CustomizeData と 10スロットの EquipmentModelIds を Glamourer JObject にマッピングして適用
+    /// スポーン直後でアクターのステートキャッシュがコールドな場合は、LocalPlayer (0) のステート構造をひな形としてディープコピーして即時適用する
     /// </summary>
-    public NpcApplyResult TryApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true)
+    public NpcApplyResult TryApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null)
     {
         if (!IsAvailable) return NpcApplyResult.Failed;
 
         var state = GetState(actorIndex);
+        if (state == null)
+        {
+            // スポーン直後の新規パペット(actorIndex 200)は Glamourer 内部キャッシュがまだコールドで GetState が null になる。
+            // そのため、自キャラ(LocalPlayer Index 0)のステート構造をひな形(Template)としてディープコピーして使用する！
+            state = GetState(0)?.DeepClone() as JObject;
+            log.Information($"Glamourer TryApplyNpcAppearance: Target actor #{actorIndex} state is cold, using LocalPlayer template for NPC transformation.");
+        }
+
         if (state == null)
             return NpcApplyResult.StateNull;
 
@@ -603,7 +619,14 @@ public class GlamourerIpc
             SetHeadgearShown(equipObj, showHeadgear);
         }
 
-        // 3. 武器スロットの管理解除（自キャラの武器がNPCに上書きされるのを防止）
+        // 3. 自キャラの肌色・シェーダーパラメータ汚染の完全除去 (HDM 方式)
+        state.Remove("Parameters");
+        state.Remove("Materials");
+
+        // 4. ForceAllApply で全スロットの強制適用を保証
+        ForceAllApply(state);
+
+        // 5. 武器スロットの管理解除（自キャラの武器がNPCに上書きされるのを防止）
         if (state["Equipment"] is JObject eqObj)
         {
             UnmanageWeaponSlot(eqObj, "MainHand");
@@ -611,20 +634,16 @@ public class GlamourerIpc
             if (eqObj["Weapon"] is JObject wv) wv["Apply"] = false;
         }
 
-        // 4. 自キャラの肌色・シェーダーパラメータ汚染の完全除去 (HDM 方式)
-        state.Remove("Parameters");
-        state.Remove("Materials");
-
-        // 5. ApplyState で一括適用
+        // 6. ApplyState で一括適用
         string stateJson = state.ToString(Newtonsoft.Json.Formatting.None);
-        bool success = ApplyDesignToActor(stateJson, actorIndex);
-        log.Information($"Glamourer TryApplyNpcAppearance on actor #{actorIndex} result: {success}");
+        bool success = ApplyDesignToActor(stateJson, actorIndex, actorName);
+        log.Information($"Glamourer TryApplyNpcAppearance on actor #{actorIndex} ('{actorName}') result: {success}");
         return success ? NpcApplyResult.Applied : NpcApplyResult.Failed;
     }
 
-    public bool ApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true)
+    public bool ApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null)
     {
-        return TryApplyNpcAppearance(actorIndex, customizeData, equipmentModelIds, showHeadgear) == NpcApplyResult.Applied;
+        return TryApplyNpcAppearance(actorIndex, customizeData, equipmentModelIds, showHeadgear, actorName) == NpcApplyResult.Applied;
     }
 
     private static readonly (string Key, ulong EquipType)[] Slots =

@@ -211,18 +211,33 @@ public unsafe class ActorManager : IDisposable
             }
 
             // NPCデータの補完 (CustomizeData または NpcEquipmentModelIds の補完)
-            if (template.SourceType == CharacterSourceType.Npc && template.DataId > 0 && gameDataService != null)
+            if (template.SourceType == CharacterSourceType.Npc && gameDataService != null)
             {
-                if (template.CustomizeData == null && template.NpcEquipmentModelIds == null)
+                if (template.CustomizeData == null || template.NpcEquipmentModelIds == null)
                 {
-                    var app = gameDataService.GetNpcAppearanceData(template.DataId);
-                    if (app != null)
+                    uint npcId = template.DataId;
+                    if (npcId == 0 && !string.IsNullOrWhiteSpace(template.Name))
                     {
-                        template.ModelCharaId = app.ModelCharaId;
-                        template.CustomizeData = app.CustomizeData;
-                        template.NpcEquipmentModelIds = app.EquipmentModelIds;
-                        template.McType = app.McType;
-                        logManager?.Info($"Auto-resolved NPC appearance data for '{template.Name}' from ENpcId {template.DataId} (ModelChara: {template.ModelCharaId}, McType: {template.McType}).");
+                        var searchRes = gameDataService.SearchNpcs(template.Name, 1);
+                        if (searchRes.Count > 0)
+                        {
+                            npcId = searchRes[0].Id;
+                            template.DataId = npcId;
+                            logManager?.Info($"Resolved ENpcId {npcId} by name '{template.Name}'.");
+                        }
+                    }
+
+                    if (npcId > 0)
+                    {
+                        var app = gameDataService.GetNpcAppearanceData(npcId);
+                        if (app != null)
+                        {
+                            template.ModelCharaId = app.ModelCharaId;
+                            template.CustomizeData = app.CustomizeData;
+                            template.NpcEquipmentModelIds = app.EquipmentModelIds;
+                            template.McType = app.McType;
+                            logManager?.Info($"Auto-resolved NPC appearance data for '{template.Name}' from ENpcId {npcId} (ModelChara: {template.ModelCharaId}, McType: {template.McType}).");
+                        }
                     }
                 }
             }
@@ -708,12 +723,16 @@ public unsafe class ActorManager : IDisposable
 
         logManager?.Info($"[Pipeline C: NPC] ApplyNpcAppearance: '{template.Name}' on Global#{globalIndex}...");
 
+        bool glamSuccess = false;
         if (glamourerIpc != null && glamourerIpc.IsAvailable)
         {
-            glamourerIpc.ApplyNpcAppearance(actorIndex, template.CustomizeData, template.NpcEquipmentModelIds, showHeadgear: true);
+            glamSuccess = glamourerIpc.ApplyNpcAppearance(actorIndex, template.CustomizeData, template.NpcEquipmentModelIds, showHeadgear: true, spawned?.PuppetName);
+            logManager?.Info($"[Pipeline C: NPC] Glamourer ApplyNpcAppearance result on Global#{actorIndex}: {glamSuccess}");
         }
-        else
+
+        if (!glamSuccess)
         {
+            logManager?.Warning($"[Pipeline C: NPC] Glamourer NPC appearance failed or unavailable. Applying direct memory fallback...");
             ApplyNpcAppearanceDirectFallback(chara, template);
         }
 
@@ -724,7 +743,7 @@ public unsafe class ActorManager : IDisposable
         {
             penumbraIpc.Redraw(actorIndex);
         }
-        logManager?.Info($"[Pipeline C: NPC] Applied Humanoid NPC appearance to Global#{actorIndex}.");
+        logManager?.Info($"[Pipeline C: NPC] Applied Humanoid NPC appearance to Global#{actorIndex} (Glamourer: {glamSuccess}).");
     }
 
     /// <summary>
