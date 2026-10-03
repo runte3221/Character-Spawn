@@ -7,6 +7,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Newtonsoft.Json;
 using CharacterSpawn.Models;
+using CharacterSpawn.Services;
 
 namespace CharacterSpawn.Managers;
 
@@ -23,6 +24,9 @@ public class SceneManager : IDisposable
     private readonly LogManager? logManager;
     private readonly ActorManager actorManager;
     private readonly Configuration configuration;
+    private readonly AnimationService? animationService;
+
+    public AnimationService? Animation => animationService;
 
     private readonly string scenesFilePath;
 
@@ -69,13 +73,15 @@ public class SceneManager : IDisposable
         IClientState clientState,
         LogManager? logManager,
         ActorManager actorManager,
-        Configuration configuration)
+        Configuration configuration,
+        AnimationService? animationService = null)
     {
         this.pluginInterface = pluginInterface;
         this.clientState = clientState;
         this.logManager = logManager;
         this.actorManager = actorManager;
         this.configuration = configuration;
+        this.animationService = animationService;
 
         var configDir = pluginInterface.GetPluginConfigDirectory();
         Directory.CreateDirectory(configDir);
@@ -418,6 +424,7 @@ public class SceneManager : IDisposable
         {
             if (spawnedSceneActors.TryGetValue(pid, out var actor))
             {
+                animationService?.StopMotion(actor);
                 actorManager.DespawnCharacter(actor);
             }
         }
@@ -468,6 +475,7 @@ public class SceneManager : IDisposable
     {
         if (spawnedSceneActors.TryGetValue(placement.PlacementId, out var actor))
         {
+            animationService?.StopMotion(actor);
             actorManager.DespawnCharacter(actor);
             spawnedSceneActors.Remove(placement.PlacementId);
             logManager?.Info($"Despawned scene actor '{placement.CustomDisplayName}'.");
@@ -499,6 +507,14 @@ public class SceneManager : IDisposable
             }
             spawnedSceneActors[placement.PlacementId] = spawned;
             logManager?.Info($"Spawned scene actor '{spawned.DisplayName}' at {placement.Position}.");
+
+            // アニメーション・モーション・表情・視線の自動適用
+            if (animationService != null && placement.Motion != null &&
+                (placement.Motion.TimelineId > 0 || placement.Motion.FacialTimelineId > 0 || placement.Motion.LookAtPlayer))
+            {
+                animationService.ApplyMotion(spawned, placement.Motion, placement.Rotation);
+            }
+
             return spawned;
         }
 

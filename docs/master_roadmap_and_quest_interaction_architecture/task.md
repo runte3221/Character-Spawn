@@ -28,10 +28,11 @@
 ---
 
 ### 【Step 2】ポージング・モーション ＆ 自律移動 AI 統合
-- [ ] **2.1 アクション・モーション再生基盤 (`Services/AnimationService.cs`)**
-  - [ ] ゲーム内約1万種のアニメーションキー（ActionTimeline）の検索・選択・ループ再生
-  - [ ] 表情（Facial）スロットへの表情固定注入
-  - [ ] 自キャラへの視線・首追従（Head Tracking / LookAt）
+- [x] **2.1 アクション・モーション再生基盤 (`Services/AnimationService.cs`) (完了 / v0.1.71.0)**
+  - [x] ゲーム内約1万種のアニメーションキー（ActionTimeline）の検索・選択・ループ再生
+  - [x] 表情（Facial）スロットへの表情固定注入
+  - [x] 自キャラへの視線・首追従（Head Tracking / LookAt）
+  - [x] `UI/SceneEditWindow.cs` の Animation タブ本実装（リアルタイムプレビュー＆シーン保存連携）
 - [ ] **2.2 Brio ポーズ（`.pose`）の読み込み・配置固定 (Idle / Freeze)**
   - [ ] Brio の `.pose` ファイル（MessagePack / JSON）パーサー実装
   - [ ] 通常フィールド上での Havok ボーン姿勢固定（Freeze / Idle）機能の実装

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.71] - 2026-10-03
+### Added
+- **アクション・モーション再生基盤 ＆ 視線追従・表情固定対応 (`Services/AnimationService.cs`, `Managers/SceneManager.cs`, `UI/SceneEditWindow.cs`)**:
+  - **アニメーション制御サービスの新設 (`Services/AnimationService.cs`)**:
+    - HDM (`AnimationService`) アーキテクチャに準拠し、ゲーム内 `Character::Timeline` に対するネイティブモーション制御を確立。
+    - `BaseOverride` と `PlayTimeline` を組み合わせたシームレス無限ループ再生制御を実装。
+    - `OverallSpeed` によるモーション再生速度のリアルタイム変更（0.1x〜3.0x）をサポート。
+    - `ActionTimeline` の `fac_` タイムラインを活用した表情スロットへの独立表情固定を実装。
+    - プレイヤー接近時のネイティブ視線追従（`SetTargetId` ＆ 滑らかな首・体の方位角補間）を実装。
+  - **シーンライフサイクルとの完全連動 (`Managers/SceneManager.cs`)**:
+    - シーン内のキャラクターがスポーンされた際、保存されていた `placement.Motion`（モーション、ループ、速度、表情、視線）を自動適用。
+    - シーンデスポーン時および個別非表示時に `StopMotion` を呼び出し、安全に通常待機（Idle）へリセットしてメモリ・状態残存を完全防止。
+  - **シーン編集 UI の本格実装 (`UI/SceneEditWindow.cs`)**:
+    - 「Animation」タブのプレースホルダーを完全なモーションエディタ UI へ置換。
+    - 約1万種のアクションタイムラインおよびエモートのリアルタイムインクリメンタル検索・選択リストボックスを実装。
+    - ループトグル、速度スライダー、表情選択ドロップダウン、視線追従（LookAt Player）チェックボックスを完備。
+    - 設定変更の瞬間に目の前にスポーン中のキャラクターへ即座に反映され、シーンへ自動保存される快適な編集体験を実現。
+
 ## [0.1.70] - 2026-10-03
 ### Added
 - **ミニオン・マウント（Companion / Mount）のカスタムキャラクター登録・スポーン対応 (`Models/CharacterModels.cs`, `Services/GameDataService.cs`, `Managers/ActorManager.cs`, `UI/CharacterLibraryTab.cs`)**:

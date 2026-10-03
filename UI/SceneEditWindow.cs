@@ -24,9 +24,13 @@ public class SceneEditWindow : Window, IDisposable
     private readonly IClientState clientState;
     private readonly IObjectTable objectTable;
     private readonly GizmoRenderer gizmoRenderer;
+    private readonly GameDataService? gameDataService;
 
     private string selectedTemplateIdForAdd = string.Empty;
     private int currentTabIndex = 0; // 0: Spawn, 1: Scene, 2: Animation
+
+    private string motionSearchQuery = string.Empty;
+    private string facialSearchQuery = string.Empty;
 
     public SceneEditWindow(
         Configuration configuration,
@@ -34,7 +38,8 @@ public class SceneEditWindow : Window, IDisposable
         ActorManager actorManager,
         IClientState clientState,
         IObjectTable objectTable,
-        GizmoRenderer gizmoRenderer)
+        GizmoRenderer gizmoRenderer,
+        GameDataService? gameDataService = null)
         : base("Scene Edit###SceneEditWindow", ImGuiWindowFlags.None)
     {
         this.configuration = configuration;
@@ -43,6 +48,7 @@ public class SceneEditWindow : Window, IDisposable
         this.clientState = clientState;
         this.objectTable = objectTable;
         this.gizmoRenderer = gizmoRenderer;
+        this.gameDataService = gameDataService;
 
         SizeConstraints = new WindowSizeConstraints
         {
@@ -90,7 +96,7 @@ public class SceneEditWindow : Window, IDisposable
                 DrawSceneTabPlaceholder(scene);
                 break;
             case 2:
-                DrawAnimationTabPlaceholder(scene);
+                DrawAnimationTab(scene);
                 break;
         }
     }
@@ -449,20 +455,169 @@ public class SceneEditWindow : Window, IDisposable
         ImGui.TextDisabled($"登録済み消去アセット数: {scene.HiddenAssets.Count} 件");
     }
 
-    private void DrawAnimationTabPlaceholder(SceneData scene)
+    private void DrawAnimationTab(SceneData scene)
     {
-        ImGui.TextUnformatted("モーション・視線・表情・接近リアクション (Animation)");
+        var placement = sceneManager.SelectedPlacement;
+        if (placement == null)
+        {
+            ImGui.TextDisabled("上段の一覧から編集するキャラクターを選択してください。");
+            return;
+        }
+
+        var template = configuration.Templates.FirstOrDefault(t => t.Id == placement.CharacterTemplateId);
+        string dName = !string.IsNullOrWhiteSpace(placement.CustomDisplayName) ? placement.CustomDisplayName : (template?.Name ?? "キャラクター");
+
+        ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), $"Editing Animation: {dName}");
         ImGui.Separator();
         ImGui.Spacing();
 
-        ImGui.TextWrapped("エモートやNPC専用アニメーションのループ再生、自キャラへの視線追従 (LookAt)、表情固定、および自キャラが近づいた時の接近リアクション動作を実装予定です（Phase 2）。");
+        // 1. Loop & LookAt & Speed controls
+        bool isLoop = placement.Motion.IsLoop;
+        if (ImGui.Checkbox("Loop Motion##AnimLoop", ref isLoop))
+        {
+            placement.Motion.IsLoop = isLoop;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Enables seamless infinite playback of this motion.");
+        }
+
+        ImGui.SameLine(160);
+        bool lookAt = placement.Motion.LookAtPlayer;
+        if (ImGui.Checkbox("LookAt Player##AnimLookAt", ref lookAt))
+        {
+            placement.Motion.LookAtPlayer = lookAt;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Actor's head and body will naturally turn toward the local player when nearby.");
+        }
+
+        float speed = placement.Motion.Speed > 0.01f ? placement.Motion.Speed : 1.0f;
+        ImGui.SetNextItemWidth(180);
+        if (ImGui.SliderFloat("Speed##AnimSpeed", ref speed, 0.1f, 3.0f, "%.2fx"))
+        {
+            placement.Motion.Speed = speed;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
         ImGui.Spacing();
 
-        var placement = sceneManager.SelectedPlacement;
-        if (placement != null)
+        // 2. Motion / ActionTimeline Selector
+        ImGui.TextUnformatted("Motion / ActionTimeline:");
+        ImGui.SameLine();
+        if (placement.Motion.TimelineId > 0)
         {
-            ImGui.TextDisabled($"選択中アクター: {placement.CustomDisplayName}");
-            ImGui.TextDisabled($"現在のモーションID: {placement.Motion.TimelineId}");
+            string keyDesc = !string.IsNullOrWhiteSpace(placement.Motion.TimelineKey) ? placement.Motion.TimelineKey : $"ID {placement.Motion.TimelineId}";
+            ImGui.TextColored(new Vector4(0.2f, 1.0f, 0.3f, 1.0f), $"[{placement.Motion.TimelineId}] {keyDesc}");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Clear##ClearMotion"))
+            {
+                placement.Motion.TimelineId = 0;
+                placement.Motion.TimelineKey = string.Empty;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+        }
+        else
+        {
+            ImGui.TextDisabled("(None / Default Idle)");
+        }
+
+        ImGui.SetNextItemWidth(-1);
+        ImGui.InputTextWithHint("##SearchMotion", "Search Motion / Emote (e.g. wave, sit, cheer, dance)...", ref motionSearchQuery, 64);
+
+        if (gameDataService != null)
+        {
+            var timelines = gameDataService.SearchTimelines(motionSearchQuery, 100);
+            if (ImGui.BeginListBox("##MotionList", new Vector2(-1, 140)))
+            {
+                foreach (var t in timelines)
+                {
+                    bool isSelected = placement.Motion.TimelineId == t.Id;
+                    string label = $"[{t.Id}] {t.Description} ({t.Key})";
+                    if (ImGui.Selectable(label, isSelected))
+                    {
+                        placement.Motion.TimelineId = t.Id;
+                        placement.Motion.TimelineKey = t.Key;
+                        sceneManager.SaveScenes();
+                        ApplyCurrentMotion(placement);
+                    }
+                }
+                ImGui.EndListBox();
+            }
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        // 3. Facial Expression
+        ImGui.TextUnformatted("Facial Expression:");
+        ImGui.SameLine();
+        if (placement.Motion.FacialTimelineId > 0)
+        {
+            ImGui.TextColored(new Vector4(1.0f, 0.7f, 0.3f, 1.0f), $"[ID: {placement.Motion.FacialTimelineId}]");
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Clear##ClearFacial"))
+            {
+                placement.Motion.FacialTimelineId = 0;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+        }
+        else
+        {
+            ImGui.TextDisabled("(Default / None)");
+        }
+
+        if (gameDataService != null)
+        {
+            var facials = gameDataService.GetFacialExpressions();
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.BeginCombo("##FacialCombo", placement.Motion.FacialTimelineId > 0 ? $"Facial ID: {placement.Motion.FacialTimelineId}" : "Select Facial Expression..."))
+            {
+                ImGui.InputTextWithHint("##SearchFacial", "Filter facial...", ref facialSearchQuery, 32);
+                ImGui.Separator();
+
+                if (ImGui.Selectable("(Default / None)", placement.Motion.FacialTimelineId == 0))
+                {
+                    placement.Motion.FacialTimelineId = 0;
+                    sceneManager.SaveScenes();
+                    ApplyCurrentMotion(placement);
+                }
+
+                foreach (var f in facials)
+                {
+                    if (!string.IsNullOrWhiteSpace(facialSearchQuery) && !f.Key.Contains(facialSearchQuery, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    bool isSelected = placement.Motion.FacialTimelineId == f.Id;
+                    if (ImGui.Selectable($"[{f.Id}] {f.Key}", isSelected))
+                    {
+                        placement.Motion.FacialTimelineId = f.Id;
+                        sceneManager.SaveScenes();
+                        ApplyCurrentMotion(placement);
+                    }
+                }
+                ImGui.EndCombo();
+            }
+        }
+    }
+
+    private void ApplyCurrentMotion(SceneActorPlacement placement)
+    {
+        var spawned = sceneManager.GetSpawnedActor(placement.PlacementId);
+        if (spawned != null && sceneManager.Animation != null)
+        {
+            sceneManager.Animation.ApplyMotion(spawned, placement.Motion, placement.Rotation);
         }
     }
 

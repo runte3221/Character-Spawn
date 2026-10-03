@@ -43,6 +43,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HeadTrackingManager headTrackingManager;
     private readonly NamePlateController namePlateController;
     private readonly ActorManager actorManager;
+    private readonly AnimationService animationService;
     private readonly SceneManager sceneManager;
 
     private readonly GizmoRenderer gizmoRenderer;
@@ -68,17 +69,18 @@ public sealed class Plugin : IDalamudPlugin
         mcdfParser = new McdfParser(Log);
         customizePlusIpc = new CustomizePlusIpc(PluginInterface, Log);
 
-        // Managers
+        // Animation & Managers
+        animationService = new AnimationService(Framework, ObjectTable, gameDataService, Log, logManager);
         timelineManager = new TimelineManager(Log);
         headTrackingManager = new HeadTrackingManager(ObjectTable, Log);
         actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser, PluginInterface, customizePlusIpc, gameDataService, Framework);
-        sceneManager = new SceneManager(PluginInterface, ClientState, logManager, actorManager, Configuration);
+        sceneManager = new SceneManager(PluginInterface, ClientState, logManager, actorManager, Configuration, animationService);
         namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
 
         // UI
         gizmoRenderer = new GizmoRenderer(GameGui, Configuration);
         logTab = new LogTab(logManager);
-        sceneEditWindow = new SceneEditWindow(Configuration, sceneManager, actorManager, ClientState, ObjectTable, gizmoRenderer);
+        sceneEditWindow = new SceneEditWindow(Configuration, sceneManager, actorManager, ClientState, ObjectTable, gizmoRenderer, gameDataService);
         libraryTab = new CharacterLibraryTab(Configuration, gameDataService, glamourerIpc, penumbraIpc, mcdfParser, actorManager, ObjectTable, TargetManager, Log, logManager, customizePlusIpc, gizmoRenderer);
         stageTab = new StageSceneTab(Configuration, actorManager, sceneManager, gameDataService, ClientState, ObjectTable, Log, () =>
         {
@@ -187,5 +189,6 @@ public sealed class Plugin : IDalamudPlugin
         namePlateController.Dispose();
         sceneManager.Dispose();
         actorManager.Dispose();
+        animationService.Dispose();
     }
 }
