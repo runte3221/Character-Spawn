@@ -329,8 +329,10 @@ public unsafe class ActorManager : IDisposable
             // 2. ベースラインのリセット
             nativeChara->ModelContainer.ModelCharaId = 0;
             nativeChara->GameObject.Scale = 1.0f;
-            nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
-            nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
+            if (template.ModelCharaId == 0)
+            {
+                nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
+            }
 
             // AQR 黄金律:
             // ObjectKind, BattleNpcSubKind, OwnerId, NameId, HomeWorld の改変は一切行わない（素の BattleCharacter を維持）！
@@ -347,8 +349,9 @@ public unsafe class ActorManager : IDisposable
             nativeChara->GameObject.DefaultRotation = rot;
             nativeChara->Alpha = 1.0f;
 
-            // 描画開始 (Brio / AQR 黄金律: EnableDraw)
-            nativeChara->GameObject.EnableDraw();
+            // ※ ここでの即時 EnableDraw() は廃止！
+            // 各パイプライン（A/B: 直列適用後、C: NPC準備後、D: モンスター準備後）で安全に一度だけ EnableDraw() を行う。
+            // これにより、未完成な DrawObject / Weapon がレンダラーに晒される競合クラッシュ（0xC0000005）を完全に防止する。
 
             // グローバルインデックスの解決 (Two Index Spaces Trap 対策)
             var objRef = objectTable.CreateObjectReference((nint)nativeChara) as ICharacter;
@@ -401,8 +404,6 @@ public unsafe class ActorManager : IDisposable
                 nativeChara->GameObject.DisableDraw();
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
                 nativeChara->GameObject.Scale = template.Scale > 0 ? template.Scale : 1.0f;
-                nativeChara->DrawData.HideWeapons(true);
-                nativeChara->DrawData.IsWeaponHidden = true;
 
                 if (template.NpcEquipmentModelIds != null && template.NpcEquipmentModelIds.Length > 0)
                 {
@@ -435,8 +436,7 @@ public unsafe class ActorManager : IDisposable
             if (template.SourceType == CharacterSourceType.Npc)
             {
                 nativeChara->GameObject.DisableDraw();
-                nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
-                nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
+                SafeSetWeaponVisibility(nativeChara, template.WeaponVisible);
 
                 humanoidNpcApplyJobs.Add(new HumanoidNpcApplyJob
                 {
@@ -655,8 +655,7 @@ public unsafe class ActorManager : IDisposable
                 try
                 {
                     // 武器のグラフィックフラグを非表示にし、描画パイプラインから完全アンロード (孤立武器残留防止)
-                    chara->DrawData.HideWeapons(true);
-                    chara->DrawData.IsWeaponHidden = true;
+                    SafeSetWeaponVisibility(chara, false);
                     chara->GameObject.DisableDraw();
                 }
                 catch { }
@@ -858,13 +857,7 @@ public unsafe class ActorManager : IDisposable
                                 logManager?.Warning($"[Pipeline C: NPC] Glamourer NPC appearance timed out after {job.Ticks} ticks on Global#{actorIndex} ('{job.Spawned.DisplayName}'). Applying direct memory fallback...");
                                 ApplyNpcAppearanceDirectFallback(chara, job.Template);
 
-                                chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
-                                chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
-
-                                if (penumbraIpc.IsAvailable)
-                                {
-                                    penumbraIpc.Redraw(actorIndex);
-                                }
+                                SafeSetWeaponVisibility(chara, job.Template.WeaponVisible);
 
                                 try { chara->GameObject.EnableDraw(); } catch { }
                                 job.Spawned.IsReady = true;
@@ -884,13 +877,7 @@ public unsafe class ActorManager : IDisposable
                             try { ready = chara->GameObject.IsReadyToDraw(); } catch { }
                             if (!ready && job.RebuildTicks < 15) continue;
 
-                            chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
-                            chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
-
-                            if (penumbraIpc.IsAvailable)
-                            {
-                                penumbraIpc.Redraw(actorIndex);
-                            }
+                            SafeSetWeaponVisibility(chara, job.Template.WeaponVisible);
 
                             try { chara->GameObject.EnableDraw(); } catch { }
                             job.Spawned.IsReady = true;
@@ -1146,14 +1133,32 @@ public unsafe class ActorManager : IDisposable
             ApplyNpcAppearanceDirectFallback(chara, template);
         }
 
-        chara->DrawData.HideWeapons(!template.WeaponVisible);
-        chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
-
-        if (penumbraIpc.IsAvailable)
-        {
-            penumbraIpc.Redraw(actorIndex);
-        }
+        SafeSetWeaponVisibility(chara, template.WeaponVisible);
         logManager?.Info($"[Pipeline C: NPC] Applied Humanoid NPC appearance to Global#{actorIndex} (Glamourer: {glamSuccess}).");
+    }
+
+    /// <summary>
+    /// 人型アクターの武器表示状態を安全に設定（DrawObject 未生成時やモンスターへの誤呼び出しによるクラッシュを防止）
+    /// </summary>
+    private static void SafeSetWeaponVisibility(Character* chara, bool visible)
+    {
+        if (chara == null) return;
+        // モンスター（ModelCharaId > 0）には武器が存在しないため絶対に呼ばない
+        if (chara->ModelContainer.ModelCharaId != 0) return;
+
+        try
+        {
+            chara->DrawData.IsWeaponHidden = !visible;
+            // DrawObject が存在する場合のみネイティブ HideWeapons を呼ぶ
+            if (chara->GameObject.DrawObject != null)
+            {
+                chara->DrawData.HideWeapons(!visible);
+            }
+        }
+        catch
+        {
+            // ネイティブアクセス例外を安全に吸収
+        }
     }
 
     /// <summary>
@@ -1309,8 +1314,7 @@ public unsafe class ActorManager : IDisposable
         }
 
         // 4. 武器の表示・非表示
-        chara->DrawData.HideWeapons(!template.WeaponVisible);
-        chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
+        SafeSetWeaponVisibility(chara, template.WeaponVisible);
 
         // 5. Customize+ Profile の初期適用
         ApplyCustomizePlusProfile(chara, actorIndex, template, spawned);

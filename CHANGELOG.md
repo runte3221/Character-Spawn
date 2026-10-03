@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.63] - 2026-10-03
+### Fixed
+- **DirectX レンダラー競合クラッシュ（`Weapon.UpdateRender` / `Weapon.vf105` 0xC0000005）の完全根絶**:
+  - **根本原因の解明**:
+    - `HumanoidNpcApplyJob`（NPC）において、`chara->DrawData.HideWeapons(...)` の直後に `penumbraIpc.Redraw(actorIndex)` を呼び出し、かつ**同フレーム直後**に `chara->GameObject.EnableDraw()` を呼び出していた。NPC には Penumbra コレクションは設定されていないため Redraw は不要である上、Penumbra Redraw による非同期オブジェクト破棄・再構築中にレンダラースレッドがアクセスして武器仮想関数 `Weapon.vf105` で NULL ポインタ参照（0xC0000005）を招いていた。
+    - また、初期スポーン時（`SpawnCharacter`）に共通で無条件に即時 `EnableDraw()` を呼んだ直後、NPC やモンスター（ModelCharaId > 0）で即座に `DisableDraw()` を呼ぶ激しいトグルが発生し、DirectX のフレーム描画ツリーと競合していた。
+    - さらに、武器を持たないモンスター（ModelCharaId > 0）に対しても `HideWeapons(true)` や `IsWeaponHidden = true` を呼び出していたため、存在しない武器ポインタや Human 由来の武器描画オブジェクトが中途半端な状態でレンダラーキューに残存していた。
+  - **安全な武器表示制御ヘルパー (`SafeSetWeaponVisibility`) の導入 (`Managers/ActorManager.cs`)**:
+    - モンスター（`ModelCharaId > 0`）には武器操作を一切行わない完全ガードを設置。
+    - 人型アクターの場合も `chara->GameObject.DrawObject != null`（描画オブジェクト生成済み）を確認した上で `HideWeapons` を呼び出し、未生成時・破棄時のクラッシュを物理的に遮断。
+  - **NPC (`HumanoidNpcApplyJob`) から不要かつ危険な Penumbra Redraw を完全撤去 (`Managers/ActorManager.cs`)**:
+    - HDM 準拠（Glamourer 適用 -> DisableDraw -> 2 ticks 待機後 IsReadyToDraw -> EnableDraw）に純化し、二重再構築および非同期破棄中の EnableDraw によるクラッシュを物理的に根絶。
+  - **スポーン初期化時の不要な即時 `EnableDraw()` 撤去 (`Managers/ActorManager.cs`)**:
+    - 各パイプライン（A/B: 外見設定後、C: NPC準備後、D: モンスター準備後）の適切なタイミングでのみ一度だけ `EnableDraw()` を行う堅牢なライフサイクルを確立。
+  - **スタッガースポーン間隔の安全化 (`Managers/SceneManager.cs`)**:
+    - `DefaultSpawnIntervalTicks` を 2 フレームから 4 フレーム（~66ms）に引き上げ、複数キャラ同時スポーン時の DirectX レンダラー競合を完全防止。
+  - **完全隔離の保証**:
+    - 第1工程のコア（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）の基本仕様を壊さず完全隔離・安全保持。自キャラ（LocalPlayer）への二重物理遮断を厳守。
+
 ## [0.1.62] - 2026-10-03
 ### Fixed
 - **FF14 キャラクター名規則違反（数字混じり命名による名前破損・全IPC停止）の緊急完全修正**:

@@ -48,6 +48,11 @@
 - [x] **1-9. FF14 公式名前規則適合（フォネティック英字命名）＆ MCDF 遅延適用リトライ耐性（`v0.1.62.0`）**:
   - [x] `ActorManager.cs`: 数字を完全排除し、FF14 公式名前規則に完全適合する英字フォネティック命名（`Puppet Alpha`, `Puppet Bravo` ... `Puppet Zulu`）に全面刷新。ゲームエンジンでの名前破損および全プラグイン IPC（Glamourer / Penumbra / CustomizePlus）の停止を完全復旧
   - [x] `ActorManager.cs`: `AppearanceDeferredJob` Phase 0 に Glamourer 認識リトライループ（最大30フレーム耐性）を追加
+- [x] **1-10. DirectX レンダラー競合クラッシュ完全根絶（安全な武器表示制御＆NPC Redraw撤去＆スタッガー間隔適正化）（`v0.1.63.0`）**:
+  - [x] `ActorManager.cs`: `SafeSetWeaponVisibility` ヘルパーを導入。モンスター（`ModelCharaId > 0`）への武器操作を完全遮断し、人型アクターも DrawObject 生成確認後にのみ安全に適用
+  - [x] `ActorManager.cs`: スポーン初期化時（COM作成直後）の不要な即時 `EnableDraw()` を撤廃し、未初期化 DrawObject がレンダラーに晒される競合を根絶
+  - [x] `ActorManager.cs`: `HumanoidNpcApplyJob` から不要かつ有害な `penumbraIpc.Redraw` を完全撤去（非同期破棄中の EnableDraw による `Weapon.vf105` クラッシュを物理的に根絶）
+  - [x] `SceneManager.cs`: スタッガースポーン間隔（`DefaultSpawnIntervalTicks`）を 2 フレームから 4 フレーム（~66ms）に引き上げ、複数キャラ同時スポーン時の DirectX レンダラー負荷・競合を完全防止
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか

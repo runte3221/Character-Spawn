@@ -62,7 +62,7 @@ public class SceneManager : IDisposable
     // 非同期フレーム分散（スタッガー）スポーンキュー（363msヒッチ解消・将来100体規模対応）
     private readonly Queue<SceneActorPlacement> staggeredSpawnQueue = new();
     private int spawnIntervalTicks = 0;
-    private const int DefaultSpawnIntervalTicks = 2; // 2フレームに1体スポーン (~33ms間隔、メインスレッドへの負荷ゼロ)
+    private const int DefaultSpawnIntervalTicks = 4; // 4フレームに1体スポーン (~66ms間隔、DirectXパイプライン競合クラッシュ完全防止)
 
     public SceneManager(
         IDalamudPluginInterface pluginInterface,
