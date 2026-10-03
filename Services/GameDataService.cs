@@ -201,11 +201,17 @@ public class GameDataService
         return new NpcAppearanceData(0, cust, equip);
     }
 
-    public IReadOnlyList<TimelineEntry> SearchTimelines(string query, string category = "All", int maxResults = 0)
+    public IReadOnlyList<TimelineEntry> SearchTimelines(string query, string category = "All", string? modelPrefix = null, int maxResults = 0)
     {
         cachedTimelines ??= BuildTimelineCache();
 
         IEnumerable<TimelineEntry> filtered = cachedTimelines;
+
+        // モデル固有プレフィックスによる絞り込み (例: "m0015", "m1001", "c0901")
+        if (!string.IsNullOrWhiteSpace(modelPrefix))
+        {
+            filtered = filtered.Where(t => t.Key.Contains(modelPrefix, StringComparison.OrdinalIgnoreCase));
+        }
 
         // カテゴリ絞り込み
         if (!string.IsNullOrWhiteSpace(category) && category != "All")
@@ -233,6 +239,21 @@ public class GameDataService
         filtered = filtered.OrderByDescending(t => t.IsEmote).ThenBy(t => t.Id);
 
         return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
+    }
+
+    public uint GetModelNumber(uint modelCharaId)
+    {
+        if (modelCharaId == 0) return 0;
+        try
+        {
+            var sheet = dataManager.GetExcelSheet<ModelChara>();
+            if (sheet != null && sheet.TryGetRow(modelCharaId, out var row))
+            {
+                return row.Model;
+            }
+        }
+        catch { }
+        return 0;
     }
 
     public IReadOnlyList<TimelineEntry> GetFacialExpressions()

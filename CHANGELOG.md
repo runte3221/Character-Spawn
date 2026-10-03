@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.74] - 2026-10-03
+### Added
+- **LookAt Player の追従距離制御 ＆ 範囲外での完全追従解除 (`Models/SceneData.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:
+  - `LookAtMaxDistance` プロパティ（デフォルト 8.0m、範囲 1.0m〜30.0m）を追加。
+  - 対象から指定距離以上離れた瞬間に `SetTargetId(0)` を呼び出し、遠距離で顔が追従したままになる問題を完全に解消。
+  - ワンクリックでデフォルト値（8.0m）に戻す `Reset` ボタンを設置。
+- **エモート以外のモーション即時割り込み切り替え (デスポーン不要化) (`Services/AnimationService.cs`)**:
+  - NPC 専用モーションや戦闘アクション等を切り替えた際、前のモーションが再生され続けて切り替わらない問題を解消。
+  - Brio 準拠の `chara->SetMode(CharacterModes.AnimLock, 0);` とスロット0の強制停止（`StopTimeline(0)`）、`TimelineSequencer.PlayTimeline` を組み合わせた即時割り込み実行を実装。デスポーン・再スポーンすることなく即座に新しいモーションが再生されるように改善。
+- **UI 設定のリセットボタン (Default ボタン) 設置 (`UI/SceneEditWindow.cs`)**:
+  - `Body Turn`: ワンクリックで `0° (Face Only)` へ戻す `Reset` ボタンを追加。
+  - `Speed`: ワンクリックで `1.00x` へ戻す `Reset` ボタンを追加。
+  - `Distance`: ワンクリックで `8.0m` へ戻す `Reset` ボタンを追加。
+- **モデル固有モーションのフィルタリング機能 (`Services/GameDataService.cs`, `UI/SceneEditWindow.cs`)**:
+  - モンスター、マウント、ミニオン、デミヒューマン等を選択した際、`ModelChara` シートの `Model` 列番号（例: `m0015`, `m1001`）を抽出し、該当モデル専用のアクション・固有モーションのみをワンクリックで絞り込める「固有モーションのみ (アクター名)」チェックボックスを追加。
+
 ## [0.1.73] - 2026-10-03
 ### Added
 - **LookAt Player の体幹回転制限スライダー (`BodyTurnAngleLimit`) (`Models/SceneData.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:

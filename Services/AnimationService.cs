@@ -76,6 +76,7 @@ public unsafe class AnimationService : IDisposable
                 FacialTimelineId = config.FacialTimelineId,
                 LookAtPlayer = config.LookAtPlayer,
                 BodyTurnAngleLimit = config.BodyTurnAngleLimit,
+                LookAtMaxDistance = config.LookAtMaxDistance > 0.1f ? config.LookAtMaxDistance : 8.0f,
                 OriginalRotation = defaultRotation,
                 TicksSinceApply = 0
             };
@@ -96,11 +97,16 @@ public unsafe class AnimationService : IDisposable
                 chara->Timeline.OverallSpeed = state.Speed;
                 chara->Timeline.TimelineSequencer.SetSlotSpeed(0, state.Speed);
 
+                // モーション切り替えが確実に即時反映されるようスロット0を停止しAnimLockモードで即時割り込み実行
+                chara->StopTimeline(0);
+                chara->SetMode(CharacterModes.AnimLock, 0);
+                chara->Timeline.TimelineSequencer.PlayTimeline(config.TimelineId);
                 chara->PlayTimeline(config.TimelineId, 0);
             }
             else
             {
-                // モーションなし (通常待機)
+                // モーションなし (通常待機に戻す)
+                chara->SetMode(CharacterModes.Normal, 0);
                 chara->Timeline.BaseOverride = 0;
                 chara->Timeline.OverallSpeed = 1.0f;
                 chara->Timeline.TimelineSequencer.SetSlotSpeed(0, 1.0f);
@@ -128,7 +134,7 @@ public unsafe class AnimationService : IDisposable
             }
 
             activeStates[spawned.InstanceId] = state;
-            logManager?.Info($"ApplyMotion: '{spawned.DisplayName}' -> Timeline: {config.TimelineId}, Loop: {config.IsLoop}, Speed: {state.Speed:F2}x, Facial: {config.FacialTimelineId}, LookAt: {config.LookAtPlayer}, BodyLimit: {config.BodyTurnAngleLimit}°");
+            logManager?.Info($"ApplyMotion: '{spawned.DisplayName}' -> Timeline: {config.TimelineId}, Loop: {config.IsLoop}, Speed: {state.Speed:F2}x, Facial: {config.FacialTimelineId}, LookAt: {config.LookAtPlayer}, Dist: {state.LookAtMaxDistance}m, BodyLimit: {config.BodyTurnAngleLimit}°");
         }
         catch (Exception ex)
         {
@@ -151,6 +157,7 @@ public unsafe class AnimationService : IDisposable
         try
         {
             chara->SetTargetId(0);
+            chara->SetMode(CharacterModes.Normal, 0);
             chara->Timeline.BaseOverride = 0;
             chara->Timeline.OverallSpeed = 1.0f;
             chara->Timeline.TimelineSequencer.SetSlotSpeed(0, 1.0f);
@@ -192,6 +199,7 @@ public unsafe class AnimationService : IDisposable
                 {
                     if (state.TimelineId > 0)
                     {
+                        chara->Timeline.TimelineSequencer.PlayTimeline(state.TimelineId);
                         chara->PlayTimeline(state.TimelineId, 0);
                     }
                     if (state.FacialTimelineId > 0)
@@ -223,7 +231,7 @@ public unsafe class AnimationService : IDisposable
                     }
                 }
 
-                // E. 視線追従 (LookAt Player) & 体幹角度制御
+                // E. 視線追従 (LookAt Player) & 範囲内外制御
                 if (state.LookAtPlayer && localPlayer != null && myEntityId != 0)
                 {
                     float dx = myPos.X - chara->Position.X;
@@ -232,7 +240,7 @@ public unsafe class AnimationService : IDisposable
 
                     if (distSq <= state.LookAtMaxDistance * state.LookAtMaxDistance && distSq > 0.04f)
                     {
-                        // 1. 首・目線は常にネイティブでプレイヤーを追従！
+                        // 1. 範囲内：首・目線は常にネイティブでプレイヤーを追従！
                         chara->SetTargetId(myEntityId);
 
                         // 2. 体幹（全身）の回転制御
@@ -263,7 +271,10 @@ public unsafe class AnimationService : IDisposable
                     }
                     else
                     {
-                        // 範囲外なら元の向きに戻す
+                        // 範囲外に出た場合：ターゲットを0にして視線・首追従を即時解除！
+                        chara->SetTargetId(0);
+
+                        // 体も元の向きに戻す
                         float currentRot = chara->Rotation;
                         float angleDiff = NormalizeAngle(state.OriginalRotation - currentRot);
                         if (MathF.Abs(angleDiff) > 0.01f)

@@ -53,6 +53,20 @@ Character Spawn プラグインの根幹機能となる、カスタムスポー�
   - [x] `All`, `Emotes`, `NPC`, `Monster`, `Battle`, `General` のドロップダウン
   - [x] 人型NPC演技・会話・固有モーション（2,000件以上）への `[NPC]` タグ付与とワンクリック絞り込み
 
+### 【Step 2.1-fix3】LookAt距離制限・範囲外完全解除 ＆ モーション即時割り込み ＆ 固有モーション絞り込み（`v0.1.74.0`）
+- [x] **LookAt Player の距離制御 ＆ 範囲外完全解除 (`Models/SceneData.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**
+  - [x] `LookAtMaxDistance` 設定（デフォルト 8.0m、1.0m〜30.0m）
+  - [x] 範囲外に出た瞬間に `SetTargetId(0)` を発行し、遠距離での顔・視線固定を完全解消
+  - [x] 8.0m へ戻すワンクリック `Reset` ボタンの設置
+- [x] **エモート以外のモーション即時割り込み切り替え (デスポーン不要化) (`Services/AnimationService.cs`)**
+  - [x] NPC専用モーションや戦闘アクション等を切り替えた際、前のモーションが保持される問題を解消
+  - [x] Brio 準拠の `chara->SetMode(CharacterModes.AnimLock, 0);` ＋ `StopTimeline(0)` ＋ `TimelineSequencer.PlayTimeline` による即時割り込み実行
+- [x] **UI パラメータの Default リセットボタン設置 (`UI/SceneEditWindow.cs`)**
+  - [x] `Body Turn`（0°へ）、`Speed`（1.00xへ）、`Distance`（8.0mへ）のリセットボタン
+- [x] **モデル固有モーションのフィルタリング機能 (`Services/GameDataService.cs`, `UI/SceneEditWindow.cs`)**
+  - [x] モンスター、マウント、ミニオン、デミヒューマンの `ModelChara.Model` 番号（`m0015`等）を抽出
+  - [x] 「固有モーションのみ (アクター名)」チェックボックスによる対象専用アクションの絞り込み
+
 ### 【Step 2.2】自律移動 AI ＆ パトロール・追従・復帰ルーチン（次工程）
 - [ ] ウェイポイント巡回ルーチン (指定ルート巡回、各地点でのモーション再生)
 - [ ] プレイヤー接近感知・追従・規定距離超過時の元の位置復帰ルーチン

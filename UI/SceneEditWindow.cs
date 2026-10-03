@@ -34,6 +34,7 @@ public class SceneEditWindow : Window, IDisposable
     private string facialSearchQuery = string.Empty;
     private int selectedMotionCategoryIndex = 0;
     private static readonly string[] MotionCategories = { "All", "Emotes", "NPC", "Monster", "Battle", "General" };
+    private bool onlyModelSpecificMotions = false;
 
     public SceneEditWindow(
         Configuration configuration,
@@ -502,28 +503,67 @@ public class SceneEditWindow : Window, IDisposable
 
         if (lookAt)
         {
+            float lookAtDist = placement.Motion.LookAtMaxDistance > 0.1f ? placement.Motion.LookAtMaxDistance : 8.0f;
+            ImGui.SetNextItemWidth(140);
+            if (ImGui.SliderFloat("Distance##AnimLookAtDist", ref lookAtDist, 1.0f, 30.0f, "%.1fm"))
+            {
+                placement.Motion.LookAtMaxDistance = lookAtDist;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Reset##ResetLookAtDist"))
+            {
+                placement.Motion.LookAtMaxDistance = 8.0f;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Distance at which the actor begins and stops tracking the player (Default: 8.0m).\nClick Reset to return to 8.0m.");
+            }
+
+            ImGui.SameLine(250);
             float bodyTurn = placement.Motion.BodyTurnAngleLimit;
-            ImGui.SetNextItemWidth(180);
-            string turnFmt = bodyTurn <= 0.01f ? "0° (Face & Eyes Only)" : "%.0f°";
+            ImGui.SetNextItemWidth(140);
+            string turnFmt = bodyTurn <= 0.01f ? "0° (Face Only)" : "%.0f°";
             if (ImGui.SliderFloat("Body Turn##AnimBodyTurn", ref bodyTurn, 0f, 180f, turnFmt))
             {
                 placement.Motion.BodyTurnAngleLimit = bodyTurn;
                 sceneManager.SaveScenes();
                 ApplyCurrentMotion(placement);
             }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Reset##ResetBodyTurn"))
+            {
+                placement.Motion.BodyTurnAngleLimit = 0.0f;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
             if (ImGui.IsItemHovered())
             {
-                ImGui.SetTooltip("Maximum body rotation angle toward player.\n0° = Body never rotates (Face & Eyes only)\n45° = Body turns up to ±45°\n180° = Full body rotation toward player");
+                ImGui.SetTooltip("Maximum body rotation angle toward player.\n0° = Body never rotates (Face & Eyes only)\n45° = Body turns up to ±45°\n180° = Full body rotation toward player\nClick Reset to return to 0°.");
             }
         }
 
         float speed = placement.Motion.Speed > 0.01f ? placement.Motion.Speed : 1.0f;
-        ImGui.SetNextItemWidth(180);
+        ImGui.SetNextItemWidth(140);
         if (ImGui.SliderFloat("Speed##AnimSpeed", ref speed, 0.1f, 3.0f, "%.2fx"))
         {
             placement.Motion.Speed = speed;
             sceneManager.SaveScenes();
             ApplyCurrentMotion(placement);
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Reset##ResetSpeed"))
+        {
+            placement.Motion.Speed = 1.0f;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Reset motion speed to 1.00x.");
         }
 
         ImGui.Spacing();
@@ -551,6 +591,30 @@ public class SceneEditWindow : Window, IDisposable
             ImGui.TextDisabled("(None / Default Idle)");
         }
 
+        // 対象アクターがモンスター・マウント・ミニオン・デミヒューマン等の場合、モデル固有モーション絞り込みトグルを表示
+        var template = configuration.Templates.FirstOrDefault(t => t.Id == placement.CharacterTemplateId);
+        string? activeModelPrefix = null;
+        if (template != null && template.ModelCharaId > 0 && gameDataService != null)
+        {
+            uint modelNum = gameDataService.GetModelNumber(template.ModelCharaId);
+            if (modelNum > 0)
+            {
+                string pfx = $"m{modelNum:D4}";
+                ImGui.SameLine(320);
+                if (ImGui.Checkbox($"固有モーションのみ ({template.Name})##ModelSpecificMotions", ref onlyModelSpecificMotions))
+                {
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip($"Filters motions matching this actor's model ({pfx}).");
+                }
+                if (onlyModelSpecificMotions)
+                {
+                    activeModelPrefix = pfx;
+                }
+            }
+        }
+
         ImGui.SetNextItemWidth(120);
         if (ImGui.Combo("##MotionCategory", ref selectedMotionCategoryIndex, MotionCategories, MotionCategories.Length))
         {
@@ -566,7 +630,7 @@ public class SceneEditWindow : Window, IDisposable
 
         if (gameDataService != null)
         {
-            var timelines = gameDataService.SearchTimelines(motionSearchQuery, MotionCategories[selectedMotionCategoryIndex], 500);
+            var timelines = gameDataService.SearchTimelines(motionSearchQuery, MotionCategories[selectedMotionCategoryIndex], activeModelPrefix, 500);
             if (ImGui.BeginListBox("##MotionList", new Vector2(-1, 180)))
             {
                 foreach (var t in timelines)
