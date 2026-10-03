@@ -65,6 +65,19 @@ public unsafe class ActorManager : IDisposable
 
     public IReadOnlyList<SpawnedActorData> ActiveActors => activeActors;
 
+    /// <summary>
+    /// 自キャラ (LocalPlayer Index 0) がワールドに正常に存在し、クローン生成の元として利用可能か
+    /// </summary>
+    public bool IsLocalPlayerReady
+    {
+        get
+        {
+            if (objectTable.Length == 0) return false;
+            var localPlayer = objectTable[0] as ICharacter;
+            return localPlayer != null && localPlayer.Address != 0;
+        }
+    }
+
     public ActorManager(
         IClientState clientState,
         IObjectTable objectTable,

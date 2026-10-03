@@ -117,9 +117,8 @@ public class SceneManager : IDisposable
             return;
         }
 
-        // 自キャラ (LocalPlayer) がワールドに完全に生成され、有効なアドレスを持っているか確認
-        var localPlayer = clientState.LocalPlayer;
-        if (localPlayer == null || localPlayer.Address == nint.Zero)
+        // 自キャラ (LocalPlayer) がワールドに完全に生成され、準備完了しているか確認
+        if (!actorManager.IsLocalPlayerReady)
         {
             return;
         }
