@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.50] - 2026-10-03
+### Fixed
+- **HDM (HousingDollMaster) 完全照合による ENpc ID 空間の乖離解消と DrawObject 強制再構築 (`RedrawGuise`)**:
+  - **二大根本原因の完全解明**:
+    1. **ENpc ResidentId と BaseId の ID 空間乖離 (Two ENpc Spaces)**:
+       - UI の検索一覧（`BuildNpcCache`）が `ENpcResident` を回していたため、ユウギリの ID が ResidentId `1007097` になっていた。
+       - しかし外見データ取得は `ENpcBase` から行っていたため、ユウギリの `ENpcBase`（`1011896`）と一致せず外見データ取得に失敗し、自キャラのデータ（ミコッテ）でテンプレートが保存されていた。
+       - HDM（`EventNpcIndex.cs`）は `ENpcBase` を走査し、`ENpcBase.RowId` をリスト ID に採用していた。
+    2. **Glamourer ApplyFlag (6UL) と DrawObject 強制再構築 (`RedrawGuise`)**:
+       - HDM の `HumanGuise.Apply` は、Glamourer `ApplyState` に `6UL`（`ApplyFlag.Equipment | ApplyFlag.Customization`）を渡し、`Once (1)` を除外して永続適用していた。
+       - さらに `ApplyState` 成功直後に `_guise.Redraw`（`DisableDraw` → 最低 2 ticks 待機 → `IsReadyToDraw` 確認 → `EnableDraw`）を実行し、ゲームエンジンの DrawObject を NPC 外見で強制再構築していた。
+  - **対策 1: ENpcBase 主軸キャッシュと名前逆引き解決 (`GameDataService.cs`, `CharacterLibraryTab.cs`)**:
+    - `BuildNpcCache` を HDM と同一の `ENpcBase` 主軸走査に変更し、リストの ID を `ENpcBase.RowId`（ユウギリなら `1011896`）に統一。
+    - `ResolveNpcAppearance(enpcId, name)` を新設。過去に ResidentId（`1007097`）で保存された既存テンプレートであっても、NPC名「ユウギリ」から自動的に正しい BaseId（`1011896`）へリマップして正しい外見データを返す自己修復機構を実装。
+  - **対策 2: HDM 完全準拠の 6UL 永続適用 (`GlamourerIpc.cs`)**:
+    - `TryApplyNpcAppearance` 内で、HDM と同一の `6UL`（`Equipment | Customization`）フラグで `applyStateV2Ulong` を直接呼び出し。余計な `ForceAllApply` を排除し、NPC に必要なスロットのみ確実に適用。
+    - MCDF や通常 Glamourer パイプラインには一切触れず、人型NPC専用処理として完全隔離。
+  - **対策 3: DrawObject 強制再構築シーケンス (`ActorManager.cs`)**:
+    - スポーン時に既存テンプレートの自動リフレッシュを実行（汚染された自キャラデータを本物の NPC データで即時上書き）。
+    - `HumanoidNpcApplyJob` で Glamourer 適用成功後、直ちに `DisableDraw()` を実行。
+    - 最低 2 ticks 待機し、ゲームエンジンの準備完了（`IsReadyToDraw`）を確認してから `EnableDraw()` を呼び出すことで、ゲームエンジンの DrawObject を NPC 外見で強制再構築！
+
 ## [0.1.49] - 2026-10-03
 ### Fixed
 - **HDM (HousingDollMaster) 徹底逆アセンブル解析に基づく真因解明・パペット名 ASCII 化・スポーン描画シーケンス完全同期**:

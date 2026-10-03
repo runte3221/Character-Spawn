@@ -191,3 +191,45 @@ HDM でユウギリをスポーンさせたところ、完璧にユウギリ固�
    - Index 経由で取得できなかった場合でも Name（"Actor Aa"）経由で確実にステートを取得する多重防壁を構築。
 4. **他パイプライン（MCDF, 通常Glamourer, Monster）の完全保護**:
    - 共通メソッドの破壊的変更は行わず、Pipeline C（人型NPC）のみを修正したため、既存の全機能への影響ゼロを保証。
+
+---
+
+## 10. HDM完全照合による二大根本原因の解決 (v0.1.50.0)
+
+### (1) 徹底逆アセンブル解析で暴かれた二大根本原因
+v0.1.49.0 の実機検証において、パペット名が ASCII 化されて Glamourer `GetState` が 2 ticks で成功し `ApplyState` も `result: 0` を返したにもかかわらず、ユウギリやミューヌが自キャラ（水着ミコッテ）でスポーンしてしまう現象を追究した結果、以下の二大真因が判明した。
+
+#### ① ENpc ResidentId と BaseId の ID 空間乖離 (Two ENpc Spaces)
+- **現象**: 保存済みテンプレート `CharacterSpawn.json` をデコードしたところ、ユウギリの `CustomizeData` に自キャラ（Race=4:ミコッテ, Clan=7:サンシーカー）のデータそのものが保存されていた！
+- **真因**:
+  - UI の NPC 検索一覧（`BuildNpcCache`）が `ENpcResident` シートを走査しており、ユウギリの ID を `ENpcResident` の RowId（`1007097`）として格納していた。
+  - しかし、外見データ取得（`GetNpcAppearanceData`）は `ENpcBase` シートから引いていた。
+  - ユウギリの `ENpcBase` の ID は **`1011896`** であり、ID が一致しないため外見データが取得できず、自キャラの外見でフォールバックしてテンプレートが保存されていた！
+- **HDM の実装**:
+  - HDM（`EventNpcIndex.cs`）は `ENpcResident` ではなく **`ENpcBase` シートを走査** し、`ENpcBase.RowId`（ユウギリなら `1011896`）をリストの ID として採用していた。
+  - そのため、HDM は Base 1011896 から Race=6（アウラ）, Clan=11（レン）, Face=201（NPC固有顔）, Hairstyle=201（NPC固有髪）を 100% 正確に取得していた。
+
+#### ② Glamourer ApplyFlag (6UL) と DrawObject 強制再構築 (`RedrawGuise`)
+- **真因**:
+  - HDM の `HumanGuise.Apply` は、Glamourer `ApplyState` に **`6UL`（`ApplyFlag.Equipment | ApplyFlag.Customization`）** を渡していた。`Once (1)` を除外することで、ステートを一時的ではなく永続的にパペットに定着させていた。
+  - さらに、HDM は `ApplyState` 成功直後に `_guise.Redraw`（`DisableDraw` → 最低 2 ticks 待機 → `IsReadyToDraw` 確認 → `EnableDraw`）を呼び出していた。
+  - HDM の実機ログ:
+    `"forcing a draw-object rebuild + re-assert so the NPC customize/Race renders (self: RevertToGameBase-vs-ApplyState race; puppet: cold-spawn render gap)."`
+  - Character Spawn では `ApplyState` 後に DrawObject の破棄・再構築を行っていなかったため、ゲームエンジン内で初期素体（自キャラのミコッテ）のモデルがそのまま残存していた。
+
+---
+
+### (2) 解決策の実装
+
+1. **`GameDataService.cs`: HDM 準拠の ENpcBase 主軸キャッシュと逆引き解決**:
+   - `BuildNpcCache` を `ENpcBase` 主ループに変更。人間型（`ModelCharaId == 0`）およびデミヒューマン（`ModelCharaId > 0`）を適切に判別し、リストの ID を **`ENpcBase.RowId`** に統一。
+   - `ResolveNpcAppearance(enpcId, name)` を新設。過去に ResidentId（`1007097`）で保存された既存テンプレートであっても、NPC名「ユウギリ」から自動的に正しい BaseId（`1011896`）へリマップして正しい外見データを返す自己修復機構を実装。
+2. **`GlamourerIpc.cs`: HDM 完全準拠の 6UL 永続適用**:
+   - `TryApplyNpcAppearance` 内で、HDM と同一の `6UL`（`Equipment | Customization`）フラグで `applyStateV2Ulong` を直接呼び出し。
+   - 余計な `ForceAllApply` を排除し、NPC に必要なスロットのみ確実に適用。
+   - MCDF や通常 Glamourer パイプラインには一切触れず、人型NPC専用処理として完全隔離。
+3. **`ActorManager.cs`: DrawObject 強制再構築シーケンス (HDM RedrawGuise 準拠)**:
+   - スポーン時に既存テンプレートの自動リフレッシュを実行（汚染された自キャラデータを本物の NPC データで即時上書き）。
+   - `HumanoidNpcApplyJob` で Glamourer 適用成功後、直ちに `DisableDraw()` を実行。
+   - 最低 2 ticks 待機し、ゲームエンジンの準備完了（`IsReadyToDraw`）を確認してから `EnableDraw()` を呼び出すことで、ゲームエンジンの DrawObject を NPC 外見で強制再構築！
+

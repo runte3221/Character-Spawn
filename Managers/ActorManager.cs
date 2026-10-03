@@ -50,6 +50,8 @@ public unsafe class ActorManager : IDisposable
         public CharacterTemplate Template = null!;
         public int Ticks;
         public bool DrawEnabled;
+        public bool AppliedGlamourer;
+        public int RebuildTicks;
         public const int MaxTicks = 60; // 最大約1秒間 (60フレーム) リトライ
     }
     private readonly List<HumanoidNpcApplyJob> humanoidNpcApplyJobs = new();
@@ -214,34 +216,20 @@ public unsafe class ActorManager : IDisposable
                 }
             }
 
-            // NPCデータの補完 (CustomizeData または NpcEquipmentModelIds の補完)
+            // NPCデータの補完・自動リフレッシュ (HDM ENpcBase 逆引き解決)
             if (template.SourceType == CharacterSourceType.Npc && gameDataService != null)
             {
-                if (template.CustomizeData == null || template.NpcEquipmentModelIds == null)
+                var app = gameDataService.ResolveNpcAppearance(template.DataId, template.Name);
+                if (app != null)
                 {
-                    uint npcId = template.DataId;
-                    if (npcId == 0 && !string.IsNullOrWhiteSpace(template.Name))
+                    // テンプレートが未設定、または自キャラデータ等で汚染されている場合でも最新の正しいデータに自動更新
+                    if (app.ModelCharaId > 0 || (app.CustomizeData != null && app.CustomizeData.Length > 0 && app.CustomizeData[0] > 0))
                     {
-                        var searchRes = gameDataService.SearchNpcs(template.Name, 1);
-                        if (searchRes.Count > 0)
-                        {
-                            npcId = searchRes[0].Id;
-                            template.DataId = npcId;
-                            logManager?.Info($"Resolved ENpcId {npcId} by name '{template.Name}'.");
-                        }
-                    }
-
-                    if (npcId > 0)
-                    {
-                        var app = gameDataService.GetNpcAppearanceData(npcId);
-                        if (app != null)
-                        {
-                            template.ModelCharaId = app.ModelCharaId;
-                            template.CustomizeData = app.CustomizeData;
-                            template.NpcEquipmentModelIds = app.EquipmentModelIds;
-                            template.McType = app.McType;
-                            logManager?.Info($"Auto-resolved NPC appearance data for '{template.Name}' from ENpcId {npcId} (ModelChara: {template.ModelCharaId}, McType: {template.McType}).");
-                        }
+                        template.ModelCharaId = app.ModelCharaId;
+                        template.CustomizeData = app.CustomizeData;
+                        template.NpcEquipmentModelIds = app.EquipmentModelIds;
+                        template.McType = app.McType;
+                        logManager?.Info($"Auto-resolved NPC appearance data for '{template.Name}' from ENpc (ModelChara: {template.ModelCharaId}, McType: {template.McType}, Race: {(app.CustomizeData != null && app.CustomizeData.Length > 0 ? app.CustomizeData[0].ToString() : "N/A")}).");
                     }
                 }
             }
@@ -693,7 +681,7 @@ public unsafe class ActorManager : IDisposable
                         var chara = (Character*)charaObj.Address;
                         int actorIndex = (int)job.Spawned.GlobalIndex;
 
-                        // 1. HDM 準拠: ゲームエンジンが描画準備完了 (IsReadyToDraw) になるのを待って EnableDraw
+                        // 1. HDM 準拠: ゲームエンジンが描画準備完了 (IsReadyToDraw) になるのを待って EnableDraw (初期骨格確立)
                         if (!job.DrawEnabled)
                         {
                             bool ready = false;
@@ -708,25 +696,65 @@ public unsafe class ActorManager : IDisposable
                         var drawObj = (nint)chara->GameObject.DrawObject;
                         if (drawObj == nint.Zero && job.Ticks < 30) continue;
 
-                        // 3. Glamourer 経由で外見を適用
-                        bool glamSuccess = false;
-                        if (glamourerIpc != null && glamourerIpc.IsAvailable)
+                        // 3. Glamourer 経由で外見を適用 (HDM HumanGuise.ApplyState flags=6UL)
+                        if (!job.AppliedGlamourer)
                         {
-                            var res = glamourerIpc.TryApplyNpcAppearance(
-                                actorIndex,
-                                job.Template.CustomizeData,
-                                job.Template.NpcEquipmentModelIds,
-                                showHeadgear: true,
-                                job.Spawned.PuppetName);
-
-                            if (res == GlamourerIpc.NpcApplyResult.Applied)
+                            bool glamSuccess = false;
+                            if (glamourerIpc != null && glamourerIpc.IsAvailable)
                             {
-                                glamSuccess = true;
+                                var res = glamourerIpc.TryApplyNpcAppearance(
+                                    actorIndex,
+                                    job.Template.CustomizeData,
+                                    job.Template.NpcEquipmentModelIds,
+                                    showHeadgear: true,
+                                    job.Spawned.PuppetName);
+
+                                if (res == GlamourerIpc.NpcApplyResult.Applied)
+                                {
+                                    glamSuccess = true;
+                                }
+                            }
+
+                            if (glamSuccess)
+                            {
+                                job.AppliedGlamourer = true;
+                                // HDM (HumanGuise.RedrawGuise / GuiseService.BeginRedraw) 黄金律:
+                                // ApplyState 直後に DisableDraw を行い、DrawObject を強制再構築する！
+                                try { chara->GameObject.DisableDraw(); } catch { }
+                                logManager?.Info($"[Pipeline C: NPC] Glamourer applied to Global#{actorIndex} ('{job.Spawned.DisplayName}'). Initiating HDM RedrawGuise (DisableDraw -> Rebuild)...");
+                                continue;
+                            }
+                            else if (job.Ticks >= HumanoidNpcApplyJob.MaxTicks)
+                            {
+                                logManager?.Warning($"[Pipeline C: NPC] Glamourer NPC appearance timed out after {job.Ticks} ticks on Global#{actorIndex} ('{job.Spawned.DisplayName}'). Applying direct memory fallback...");
+                                ApplyNpcAppearanceDirectFallback(chara, job.Template);
+
+                                chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
+                                chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
+
+                                if (penumbraIpc.IsAvailable)
+                                {
+                                    penumbraIpc.Redraw(actorIndex);
+                                }
+
+                                try { chara->GameObject.EnableDraw(); } catch { }
+                                job.Spawned.IsReady = true;
+                                humanoidNpcApplyJobs.RemoveAt(i);
+                                logManager?.Info($"[Pipeline C: NPC] Applied Humanoid NPC appearance fallback on Global#{actorIndex} after {job.Ticks} ticks.");
+                                continue;
                             }
                         }
-
-                        if (glamSuccess)
+                        else
                         {
+                            // 4. HDM (GuiseService.OnUpdate / RedrawPhase) 準拠:
+                            // DisableDraw 後、最低 2 ticks 待機し、ゲームエンジンの準備完了を待って EnableDraw
+                            job.RebuildTicks++;
+                            if (job.RebuildTicks < 2) continue;
+
+                            bool ready = false;
+                            try { ready = chara->GameObject.IsReadyToDraw(); } catch { }
+                            if (!ready && job.RebuildTicks < 15) continue;
+
                             chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
                             chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
 
@@ -738,25 +766,8 @@ public unsafe class ActorManager : IDisposable
                             try { chara->GameObject.EnableDraw(); } catch { }
                             job.Spawned.IsReady = true;
                             humanoidNpcApplyJobs.RemoveAt(i);
-                            logManager?.Info($"[Pipeline C: NPC] Humanoid NPC appearance successfully applied via Glamourer on Global#{actorIndex} ('{job.Spawned.DisplayName}') after {job.Ticks} tick(s).");
-                        }
-                        else if (job.Ticks >= HumanoidNpcApplyJob.MaxTicks)
-                        {
-                            logManager?.Warning($"[Pipeline C: NPC] Glamourer NPC appearance timed out after {job.Ticks} ticks on Global#{actorIndex} ('{job.Spawned.DisplayName}'). Applying direct memory fallback...");
-                            ApplyNpcAppearanceDirectFallback(chara, job.Template);
-
-                            chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
-                            chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
-
-                            if (penumbraIpc.IsAvailable)
-                            {
-                                penumbraIpc.Redraw(actorIndex);
-                            }
-
-                            try { chara->GameObject.EnableDraw(); } catch { }
-                            job.Spawned.IsReady = true;
-                            humanoidNpcApplyJobs.RemoveAt(i);
-                            logManager?.Info($"[Pipeline C: NPC] Applied Humanoid NPC appearance fallback on Global#{actorIndex} after {job.Ticks} ticks.");
+                            logManager?.Info($"[Pipeline C: NPC] Humanoid NPC DrawObject rebuild complete on Global#{actorIndex} ('{job.Spawned.DisplayName}') after {job.Ticks} ticks (Rebuild: {job.RebuildTicks} ticks).");
+                            continue;
                         }
                     }
                     catch (Exception ex)

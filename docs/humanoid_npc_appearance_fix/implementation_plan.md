@@ -97,8 +97,30 @@
      - `TryApplyNpcAppearance` 内で Index 経由で取得できなかった場合でも Name 経由で確実にステートを取得する多重防壁を構築。
 - **検証手順**:
   1. `tools/release.ps1 0.1.49.0` で全自動リリース。
-  2. カヌ・エ・センナ、ユウギリをスポーンさせ、角尊のツノ・固有髪型、ユウギリ固有のアウラ顔・長い黒髪が HDM とまったく同じように 100% 確実に描画されることを確認。
-  3. MCDF キャラクターおよびモンスター・デミヒューマンが引き続き完璧に動作することを確認。
+## 9. v0.1.50.0 改修計画（HDM完全照合によるENpc ID空間整合とDrawObject強制再構築）
+- **徹底逆アセンブル照合によって判明した二大真因**:
+  1. **ENpc ResidentId と BaseId の ID 空間乖離 (Two ENpc Spaces)**:
+     - UI の検索リスト（`BuildNpcCache`）が `ENpcResident` を回していたため、ユウギリの ID が ResidentId `1007097` になっていた。
+     - しかし外見データ（`GetNpcAppearanceData`）は `ENpcBase` から引いていた。
+     - ユウギリの `ENpcBase` は `1011896` であり一致しないため、外見データが `null` となり、テンプレート保存時に自キャラデータ（ミコッテ）で汚染されていた。
+     - HDM（`EventNpcIndex`）は `ENpcBase` を走査して `ENpcBase.RowId`（BaseId）をリスト ID に採用している。
+  2. **Glamourer ApplyFlag (6UL) と DrawObject 強制再構築 (`RedrawGuise`)**:
+     - HDM は `ApplyState` に `6UL`（Equipment=2 | Customization=4）を渡し、`Once (1)` を除外して永続適用していた。
+     - さらに `ApplyState` 直後に `DisableDraw` → 2 ticks 待機 → `EnableDraw`（`RedrawGuise`）を実行し、ゲームエンジンの DrawObject を NPC 外見で強制再構築していた。
+- **改修方針**:
+  1. **`Services/GameDataService.cs`**:
+     - `BuildNpcCache` を HDM と同様に `ENpcBase` 主ループに変更し、リスト ID を `ENpcBase.RowId`（BaseId）にする。
+     - 既存の ResidentId や名前から正しい BaseId を解決するフェイルセーフを追加。
+  2. **`Services/GlamourerIpc.cs`**:
+     - `TryApplyNpcAppearance` 内の `applyStateV2Ulong` 呼び出し時のフラグを HDM と同一の `6UL`（Equipment | Customization）に変更。
+     - 余計な `ForceAllApply` を排除し、NPC スロットのみ確実に適用。
+  3. **`Managers/ActorManager.cs`**:
+     - 人型NPCスポーン時、保存済みテンプレートが自キャラデータで汚染されている場合の自動リフレッシュを追加。
+     - `HumanoidNpcApplyJob` で Glamourer 適用成功後に `DisableDraw` → 2 ticks 待機 → `EnableDraw`（DrawObject 強制再構築）を実行。
+- **検証手順**:
+  1. `tools/release.ps1 0.1.50.0` で全自動リリース。
+  2. ユウギリ、ミューヌ、カヌ・エ・センナをスポーンさせ、100% 正しい本物の姿（固有顔・髪型・衣装）でスポーンすることを確認。
+
 
 
 

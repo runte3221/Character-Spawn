@@ -679,10 +679,42 @@ public class GlamourerIpc
             if (eqObj["Weapon"] is JObject wv) wv["Apply"] = false;
         }
 
-        // 6. ApplyState で一括適用
+        // 6. HDM (HumanGuise.cs) 準拠: ApplyFlag.Equipment | ApplyFlag.Customization (6UL) で永続適用
+        // Once (1) を除外することで、エンジンの再描画時に自キャラに戻る現象を物理的に防止
         string stateJson = state.ToString(Newtonsoft.Json.Formatting.None);
-        bool success = ApplyDesignToActor(stateJson, actorIndex, actorName);
-        log.Information($"Glamourer TryApplyNpcAppearance on actor #{actorIndex} ('{actorName}') result: {success}");
+        bool success = false;
+        if (applyStateV2Ulong != null)
+        {
+            try
+            {
+                int res = applyStateV2Ulong.InvokeFunc(stateJson, actorIndex, 0, 6UL);
+                log.Information($"Glamourer ApplyState (ulong flags=6) for NPC on actor #{actorIndex} ('{actorName}') result: {res}");
+                if (res == 0) success = true;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Glamourer ApplyState V2 (ulong) failed for NPC on actor #{actorIndex}: {ex.Message}");
+            }
+        }
+        else if (applyStateV2Uint != null)
+        {
+            try
+            {
+                int res = applyStateV2Uint.InvokeFunc(stateJson, actorIndex, 0, 6U);
+                log.Information($"Glamourer ApplyState (uint flags=6) for NPC on actor #{actorIndex} ('{actorName}') result: {res}");
+                if (res == 0) success = true;
+            }
+            catch (Exception ex)
+            {
+                log.Warning($"Glamourer ApplyState V2 (uint) failed for NPC on actor #{actorIndex}: {ex.Message}");
+            }
+        }
+        else
+        {
+            success = ApplyDesignToActor(stateJson, actorIndex, actorName);
+        }
+
+        log.Information($"Glamourer TryApplyNpcAppearance on actor #{actorIndex} ('{actorName}') final result: {success}");
         return success ? NpcApplyResult.Applied : NpcApplyResult.Failed;
     }
 

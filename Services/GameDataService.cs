@@ -188,29 +188,79 @@ public class GameDataService
         return cachedFacialExpressions ??= BuildFacialExpressionCache();
     }
 
+    public NpcAppearanceData? ResolveNpcAppearance(uint enpcId, string? name = null)
+    {
+        var app = GetNpcAppearanceData(enpcId);
+        // 有効なアピアランス（非人型、または人型でRace > 0）であればそのまま返す
+        if (app != null && (app.ModelCharaId > 0 || (app.CustomizeData != null && app.CustomizeData.Length > 0 && app.CustomizeData[0] > 0)))
+        {
+            return app;
+        }
+
+        // ResidentId と BaseId の乖離、またはデータ不整合の場合、NPC名から正しい BaseId を逆引き解決 (HDM準拠)
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            cachedNpcs ??= BuildNpcCache();
+            var matched = cachedNpcs.FirstOrDefault(n => n.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                       ?? cachedNpcs.FirstOrDefault(n => n.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+            if (matched != null && matched.Id != enpcId)
+            {
+                var resolvedApp = GetNpcAppearanceData(matched.Id);
+                if (resolvedApp != null)
+                {
+                    logManager?.Info($"ResolveNpcAppearance: Remapped '{name}' from ID {enpcId} to correct ENpcBaseId {matched.Id}.");
+                    return resolvedApp;
+                }
+            }
+        }
+
+        return app;
+    }
+
     private List<NpcEntry> BuildNpcCache()
     {
         var list = new List<NpcEntry>();
-        var sheet = dataManager.GetExcelSheet<ENpcResident>();
         var baseSheet = dataManager.GetExcelSheet<ENpcBase>();
+        var residentSheet = dataManager.GetExcelSheet<ENpcResident>();
 
-        if (sheet == null) return list;
+        if (baseSheet == null) return list;
 
-        foreach (var row in sheet)
+        // HDM (EventNpcIndex.cs) 準拠:
+        // ENpcBase を主軸に走査し、ID空間を ENpcBase.RowId (BaseId) で統一する
+        foreach (var baseRow in baseSheet)
         {
-            var name = row.Singular.ExtractText();
-            if (string.IsNullOrWhiteSpace(name)) continue;
-
-            uint modelChara = 0;
-            if (baseSheet != null && baseSheet.TryGetRow(row.RowId, out var baseRow))
+            // 名前を ENpcResident から解決
+            string name = string.Empty;
+            if (residentSheet != null && residentSheet.TryGetRow(baseRow.RowId, out var resRow))
             {
-                modelChara = baseRow.ModelChara.RowId;
+                name = resRow.Singular.ExtractText().Trim();
             }
 
-            list.Add(new NpcEntry(row.RowId, name, modelChara));
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            var modelChara = baseRow.ModelChara.ValueNullable;
+            uint modelCharaId = baseRow.ModelChara.RowId;
+            int mcType = modelChara != null ? (int)modelChara.Value.Type : 1;
+
+            // 人型NPC (mcType == 1): 有効な人間種族データを持っているか検証 (HDM ValidHuman 準拠)
+            if (modelCharaId == 0 || mcType == 1)
+            {
+                uint race = baseRow.Race.RowId;
+                uint tribe = baseRow.Tribe.RowId;
+                byte gender = baseRow.Gender;
+                if (race < 1 || race > 8 || gender > 1 || tribe < 1 || tribe > 16)
+                    continue;
+
+                list.Add(new NpcEntry(baseRow.RowId, name, 0));
+            }
+            else
+            {
+                // 非人型 / デミヒューマン (レターモーグリ等)
+                list.Add(new NpcEntry(baseRow.RowId, name, modelCharaId));
+            }
         }
 
-        logManager?.Info($"Built ENpc cache: {list.Count} NPCs loaded.");
+        logManager?.Info($"Built ENpc cache (HDM ENpcBase-indexed): {list.Count} NPCs loaded.");
         return list;
     }
 

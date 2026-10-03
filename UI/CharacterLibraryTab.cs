@@ -865,7 +865,7 @@ public class CharacterLibraryTab
                 {
                     modalSelectedNpc = n;
                     modalName = n.Name;
-                    cachedNpcAppearance = gameDataService.GetNpcAppearanceData(n.Id);
+                    cachedNpcAppearance = gameDataService.ResolveNpcAppearance(n.Id, n.Name);
                 }
             }
             ImGui.EndListBox();
@@ -956,7 +956,7 @@ public class CharacterLibraryTab
             target.PenumbraCollectionName = string.Empty;
             target.McdfFilePath = string.Empty;
 
-            cachedNpcAppearance ??= gameDataService.GetNpcAppearanceData(modalSelectedNpc.Id);
+            cachedNpcAppearance ??= gameDataService.ResolveNpcAppearance(modalSelectedNpc.Id, modalSelectedNpc.Name);
             if (cachedNpcAppearance != null)
             {
                 target.CustomizeData = cachedNpcAppearance.CustomizeData;

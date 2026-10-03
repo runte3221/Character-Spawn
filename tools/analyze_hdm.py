@@ -142,54 +142,8 @@ def disasm_full(td_name, md_name):
         else:
             print(f"  {pos:04x}: op_{b:02x}")
 
-td = next(r for r in dn.net.mdtables.TypeDef if str(r.TypeName) == 'HumanGuise')
-md = next(m for m in td.MethodList if str(m.row.Name) == '.cctor')
-offset = dn.get_offset_from_rva(md.row.Rva)
-hb = dn.__data__[offset]
-flags = int.from_bytes(dn.__data__[offset:offset+2], 'little')
-code_size = int.from_bytes(dn.__data__[offset+4:offset+8], 'little') if (hb & 3) != 2 else (hb >> 2)
-header_size = (flags >> 12) * 4 if (hb & 3) != 2 else 1
-code = dn.__data__[offset+header_size:offset+header_size+code_size]
-
-entries = []
-i = 0
-cur_str = None
-cur_idx = None
-cur_mask = None
-while i < len(code):
-    b = code[i]
-    i += 1
-    if b == 0x72:
-        tok = int.from_bytes(code[i:i+4], 'little')
-        i += 4
-        cur_str = str(us.get(tok & 0xFFFFFF))
-    elif b in (0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e):
-        val = b - 0x16
-        if cur_idx is None and cur_str is not None:
-            cur_idx = val
-        elif cur_idx is not None:
-            cur_mask = val
-    elif b == 0x1f:
-        val = code[i]
-        i += 1
-        if cur_idx is None and cur_str is not None:
-            cur_idx = val
-        elif cur_idx is not None:
-            cur_mask = val
-    elif b == 0x20:
-        val = int.from_bytes(code[i:i+4], 'little')
-        i += 4
-        cur_mask = val
-    elif b == 0x73:
-        tok = int.from_bytes(code[i:i+4], 'little')
-        i += 4
-        if cur_str and cur_idx is not None:
-            entries.append((cur_str, cur_idx, cur_mask))
-            cur_str, cur_idx, cur_mask = None, None, None
-
-print("=== HDM CustomizeMap ===")
-for e in entries[10:]:
-    print(f'("{e[0]}", {e[1]}, 0x{e[2]:02X}),')
+disasm_full('EventNpcIndex', '.ctor')
+disasm_full('NpcData', 'CustomizeFromEnpc')
 
 
 
