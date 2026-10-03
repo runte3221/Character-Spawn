@@ -385,13 +385,7 @@ public class SceneManager : IDisposable
         staggeredSpawnQueue.Clear();
         spawnIntervalTicks = 0;
 
-        Vector3 playerPos = Vector3.Zero;
-        try
-        {
-            if (clientState.LocalPlayer != null)
-                playerPos = clientState.LocalPlayer.Position;
-        }
-        catch { }
+        Vector3 playerPos = actorManager.LocalPlayerPosition;
 
         // 自キャラからの距離でソート（近いアクターから優先順位を高くして順次スポーン）
         var sortedPlacements = scene.Placements

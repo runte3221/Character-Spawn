@@ -88,6 +88,21 @@ public unsafe class ActorManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// 自キャラ (LocalPlayer Index 0) の現在ワールド座標を取得
+    /// </summary>
+    public Vector3 LocalPlayerPosition
+    {
+        get
+        {
+            if (objectTable.Length > 0 && objectTable[0] is ICharacter localPlayer && localPlayer.Address != 0)
+            {
+                return localPlayer.Position;
+            }
+            return Vector3.Zero;
+        }
+    }
+
     public ActorManager(
         IClientState clientState,
         IObjectTable objectTable,
