@@ -21,6 +21,9 @@ public unsafe class AnimationService : IDisposable
     private readonly IPluginLog log;
     private readonly LogManager? logManager;
 
+    private readonly ConcurrentDictionary<string, ActiveAnimationState> activeStates = new();
+    private Func<Guid, SpawnedActorData?>? targetActorResolver;
+
     private class ActiveAnimationState
     {
         public string InstanceId { get; set; } = string.Empty;
@@ -30,6 +33,8 @@ public unsafe class AnimationService : IDisposable
         public float Speed { get; set; } = 1.0f;
         public ushort FacialTimelineId { get; set; }
         public bool LookAtPlayer { get; set; }
+        public bool LookAtCustomSpawn { get; set; }
+        public Guid LookAtTargetPlacementId { get; set; } = Guid.Empty;
         public float BodyTurnAngleLimit { get; set; } = 0.0f; // 0=顔と視線のみ, >0=指定角まで体も向く
         public float LookAtMaxDistance { get; set; } = 8.0f;
         public float OriginalRotation { get; set; }
@@ -37,7 +42,10 @@ public unsafe class AnimationService : IDisposable
         public bool IsInitialSpawn { get; set; } = false;
     }
 
-    private readonly ConcurrentDictionary<string, ActiveAnimationState> activeStates = new();
+    public void SetTargetActorResolver(Func<Guid, SpawnedActorData?> resolver)
+    {
+        targetActorResolver = resolver;
+    }
 
     public AnimationService(
         IFramework framework,
@@ -76,6 +84,8 @@ public unsafe class AnimationService : IDisposable
                 Speed = config.Speed > 0.01f ? config.Speed : 1.0f,
                 FacialTimelineId = config.FacialTimelineId,
                 LookAtPlayer = config.LookAtPlayer,
+                LookAtCustomSpawn = config.LookAtCustomSpawn,
+                LookAtTargetPlacementId = config.LookAtTargetPlacementId,
                 BodyTurnAngleLimit = config.BodyTurnAngleLimit,
                 LookAtMaxDistance = config.LookAtMaxDistance > 0.1f ? config.LookAtMaxDistance : 8.0f,
                 OriginalRotation = defaultRotation,
@@ -128,8 +138,8 @@ public unsafe class AnimationService : IDisposable
                 chara->Timeline.TimelineSequencer.PlayTimeline(604); // 表情：素顔
             }
 
-            // 3. 視線追従のトグル制御 (チェックを外した時の即時解除)
-            if (!config.LookAtPlayer)
+            // 3. 視線追従のトグル制御 (どちらも無効な時は即時解除)
+            if (!config.LookAtPlayer && !config.LookAtCustomSpawn)
             {
                 chara->SetTargetId(0);
                 chara->SetRotation(defaultRotation);
@@ -232,17 +242,39 @@ public unsafe class AnimationService : IDisposable
                     }
                 }
 
-                // E. 視線追従 (LookAt Player) & 範囲内外制御
+                // E. 視線追従 (LookAt Player または LookAt Custom Spawn) ＆ 範囲内外制御
+                Vector3 targetPos = Vector3.Zero;
+                uint targetEntityId = 0;
+                bool hasTarget = false;
+
                 if (state.LookAtPlayer && localPlayer != null && myEntityId != 0)
                 {
-                    float dx = myPos.X - chara->Position.X;
-                    float dz = myPos.Z - chara->Position.Z;
+                    targetPos = myPos;
+                    targetEntityId = myEntityId;
+                    hasTarget = true;
+                }
+                else if (state.LookAtCustomSpawn && targetActorResolver != null && state.LookAtTargetPlacementId != Guid.Empty)
+                {
+                    var targetActor = targetActorResolver(state.LookAtTargetPlacementId);
+                    if (targetActor != null && targetActor.NativeAddress != 0)
+                    {
+                        var tChara = (Character*)targetActor.NativeAddress;
+                        targetPos = tChara->Position;
+                        targetEntityId = tChara->EntityId;
+                        hasTarget = true;
+                    }
+                }
+
+                if (hasTarget && targetEntityId != 0)
+                {
+                    float dx = targetPos.X - chara->Position.X;
+                    float dz = targetPos.Z - chara->Position.Z;
                     float distSq = dx * dx + dz * dz;
 
                     if (distSq <= state.LookAtMaxDistance * state.LookAtMaxDistance && distSq > 0.04f)
                     {
-                        // 1. 範囲内：首・目線は常にネイティブでプレイヤーを追従！
-                        chara->SetTargetId(myEntityId);
+                        // 1. 範囲内：首・目線は常にネイティブで対象を追従！
+                        chara->SetTargetId(targetEntityId);
 
                         // 2. 体幹（全身）の回転制御
                         if (state.BodyTurnAngleLimit <= 0.01f)
@@ -283,6 +315,11 @@ public unsafe class AnimationService : IDisposable
                             chara->SetRotation(currentRot + angleDiff * 0.1f);
                         }
                     }
+                }
+                else if (state.LookAtPlayer || state.LookAtCustomSpawn)
+                {
+                    // ターゲットが見つからない場合：解除
+                    chara->SetTargetId(0);
                 }
             }
             catch

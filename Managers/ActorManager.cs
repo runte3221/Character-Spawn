@@ -430,6 +430,21 @@ public unsafe class ActorManager : IDisposable
                     }
                     nativeChara->DrawData.IsHatHidden = false;
                 }
+                else if (gameDataService != null)
+                {
+                    // デミヒューマン (McType == 2: サキュバス等) の装備モデル自動補完
+                    var demiEquip = gameDataService.GetDemiHumanEquipment(template.ModelCharaId);
+                    if (demiEquip != null && demiEquip.Length > 0)
+                    {
+                        var equipSpan = nativeChara->DrawData.EquipmentModelIds;
+                        for (int idx = 0; idx < demiEquip.Length && idx < equipSpan.Length; idx++)
+                        {
+                            equipSpan[idx] = new EquipmentModelId { Value = demiEquip[idx] };
+                        }
+                        nativeChara->DrawData.IsHatHidden = false;
+                        logManager?.Info($"Populated DemiHuman equipment for '{template.Name}' (ModelChara: {template.ModelCharaId}).");
+                    }
+                }
 
                 nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
 

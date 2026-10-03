@@ -195,7 +195,7 @@ public class SceneEditWindow : Window, IDisposable
 
         // アクター一覧リスト (スクロール領域)
         var listHeight = 150f;
-        if (ImGui.BeginChild("##ActorListBox", new Vector2(-1, listHeight), true, ImGuiWindowFlags.HorizontalScrollbar))
+        if (ImGui.BeginChild("##ActorListBox", new Vector2(-1, listHeight), true))
         {
             if (scene.Placements.Count == 0)
             {
@@ -475,7 +475,7 @@ public class SceneEditWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.Spacing();
 
-        // 1. Playback Controls (Loop & Speed)
+        // 1. Loop Motion
         bool isLoop = placement.Motion.IsLoop;
         if (ImGui.Checkbox("Loop Motion##AnimLoop", ref isLoop))
         {
@@ -488,10 +488,142 @@ public class SceneEditWindow : Window, IDisposable
             ImGui.SetTooltip("Enables seamless infinite playback of this motion.");
         }
 
-        ImGui.SameLine(180);
-        float speed = placement.Motion.Speed > 0.01f ? placement.Motion.Speed : 1.0f;
-        ImGui.TextUnformatted("Speed:");
+        ImGui.Spacing();
+
+        // 2. LookAt Player & LookAt Custom Spawn (排他制御・画像3レイアウト)
+        bool lookAtPlayer = placement.Motion.LookAtPlayer;
+        if (ImGui.Checkbox("LookAt Player##AnimLookAt", ref lookAtPlayer))
+        {
+            placement.Motion.LookAtPlayer = lookAtPlayer;
+            if (lookAtPlayer)
+            {
+                placement.Motion.LookAtCustomSpawn = false;
+            }
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Actor's head and eyes naturally turn toward the local player when nearby.");
+        }
+
+        // 右列: LookAt Custom Spawn
+        ImGui.SameLine(360);
+        bool lookAtCustom = placement.Motion.LookAtCustomSpawn;
+        if (ImGui.Checkbox("LookAt Custom Spawn##AnimLookAtCustom", ref lookAtCustom))
+        {
+            placement.Motion.LookAtCustomSpawn = lookAtCustom;
+            if (lookAtCustom)
+            {
+                placement.Motion.LookAtPlayer = false;
+                if (placement.Motion.LookAtTargetPlacementId == Guid.Empty)
+                {
+                    var other = scene.Placements.FirstOrDefault(p => p.PlacementId != placement.PlacementId);
+                    if (other != null)
+                    {
+                        placement.Motion.LookAtTargetPlacementId = other.PlacementId;
+                    }
+                }
+            }
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Actor's head, eyes, and body turn toward another custom spawn actor in the same scene.");
+        }
+
+        ImGui.Spacing();
+
+        // 3. パラメータ行 (左列: Distance, Body Turn, Speed / 右列: Target)
+        // 行 1: Distance (左) ＆ Target (右)
+        float lookAtDist = placement.Motion.LookAtMaxDistance > 0.1f ? placement.Motion.LookAtMaxDistance : 8.0f;
+        ImGui.TextUnformatted("Distance");
+        ImGui.SameLine(85);
+        ImGui.SetNextItemWidth(120);
+        if (ImGui.SliderFloat("##AnimLookAtDist", ref lookAtDist, 1.0f, 30.0f, "%.1fm"))
+        {
+            placement.Motion.LookAtMaxDistance = lookAtDist;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
         ImGui.SameLine();
+        if (ImGui.SmallButton("Reset##ResetLookAtDist"))
+        {
+            placement.Motion.LookAtMaxDistance = 8.0f;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Distance at which the actor begins and stops tracking the player or target (Default: 8.0m).\nClick Reset to return to 8.0m.");
+        }
+
+        // 右列: Target
+        ImGui.SameLine(360);
+        ImGui.TextUnformatted("Target");
+        ImGui.SameLine(420);
+        ImGui.SetNextItemWidth(180);
+
+        var otherPlacements = scene.Placements.Where(p => p.PlacementId != placement.PlacementId).ToList();
+        var currentTarget = otherPlacements.FirstOrDefault(p => p.PlacementId == placement.Motion.LookAtTargetPlacementId);
+        string currentTargetName = currentTarget != null
+            ? (!string.IsNullOrWhiteSpace(currentTarget.CustomDisplayName) ? currentTarget.CustomDisplayName : (configuration.Templates.FirstOrDefault(t => t.Id == currentTarget.CharacterTemplateId)?.Name ?? "アクター"))
+            : "(None)";
+
+        if (ImGui.BeginCombo("##LookAtTargetSelect", currentTargetName))
+        {
+            if (ImGui.Selectable("(None)", placement.Motion.LookAtTargetPlacementId == Guid.Empty))
+            {
+                placement.Motion.LookAtTargetPlacementId = Guid.Empty;
+                sceneManager.SaveScenes();
+                ApplyCurrentMotion(placement);
+            }
+
+            foreach (var other in otherPlacements)
+            {
+                var oTemplate = configuration.Templates.FirstOrDefault(t => t.Id == other.CharacterTemplateId);
+                string oName = !string.IsNullOrWhiteSpace(other.CustomDisplayName) ? other.CustomDisplayName : (oTemplate?.Name ?? "アクター");
+                bool isSelected = placement.Motion.LookAtTargetPlacementId == other.PlacementId;
+
+                if (ImGui.Selectable($"{oName}##{other.PlacementId}", isSelected))
+                {
+                    placement.Motion.LookAtTargetPlacementId = other.PlacementId;
+                    sceneManager.SaveScenes();
+                    ApplyCurrentMotion(placement);
+                }
+            }
+            ImGui.EndCombo();
+        }
+
+        // 行 2: Body Turn
+        float bodyTurn = placement.Motion.BodyTurnAngleLimit;
+        ImGui.TextUnformatted("Body Turn");
+        ImGui.SameLine(85);
+        ImGui.SetNextItemWidth(120);
+        string turnFmt = bodyTurn <= 0.01f ? "0°" : "%.0f°";
+        if (ImGui.SliderFloat("##AnimBodyTurn", ref bodyTurn, 0f, 180f, turnFmt))
+        {
+            placement.Motion.BodyTurnAngleLimit = bodyTurn;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Reset##ResetBodyTurn"))
+        {
+            placement.Motion.BodyTurnAngleLimit = 0.0f;
+            sceneManager.SaveScenes();
+            ApplyCurrentMotion(placement);
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Maximum body rotation angle toward player or target.\n0° = Body never rotates (Face & Eyes only)\n45° = Body turns up to ±45°\n180° = Full body rotation\nClick Reset to return to 0°.");
+        }
+
+        // 行 3: Speed
+        float speed = placement.Motion.Speed > 0.01f ? placement.Motion.Speed : 1.0f;
+        ImGui.TextUnformatted("Speed");
+        ImGui.SameLine(85);
         ImGui.SetNextItemWidth(120);
         if (ImGui.SliderFloat("##AnimSpeed", ref speed, 0.1f, 3.0f, "%.2fx"))
         {
@@ -509,76 +641,6 @@ public class SceneEditWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
         {
             ImGui.SetTooltip("Reset motion speed to 1.00x.");
-        }
-
-        ImGui.Spacing();
-
-        // 2. LookAt Player Controls
-        bool lookAt = placement.Motion.LookAtPlayer;
-        if (ImGui.Checkbox("LookAt Player##AnimLookAt", ref lookAt))
-        {
-            placement.Motion.LookAtPlayer = lookAt;
-            sceneManager.SaveScenes();
-            ApplyCurrentMotion(placement);
-        }
-        if (ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip("Actor's head and eyes naturally turn toward the local player when nearby.");
-        }
-
-        if (lookAt)
-        {
-            ImGui.Indent(20.0f);
-
-            // Distance
-            float lookAtDist = placement.Motion.LookAtMaxDistance > 0.1f ? placement.Motion.LookAtMaxDistance : 8.0f;
-            ImGui.TextUnformatted("Distance:");
-            ImGui.SameLine(85);
-            ImGui.SetNextItemWidth(110);
-            if (ImGui.SliderFloat("##AnimLookAtDist", ref lookAtDist, 1.0f, 30.0f, "%.1fm"))
-            {
-                placement.Motion.LookAtMaxDistance = lookAtDist;
-                sceneManager.SaveScenes();
-                ApplyCurrentMotion(placement);
-            }
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Reset##ResetLookAtDist"))
-            {
-                placement.Motion.LookAtMaxDistance = 8.0f;
-                sceneManager.SaveScenes();
-                ApplyCurrentMotion(placement);
-            }
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip("Distance at which the actor begins and stops tracking the player (Default: 8.0m).\nClick Reset to return to 8.0m.");
-            }
-
-            // Body Turn
-            ImGui.SameLine(250);
-            float bodyTurn = placement.Motion.BodyTurnAngleLimit;
-            ImGui.TextUnformatted("Body Turn:");
-            ImGui.SameLine(335);
-            ImGui.SetNextItemWidth(120);
-            string turnFmt = bodyTurn <= 0.01f ? "0° (Face Only)" : "%.0f°";
-            if (ImGui.SliderFloat("##AnimBodyTurn", ref bodyTurn, 0f, 180f, turnFmt))
-            {
-                placement.Motion.BodyTurnAngleLimit = bodyTurn;
-                sceneManager.SaveScenes();
-                ApplyCurrentMotion(placement);
-            }
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Reset##ResetBodyTurn"))
-            {
-                placement.Motion.BodyTurnAngleLimit = 0.0f;
-                sceneManager.SaveScenes();
-                ApplyCurrentMotion(placement);
-            }
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip("Maximum body rotation angle toward player.\n0° = Body never rotates (Face & Eyes only)\n45° = Body turns up to ±45°\n180° = Full body rotation toward player\nClick Reset to return to 0°.");
-            }
-
-            ImGui.Unindent(20.0f);
         }
 
         ImGui.Spacing();

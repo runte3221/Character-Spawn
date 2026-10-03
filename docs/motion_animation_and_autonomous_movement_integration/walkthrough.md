@@ -129,5 +129,44 @@
   - 「固有・共通アクションのみ」チェックボックスを独立した行へ配置し、長いモーション名やアクター名でも絶対に文字が重ならないように修正。
   - `Loop Motion` と `Speed` を上段にまとめ、`LookAt Player` 有効時はその下にインデントして `Distance` と `Body Turn` をラベル・スライダー・Resetボタンのセットで整然と配置。
 
+---
+
+## LookAt Custom Spawn ＆ デミヒューマン描画修正 ＆ モンスター攻撃・死亡抽出完全化 (`v0.1.76.0`)
+
+### 1. LookAt Custom Spawn (アクター間相互注視) の新設
+- **背景・要望**: これまでは自キャラ（プレイヤー）のみを注視対象としていたが、同一シーン内に配置された他のカスタムスポーン（NPC・モンスター・デミヒューマン等）に顔・視線・体幹を向けられるようにしたい。
+- **実装内容**:
+  - `SceneActorMotionConfig` に `LookAtCustomSpawn` (bool) および `LookAtTargetPlacementId` (Guid) を新設。
+  - `SceneManager` から `AnimationService` へ対象アクターの解決デリゲート（`SetTargetActorResolver`）を注入。
+  - `AnimationService.OnFrameworkUpdate` において、`LookAtCustomSpawn` 有効時に同一シーン内の対象カスタムスポーンの座標および `EntityId` をリアルタイム解決。自キャラ追従と全く同等の高精度な視線・首・体幹回転（`Distance` による範囲制限、`Body Turn` による体幹回転角度制限）を適用。
+  - `LookAt Player` と `LookAt Custom Spawn` の排他的トグル制御を実装し、どちらか一方のみが有効になるよう制御。
+  - UI 上に対象アクターを一覧から選択できる `Target` ドロップダウンを配置。
+
+### 2. サキュバス等のデミヒューマン（DemiHuman）描画不具合修正
+- **課題**: 新規カスタムスポーン作成時、サキュバス系をスポーンさせてもギズモ（座標軸）しか表示されず、モデルメッシュが見えない。
+- **原因の特定**:
+  - サキュバス等は `ModelChara.Type == 2`（DemiHuman）。デミヒューマンは一般モンスターと異なり、頭・胴・手・脚・足が分割された装備モデル（`EquipmentModelId`）としてエンジン内で扱われる。
+  - 装備ID配列（`NpcEquipmentModelIds`）が空の状態でスポーンすると、メッシュが一切ロードされず透明になっていた。
+- **改修内容**:
+  - `GameDataService.GetDemiHumanEquipment(modelCharaId)` を新設。`ModelChara` 行の `Model`, `Base`, `Variant` から頭・胴・手・脚・足用の `EquipmentModelId` を自動生成。
+  - `ActorManager.SpawnCharacter` において、`ModelChara.Type == 2` かつ装備IDが空の場合にデミヒューマン装備を自動適用してスポーンするように修正。サキュバス等の外見が完全描画されるようになった。
+
+### 3. モンスター通常攻撃・死亡モーションの抽出判定完全網羅
+- **課題**: レストレス・ラプトル等で通常攻撃や死亡時のモーションが一覧に出てこない。
+- **原因の特定**:
+  - ActionTimeline シートの Key は `dead/` や `attack` 単体ではなく、`normal/dead`, `battle/dead`, `battle/auto_attack1_mon_a`, `battle/mon_sp_` 等であるため、従来の判定条件では除外されていた。
+- **改修内容**:
+  - `GameDataService.IsCommonMonsterAction` の正規表現・キーワード検索を拡張。
+  - `dead`、`battle/auto_attack`、`battle/mon_sp_`、`damage` などを完全網羅し、モンスター共通の基本動作（通常攻撃・死亡・被弾等）が確実に抽出・表示されるように修正。
+
+### 4. Animation タブ UI レイアウトの刷新（画像3準拠） ＆ 横スクロールバー削除
+- **改修内容**:
+  - ユーザー指定モックアップ（画像3）に完全準拠した 2 列レイアウトへ刷新。
+    - 左列: `Loop Motion`、`LookAt Player`、`Distance`、`Body Turn`、`Speed`（ラベル幅 85px 統一整列）。
+    - 右列: `LookAt Custom Spawn`、`Target`（注視対象カスタムスポーン選択）。
+  - 各行の高さを統一し、スライダーやリセットボタンのガタつき・テキスト潰れを完全解消。
+  - カスタムスポーン配置一覧（`##ActorListBox`）下部に表示されていた不要な水平スクロールバーを削除。
+
+
 
 

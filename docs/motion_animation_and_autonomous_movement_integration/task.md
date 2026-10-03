@@ -78,7 +78,26 @@ Character Spawn プラグインの根幹機能となる、カスタムスポー�
   - [x] Distance / Body Turn / Speed の整然とした 2 列インデント配置
   - [x] 「固有・共通アクションのみ」チェックボックスを独立行に配置し、テキスト被り・潰れを完全解消
 
+### 【Step 2.1-fix5】LookAt Custom Spawn ＆ デミヒューマン描画修正 ＆ モンスター攻撃・死亡抽出完全化（`v0.1.76.0`）
+- [x] **LookAt Custom Spawn (同一シーン内カスタムスポーン注視) (`Models/SceneData.cs`, `Services/AnimationService.cs`, `Managers/SceneManager.cs`, `UI/SceneEditWindow.cs`)**
+  - [x] `SceneActorMotionConfig` に `LookAtCustomSpawn` (bool) と `LookAtTargetPlacementId` (Guid) を追加
+  - [x] 同一シーン内の他アクターの座標・EntityId をリアルタイム解決して視線・体幹追従を行う機構の実装
+  - [x] `LookAt Player` と `LookAt Custom Spawn` の排他的トグル制御（どちらか一方のみ有効）
+  - [x] UI 上で注視対象アクターを選択できる `Target` ドロップダウンの追加
+- [x] **サキュバス等のデミヒューマン描画不具合修正 (`Services/GameDataService.cs`, `Managers/ActorManager.cs`)**
+  - [x] `ModelChara.Type == 2`（DemiHuman）のメッシュ分割仕様（頭・胴・手・脚・足）に対応
+  - [x] `GetDemiHumanEquipment` で `Model`, `Base`, `Variant` から分割装備IDを自動生成して `NpcEquipmentModelIds` に適用
+  - [x] ギズモしか表示されなかったサキュバス等の外見が完全描画されるように修正
+- [x] **モンスター通常攻撃・死亡モーションの抽出条件完全網羅 (`Services/GameDataService.cs`)**
+  - [x] `battle/auto_attack`, `battle/mon_sp_`, `normal/dead`, `battle/dead`, `damage` 等の網羅的抽出
+  - [x] レストレス・ラプトル等での通常攻撃・死亡モーションの完全表示
+- [x] **Animation タブ UI レイアウトの全面刷新 ＆ 横スクロールバー削除 (`UI/SceneEditWindow.cs`)**
+  - [x] ユーザー指定モックアップ（画像3）に完全準拠した 2 列レイアウトへ刷新（左列: Loop / Player / Distance / Body Turn / Speed, 右列: Custom Spawn / Target）
+  - [x] ラベル幅（85px）の統一整列によるガタつき・テキスト潰れの解消
+  - [x] カスタムスポーン配置一覧下部の不要な水平スクロールバーを削除
+
 ### 【Step 2.2】自律移動 AI ＆ パトロール・追従・復帰ルーチン（次工程）
 - [ ] ウェイポイント巡回ルーチン (指定ルート巡回、各地点でのモーション再生)
 - [ ] プレイヤー接近感知・追従・規定距離超過時の元の位置復帰ルーチン
 - [ ] Scene Edit UI への巡回ルート・追従パラメータ設定タブ追加
+

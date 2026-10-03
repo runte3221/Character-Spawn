@@ -260,22 +260,27 @@ public class GameDataService
     {
         if (string.IsNullOrEmpty(key)) return false;
 
-        // 基本移動・待機
+        // 基本待機・移動
         if (key.StartsWith("normal/idle", StringComparison.OrdinalIgnoreCase) ||
             key.StartsWith("normal/walk", StringComparison.OrdinalIgnoreCase) ||
             key.StartsWith("normal/run", StringComparison.OrdinalIgnoreCase) ||
             key.StartsWith("normal/sprint", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("normal/turn", StringComparison.OrdinalIgnoreCase) ||
             key.StartsWith("normal/bt_idle", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // 戦闘待機・通常攻撃
+        // 戦闘待機・通常攻撃(auto_attack)・モンスター汎用特殊技
         if (key.StartsWith("battle/idle", StringComparison.OrdinalIgnoreCase) ||
-            key.StartsWith("battle/attack", StringComparison.OrdinalIgnoreCase))
+            key.StartsWith("battle/battle_start", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("battle/battle_end", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("battle/auto_attack", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("battle/mon_sp_", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // 被弾・死亡
-        if (key.StartsWith("damage/", StringComparison.OrdinalIgnoreCase) ||
-            key.StartsWith("dead/", StringComparison.OrdinalIgnoreCase))
+        // 被弾(damage)・死亡(dead)
+        if (key.Contains("damage", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("dead", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("specialdead/", StringComparison.OrdinalIgnoreCase))
             return true;
 
         // ジャンプ・威嚇・咆哮・察知
@@ -286,6 +291,32 @@ public class GameDataService
             return true;
 
         return false;
+    }
+
+    public ulong[]? GetDemiHumanEquipment(uint modelCharaId)
+    {
+        if (modelCharaId == 0) return null;
+        try
+        {
+            var sheet = dataManager.GetExcelSheet<ModelChara>();
+            if (sheet != null && sheet.TryGetRow(modelCharaId, out var row))
+            {
+                // Type == 2 (DemiHuman: サキュバス、ゴブリン、シルフ、コボルド、サハギン等)
+                if (row.Type == 2)
+                {
+                    // Head(0), Body(1), Hands(2), Legs(3), Feet(4) に Model, Base, Variant を展開
+                    var equip = new ulong[10];
+                    ulong val = ((ulong)row.Model) | ((ulong)row.Base << 16) | ((ulong)row.Variant << 24);
+                    for (int i = 0; i < 5; i++)
+                    {
+                        equip[i] = val;
+                    }
+                    return equip;
+                }
+            }
+        }
+        catch { }
+        return null;
     }
 
     public IReadOnlyList<TimelineEntry> GetFacialExpressions()

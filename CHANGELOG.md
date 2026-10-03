@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.76] - 2026-10-03
+### Added
+- **LookAt Custom Spawn (アクター間相互注視) の新設 (`Models/SceneData.cs`, `Services/AnimationService.cs`, `Managers/SceneManager.cs`, `UI/SceneEditWindow.cs`)**:
+  - 自キャラだけでなく、同一シーン内に配置された他のカスタムスポーン（NPC・モンスター等）を対象に顔・視線・体幹を向けられる新機能を追加。
+  - `SceneActorMotionConfig` に `LookAtCustomSpawn` および `LookAtTargetPlacementId` を追加。
+  - `AnimationService` に同一シーン内の他アクターの座標・EntityId をリアルタイム解決して追従するロジックを統合。`Distance`（追従限界距離）および `Body Turn`（体幹回転角度制限）も完全適用。
+  - `LookAt Player` と `LookAt Custom Spawn` の排他的トグル制御（片方を有効化するともう片方が自動オフ）を実装。
+  - UI 上に対象アクターを選択できる `Target` ドロップダウンを設置。
+
+### Fixed
+- **モンスター通常攻撃・死亡モーションの抽出判定完全網羅 (`Services/GameDataService.cs`)**:
+  - レストレス・ラプトル等のモンスターで通常攻撃（`battle/auto_attack`）や死亡モーション（`normal/dead`, `battle/dead`）が抽出一覧に出てこない問題を解消。
+  - `IsCommonMonsterAction` の判定条件を拡張し、`Contains("dead")` や `StartsWith("battle/auto_attack")`、`battle/mon_sp_` 等のモンスター共通アクションを漏れなく確実に抽出するように改善。
+- **サキュバス等のデミヒューマン（DemiHuman）描画不具合修正 (`Services/GameDataService.cs`, `Managers/ActorManager.cs`)**:
+  - サキュバス等（`ModelChara.Type == 2`、デミヒューマン）をスポーンした際、装備IDが空だとメッシュがロードされずギズモのみが表示される不具合を修正。
+  - `ModelChara` シートから頭・胴・手・脚・足の分割モデルID（`Model`, `Base`, `Variant`）を自動取得し、`NpcEquipmentModelIds` に適用してスポーンする `GetDemiHumanEquipment` を実装。サキュバス等の外観が正常にレンダリングされるように修正。
+- **カスタムスポーン一覧の不要な横スクロールバー削除 (`UI/SceneEditWindow.cs`)**:
+  - カスタムスポーン配置一覧（`##ActorListBox`）下部に表示されていた不要な水平スクロールバーを削除。
+- **Animation タブ UI レイアウトの全面刷新 (`UI/SceneEditWindow.cs`)**:
+  - モックアップに完全準拠した整然とした 2 列レイアウトへ再構成（左列: Loop Motion / LookAt Player / Distance / Body Turn / Speed, 右列: LookAt Custom Spawn / Target）。
+  - ラベル幅（85px）の統一整列により、文字潰れやコントロール位置のガタつきを完全解消。
+
 ## [0.1.75] - 2026-10-03
 ### Fixed
 - **待機・モーション切り替えの連続適用不具合修正 (`Services/AnimationService.cs`, `Managers/SceneManager.cs`)**:

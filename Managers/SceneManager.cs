@@ -82,6 +82,7 @@ public class SceneManager : IDisposable
         this.actorManager = actorManager;
         this.configuration = configuration;
         this.animationService = animationService;
+        this.animationService?.SetTargetActorResolver(pid => GetSpawnedActor(pid));
 
         var configDir = pluginInterface.GetPluginConfigDirectory();
         Directory.CreateDirectory(configDir);
