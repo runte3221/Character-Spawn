@@ -208,9 +208,9 @@ public unsafe class AnimationService : IDisposable
                 // C. 視線追従 (LookAt Player)
                 if (state.LookAtPlayer && localPlayer != null && myEntityId != 0)
                 {
-                    var actorPos = chara->Position;
-                    var diff = myPos - actorPos;
-                    var distSq = diff.LengthSquared();
+                    float dx = myPos.X - chara->Position.X;
+                    float dz = myPos.Z - chara->Position.Z;
+                    float distSq = dx * dx + dz * dz;
 
                     if (distSq <= state.LookAtMaxDistance * state.LookAtMaxDistance && distSq > 0.04f)
                     {
@@ -218,7 +218,7 @@ public unsafe class AnimationService : IDisposable
                         chara->SetTargetId(myEntityId);
 
                         // 2. 自キャラの方向へ滑らかに向き（体幹）を補正
-                        float targetRot = MathF.Atan2(diff.X, diff.Z);
+                        float targetRot = MathF.Atan2(dx, dz);
                         float currentRot = chara->Rotation;
                         float angleDiff = NormalizeAngle(targetRot - currentRot);
                         float smoothedRot = currentRot + angleDiff * 0.15f;
