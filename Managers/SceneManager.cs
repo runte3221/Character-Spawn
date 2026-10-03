@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using Newtonsoft.Json;
@@ -380,6 +381,51 @@ public class SceneManager : IDisposable
     {
         spawnedSceneActors.TryGetValue(placementId, out var actor);
         return actor;
+    }
+
+    /// <summary>
+    /// 現在スポーン中の全アクターと配置データのペアを取得
+    /// </summary>
+    public IReadOnlyList<(SceneActorPlacement Placement, SpawnedActorData Actor)> GetActiveSpawnedPlacements()
+    {
+        var result = new List<(SceneActorPlacement Placement, SpawnedActorData Actor)>();
+        var targetScene = ActiveSpawnedScene ?? SelectedScene;
+        if (targetScene == null) return result;
+
+        foreach (var placement in targetScene.Placements)
+        {
+            if (spawnedSceneActors.TryGetValue(placement.PlacementId, out var actor) && actor != null && actor.IsSpawned)
+            {
+                result.Add((placement, actor));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// ゲームオブジェクト（ターゲット等）のアドレスまたはEntityIdから対応する配置データを逆引き
+    /// </summary>
+    public SceneActorPlacement? FindPlacementByGameObject(IGameObject? gameObject)
+    {
+        if (gameObject == null) return null;
+
+        var targetScene = ActiveSpawnedScene ?? SelectedScene;
+        if (targetScene == null) return null;
+
+        var addr = gameObject.Address;
+        var entityId = (uint)gameObject.EntityId;
+
+        foreach (var placement in targetScene.Placements)
+        {
+            if (spawnedSceneActors.TryGetValue(placement.PlacementId, out var actor) && actor != null)
+            {
+                if (actor.NativeAddress == addr || (actor.GameObjectId != 0 && actor.GameObjectId == entityId))
+                {
+                    return placement;
+                }
+            }
+        }
+        return null;
     }
 
     /// <summary>

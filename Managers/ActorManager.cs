@@ -361,7 +361,7 @@ public unsafe class ActorManager : IDisposable
 
             // AQR 黄金律:
             // ObjectKind, BattleNpcSubKind, OwnerId, NameId, HomeWorld の改変は一切行わない（素の BattleCharacter を維持）！
-            nativeChara->GameObject.TargetableStatus = 0;
+            nativeChara->GameObject.TargetableStatus = ObjectTargetableFlags.IsTargetable;
             nativeChara->GameObject.EventId = 0;
 
             string puppetName = GetPuppetName(comIdx);
@@ -422,7 +422,7 @@ public unsafe class ActorManager : IDisposable
                     Show = true,
                     CustomName = template.Name
                 },
-                IsTargetable = false
+                IsTargetable = true
             };
 
             // =========================================================================

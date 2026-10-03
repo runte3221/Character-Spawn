@@ -86,6 +86,101 @@ public unsafe class GizmoRenderer
         if (ImGui.IsItemHovered()) ImGui.SetTooltip("Scale (Resize character)");
     }
 
+    /// <summary>
+    /// 3D 空間上のモデルを直接クリックしてアクターを選択するヒットテスト。
+    /// スクリーン空間投影とカメラ距離（最前面優先）を用いて高精度に判定し、ImGui/ImGuizmo 操作中は除外する。
+    /// </summary>
+    public void CheckActorClickSelection(
+        IReadOnlyList<(SceneActorPlacement placement, SpawnedActorData actor)> spawnedActors,
+        SceneActorPlacement? currentSelected,
+        Action<SceneActorPlacement> onSelect)
+    {
+        if (spawnedActors == null || spawnedActors.Count == 0) return;
+
+        // ImGui ウィンドウ操作中または ImGuizmo 操作中はクリック判定を行わない
+        var io = ImGui.GetIO();
+        if (io.WantCaptureMouse || ImGuizmo.IsUsing() || ImGuizmo.IsOver())
+            return;
+
+        var cameraManager = CameraManager.Instance();
+        if (cameraManager == null || cameraManager->CurrentCamera == null || cameraManager->CurrentCamera->RenderCamera == null)
+            return;
+
+        var camera = cameraManager->CurrentCamera;
+        var renderCamera = camera->RenderCamera;
+        var viewMatrix = camera->ViewMatrix;
+        var projMatrix = renderCamera->ProjectionMatrix;
+        var viewport = ImGuiHelpers.MainViewport;
+        var vpPos = viewport.Pos;
+        var vpSize = viewport.Size;
+        var viewProj = viewMatrix * projMatrix;
+
+        if (!Matrix4x4.Invert(viewMatrix, out var invView))
+            return;
+        var cameraPos = invView.Translation;
+
+        var mousePos = io.MousePos;
+        bool isLeftClicked = ImGui.IsMouseClicked(ImGuiMouseButton.Left);
+
+        SceneActorPlacement? bestPlacement = null;
+        SpawnedActorData? bestActor = null;
+        float closestDistSq = float.MaxValue;
+
+        foreach (var (placement, actor) in spawnedActors)
+        {
+            if (actor == null || !actor.IsSpawned) continue;
+
+            var feetPos = actor.Transform.Position;
+            float scale = actor.Transform.Scale > 0.001f ? actor.Transform.Scale : 1.0f;
+            float actorHeight = 1.85f * scale;
+            var headPos = feetPos + new Vector3(0, actorHeight, 0);
+
+            if (!ProjectWorldToScreen(feetPos, viewProj, vpPos, vpSize, out var feetScreen))
+                continue;
+            if (!ProjectWorldToScreen(headPos, viewProj, vpPos, vpSize, out var headScreen))
+                continue;
+
+            float screenHeight = MathF.Abs(feetScreen.Y - headScreen.Y);
+            if (screenHeight < 10f) screenHeight = 10f;
+
+            float screenWidth = MathF.Max(screenHeight * 0.45f, 24f);
+            float centerX = (feetScreen.X + headScreen.X) * 0.5f;
+            float minX = MathF.Min(centerX - screenWidth * 0.5f, MathF.Min(feetScreen.X, headScreen.X) - screenWidth * 0.2f);
+            float maxX = MathF.Max(centerX + screenWidth * 0.5f, MathF.Max(feetScreen.X, headScreen.X) + screenWidth * 0.2f);
+            float minY = MathF.Min(feetScreen.Y, headScreen.Y) - screenHeight * 0.08f;
+            float maxY = MathF.Max(feetScreen.Y, headScreen.Y) + screenHeight * 0.05f;
+
+            if (mousePos.X >= minX && mousePos.X <= maxX && mousePos.Y >= minY && mousePos.Y <= maxY)
+            {
+                float distSq = Vector3.DistanceSquared(cameraPos, feetPos);
+                if (distSq < closestDistSq)
+                {
+                    closestDistSq = distSq;
+                    bestPlacement = placement;
+                    bestActor = actor;
+                }
+            }
+        }
+
+        if (bestPlacement != null && bestActor != null)
+        {
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+
+            if (bestPlacement != currentSelected)
+            {
+                var foregroundDrawList = ImGui.GetForegroundDrawList(viewport);
+                var hoverCircleCol = ImGui.GetColorU32(new Vector4(0.35f, 0.75f, 1.0f, 0.65f));
+                float circleRadius = MathF.Max(0.5f, 0.6f * (bestActor.Transform.Scale > 0.001f ? bestActor.Transform.Scale : 1.0f));
+                DrawHorizontalCircle(foregroundDrawList, bestActor.Transform.Position, circleRadius, hoverCircleCol, 2.5f, viewProj, vpPos, vpSize, 36);
+            }
+
+            if (isLeftClicked)
+            {
+                onSelect(bestPlacement);
+            }
+        }
+    }
+
     private bool isHoveredOrUsing = false;
 
     public void Render(

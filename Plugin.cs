@@ -172,6 +172,22 @@ public sealed class Plugin : IDalamudPlugin
                         curPlacement);
                 }
             }
+
+            // 3D 空間モデル直接クリック判定（UI表示中かつスポーン中のアクターが存在する場合にクリックで選択切り替え）
+            if (mainWindow.IsOpen || sceneEditWindow.IsOpen)
+            {
+                var activePlacements = sceneManager.GetActiveSpawnedPlacements();
+                if (activePlacements.Count > 0)
+                {
+                    gizmoRenderer.CheckActorClickSelection(
+                        activePlacements,
+                        sceneManager.SelectedPlacement,
+                        selected =>
+                        {
+                            sceneManager.SelectedPlacement = selected;
+                        });
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -185,6 +201,17 @@ public sealed class Plugin : IDalamudPlugin
         {
             actorManager.UpdateFrame();
             sceneManager.UpdateFrame();
+
+            // ゲーム内ターゲット連動: ゲーム画面上でアクターをクリック/Tab選択した場合、選択Placementを自動同期
+            var currentTarget = TargetManager.Target;
+            if (currentTarget != null)
+            {
+                var matchedPlacement = sceneManager.FindPlacementByGameObject(currentTarget);
+                if (matchedPlacement != null && sceneManager.SelectedPlacement != matchedPlacement)
+                {
+                    sceneManager.SelectedPlacement = matchedPlacement;
+                }
+            }
         }
         catch (Exception ex)
         {

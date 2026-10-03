@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.89] - 2026-10-04
+### Added
+- **3D 空間モデル直接クリックによるスポーンアクター選択機能の実装 (`UI/GizmoRenderer.cs`, `Plugin.cs`, `Managers/ActorManager.cs`, `Managers/SceneManager.cs`)**:
+  - **要望の実現**: スポーンアクター数が増加した際に、UI のカスタムスポーン一覧から対象を探してクリックする作業負担を根本解消。3D 空間上のモデルを直接クリックすることで、スポーン一覧および編集対象が即座に選択状態になる機能を実現。
+  - **3D スクリーン空間高精度レイ／ボックス判定 (`UI/GizmoRenderer.cs`)**:
+    - ゲームカメラの最新 ViewProjection 行列から全スポーンアクターの足元・頭上スクリーン座標を算出し、体幅に応じたバウンディングボックスを構築。
+    - マウスクリック位置との内外判定を実施し、複数アクターが重なっている場合はカメラから最も近い（手前にある）アクターを自動優先選択。
+    - ホバー時にはマウスカーソルを Hand に変更し、足元にシアン色のハイライト円を描画して選択可能であることを視覚的にフィードバック。
+    - ImGui ウィンドウ操作中や ImGuizmo 操作中はクリック判定を除外する安全ガードを完備。
+  - **ゲーム内ネイティブターゲット連動 (`Managers/ActorManager.cs`, `Plugin.cs`)**:
+    - スポーン時にアクターの `TargetableStatus` をデフォルト有効化（`ObjectTargetableFlags.IsTargetable`）。
+    - ゲーム画面上で通常通りアクターをクリックまたは Tab キーでターゲットした際、`ITargetManager.Target` から該当アクターを即座に特定し、UI 側の選択アクター（`SceneManager.SelectedPlacement`）へ自動同期。
+
 ## [0.1.88] - 2026-10-04
 ### Added
 - **巡回・移動時の階段・段差自動追従および地面スナップ機能の実装 (`Services/MovementService.cs`, `UI/SceneEditWindow.cs`)**:
