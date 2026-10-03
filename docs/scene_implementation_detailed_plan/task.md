@@ -32,6 +32,11 @@
   - [x] `McdfParser.cs`: MCDF バンドルのインメモリキャッシュ機構（LZ4解凍時間 137ms → 0ms）
   - [x] `SceneManager.cs`: シーン一括スポーン時の非同期フレーム分散（スタッガー）スポーンキュー（メインスレッドヒッチ 363ms → 0ms）
   - [x] `ActorManager.cs`: MCDF アクターに対する Penumbra 非同期リソース解決待機（ディファード Redraw ジョブキュー）
+- [x] **1-6. 複合アクター（Chonk等）における統合アピアランス遅延安定化（`v0.1.59.0`）**:
+  - [x] `ActorManager.cs`: Glamourer DrawObject 再構築完了を待って CustomizePlus 体型プロファイルを再適用する `AppearanceDeferredJob` の導入
+  - [x] `ActorManager.cs`: Penumbra コレクション指定アクターに対する遅延 Redraw の統合
+  - [x] `SceneManager.cs`: Show/Hide 高速切り替え時の初期化安全インターバルバッファの追加
+  - [x] 自キャラ誤爆二重遮断ガード、独立パイプライン（NPC/モンスター）隔離、ゾンビジョブ破棄の徹底
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか
