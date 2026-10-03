@@ -167,6 +167,42 @@
   - 各行の高さを統一し、スライダーやリセットボタンのガタつき・テキスト潰れを完全解消。
   - カスタムスポーン配置一覧（`##ActorListBox`）下部に表示されていた不要な水平スクロールバーを削除。
 
+---
+
+## デミヒューマン完全描画 ＆ General通常待機復旧 ＆ LookAt視線追従完全化 (`v0.1.77.0`)
+
+### 1. サキュバス等のデミヒューマン（DemiHuman）描画不具合の完全修正
+- **課題**: サキュバス、オルト・サキュバスをスポーンした際、依然としてギズモ（座標軸）しか表示されない。
+- **原因の特定**:
+  - ゲーム内アーカイブ（SqPack `040000`）のバイナリ調査により、サキュバス（`d1016`）やスケルトン（`d1015`）は頭・手・脚・足（`met`, `glv`, `dwn`, `sho`）のメッシュが存在せず、胴（`Body` / `_top`）単体の一体型モデル（`d1016e0001_top.mdl`）であることが判明。
+  - 前回の修正で全スロット（0〜4）に装備番号を入れていたため、存在しない頭・手・脚・足のファイルを読み込もうとして Penumbra / ゲームエンジンがロード失敗（state: 2:Failure）を起こしていた。
+  - また、装備モデル番号は `ModelChara.Model`（1016）ではなく `ModelChara.Base`（1 -> `e0001`）が正しかった。
+  - さらに、自キャラからのベースラインコピーで残っていた自キャラの装備モデルID（胴 `e6072`、手 `e6223` 等）が残存していた。
+- **改修内容**:
+  - `ActorManager.cs` の Pipeline D において、スポーン時にアクターの装備スロット（`EquipmentModelIds`）を全スロット完全にゼロクリア（初期化）する処理を追加。
+  - `GameDataService.GetDemiHumanEquipment` において、サキュバス（1016）等の単体デミヒューマンは **Body スロット（インデックス1）にのみ** 正確なモデルID（`row.Base` | `row.Variant << 16`）を設定し、他スロットは 0 のまま維持。
+  - これにより、存在しないメッシュの読み込みエラーが完全に解消され、サキュバス種が 100% 確実にレンダリングされるようになった。
+
+### 2. General カテゴリにおける `normal/idle` (3) / `normal/idle_inactive1` (4) の正常表示復旧
+- **課題**: `General` カテゴリを選んだ際、通常待機モーション（`[3]normal/idle`, `[4]normal/idle_inactive1`）が表示されず、一番上が `[31]` から始まってしまう。
+- **原因の特定**:
+  - 前回の修正で `IsCommonMonsterAction` の条件を `BuildTimelineCache` のカテゴリ分類判定に含めていたため、`normal/idle` などの人型・NPC共通の基本待機動作まで `[Monster]` に分類されてしまっていた。
+- **改修内容**:
+  - `BuildTimelineCache` において、`normal/` 系の基本待機・移動動作はすべて `[General]` カテゴリに分類されるよう修正。
+  - 人型アクターでも `General` カテゴリの最上部に `[3] normal/idle`、`[4] normal/idle_inactive1` が正常に表示されるように復帰。
+  - モンスター絞り込み時にも `IsCommonMonsterAction` によって漏れなく両立抽出されるよう維持。
+
+### 3. LookAt Custom Spawn の視線・目線（首・瞳）追従の完全動作化
+- **課題**: `LookAt Custom Spawn` で Chonk を選択した際、身体は Chonk の方を向くが、顔と瞳（視線・目線）が正面を向いたまま追従しない。
+- **原因の特定**:
+  - COM アクター（Puppet）はクライアント専用オブジェクトであるため、生成時の `GameObject.EntityId` が `0xE0000000`（未初期化ダミー）のままであった。ゲームエンジンの `chara->SetTargetId(targetEntityId)` は `0xE0000000` を受け取ると無効なターゲットとして探索を中止してしまう。
+  - また、COM アクターは初期状態の `TargetableStatus` が `0`（ターゲット不可）のままであったため、ゲームエンジンの TargetManager / LookAtIK システムが「ターゲット無効」と判定して視線追従ボーンIKを適用していなかった。
+- **改修内容**:
+  - `ActorManager.cs` において、COM アクター生成時にユニークかつワールドで探索可能なクライアント EntityId（`0x20000000 | (globalIdx + 1)`）を割り当て。
+  - `AnimationService.cs` において、注視対象アクターに対して `TargetableStatus |= ObjectTargetableFlags.IsTargetable` を確実に有効化し、`chara->SetTargetId(targetEntityId)` がゲームエンジンの LookAtIK システムに確実に認識されるように改修。
+  - これにより、自キャラ追従（`LookAt Player`）と全く同様に、同一シーン内の別アクター（Chonk等）に対しても顔・瞳（目線）が完璧に追従するようになった。
+
+
 
 
 

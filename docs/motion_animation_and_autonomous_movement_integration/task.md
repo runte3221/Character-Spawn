@@ -96,8 +96,21 @@ Character Spawn プラグインの根幹機能となる、カスタムスポー�
   - [x] ラベル幅（85px）の統一整列によるガタつき・テキスト潰れの解消
   - [x] カスタムスポーン配置一覧下部の不要な水平スクロールバーを削除
 
+### 【Step 2.1-fix6】デミヒューマン完全描画 ＆ General通常待機復旧 ＆ LookAt視線追従完全化（`v0.1.77.0`）
+- [x] **サキュバス等のデミヒューマン完全描画 (`Services/GameDataService.cs`, `Managers/ActorManager.cs`)**
+  - [x] サキュバス（1016）やスケルトン（1015）の Body (Top) 単体メッシュ仕様に適合
+  - [x] `ModelChara.Base` を Body スロット（インデックス1）にのみ適用し、他スロットは 0 のまま保持
+  - [x] 自キャラからコピーされた装備モデルIDの完全初期化（ゼロクリア）によるギズモ化根絶
+- [x] **General カテゴリにおける `normal/idle` (3) / `normal/idle_inactive1` (4) の復旧 (`Services/GameDataService.cs`)**
+  - [x] `BuildTimelineCache` のカテゴリ分類で `normal/` 系の基本待機動作を `[General]` に保持
+  - [x] モンスター絞り込み時にも `IsCommonMonsterAction` で漏れなく両立抽出
+- [x] **LookAt Custom Spawn の視線・目線（首・瞳）追従完全化 (`Managers/ActorManager.cs`, `Services/AnimationService.cs`)**
+  - [x] COM アクターにユニークなワールド EntityId（`0x20000000 | (globalIdx + 1)`）を割り当て
+  - [x] 注視対象アクターに `TargetableStatus |= ObjectTargetableFlags.IsTargetable` を設定し、LookAtIK が正常認識・追従するよう改修
+
 ### 【Step 2.2】自律移動 AI ＆ パトロール・追従・復帰ルーチン（次工程）
 - [ ] ウェイポイント巡回ルーチン (指定ルート巡回、各地点でのモーション再生)
 - [ ] プレイヤー接近感知・追従・規定距離超過時の元の位置復帰ルーチン
 - [ ] Scene Edit UI への巡回ルート・追従パラメータ設定タブ追加
+
 

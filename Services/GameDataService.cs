@@ -304,12 +304,25 @@ public class GameDataService
                 // Type == 2 (DemiHuman: サキュバス、ゴブリン、シルフ、コボルド、サハギン等)
                 if (row.Type == 2)
                 {
-                    // Head(0), Body(1), Hands(2), Legs(3), Feet(4) に Model, Base, Variant を展開
                     var equip = new ulong[10];
-                    ulong val = ((ulong)row.Model) | ((ulong)row.Base << 16) | ((ulong)row.Variant << 24);
-                    for (int i = 0; i < 5; i++)
+                    // EquipmentModelId のビット構成: Id (16-bit) | (Variant << 16) | (Dye << 24)
+                    // DemiHuman のモデルIDは row.Base (例: サキュバスは Base: 1 -> e0001)
+                    ulong val = ((ulong)row.Base) | ((ulong)row.Variant << 16);
+
+                    // サキュバス(1016), スケルトン(1015) などは胴(Body / slot 1: top)のみの一体型モデル
+                    // 一体型デミヒューマンは Body スロットにのみ値を設定し、他スロットは 0 とする
+                    // （存在しない met, glv, dwn, sho の読み込み失敗によるギズモ化を完全に解消）
+                    if (row.Model == 1016 || row.Model == 1015 || row.Model == 1005)
                     {
-                        equip[i] = val;
+                        equip[1] = val; // Body (Top)
+                    }
+                    else
+                    {
+                        equip[0] = val; // Head
+                        equip[1] = val; // Body
+                        equip[2] = val; // Hands
+                        equip[3] = val; // Legs
+                        equip[4] = val; // Feet
                     }
                     return equip;
                 }
@@ -592,7 +605,8 @@ public class GameDataService
             {
                 desc = $"[NPC] {key}";
             }
-            else if (key.StartsWith("mon_sp/", StringComparison.OrdinalIgnoreCase) || IsCommonMonsterAction(key))
+            else if (key.StartsWith("mon_sp/", StringComparison.OrdinalIgnoreCase) ||
+                     key.StartsWith("battle/mon_sp_", StringComparison.OrdinalIgnoreCase))
             {
                 desc = $"[Monster] {key}";
             }

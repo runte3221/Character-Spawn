@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.77] - 2026-10-04
+### Fixed
+- **サキュバス等のデミヒューマン（DemiHuman）描画不具合の完全修正 (`Services/GameDataService.cs`, `Managers/ActorManager.cs`)**:
+  - サキュバス（`d1016`）やスケルトン（`d1015`）等のデミヒューマンは頭・手・脚・足の分割メッシュが存在せず、胴（`Body` / `_top`）単体の一体型モデルである仕様を特定・反映。
+  - `ModelChara.Base` (例: サキュバスは Base: 1 -> `e0001`) を Body スロット（インデックス1）にのみ適用し、他パーツスロットは 0 のまま保持。また自キャラからコピーされた装備モデルIDの完全初期化（ゼロクリア）を行い、存在しないメッシュ（`met`, `glv`, `dwn`, `sho`）のロード失敗によるギズモ化（非表示）を完全に解消。
+- **General カテゴリにおける `normal/idle` (3) / `normal/idle_inactive1` (4) の正常表示復旧 (`Services/GameDataService.cs`)**:
+  - `BuildTimelineCache` のカテゴリ分類において、`normal/` 系の基本待機動作が誤って `[Monster]` に分類されていた問題を修正。
+  - 人型アクターでも `General` カテゴリの最上部に `[3] normal/idle`、`[4] normal/idle_inactive1` が正常に表示されるように復帰。
+- **LookAt Custom Spawn の視線・目線（首・瞳）追従の完全動作化 (`Managers/ActorManager.cs`, `Services/AnimationService.cs`)**:
+  - COM アクター（Puppet）の `GameObject.EntityId` が `0xE0000000`（未初期化ダミー）のままであったため、ゲームエンジンのターゲット探索に失敗して首・瞳が動かなかった問題を修正。各アクターにユニークなワールド EntityId（`0x20000000 | (globalIdx + 1)`）を割り当て。
+  - 注視対象アクターに対して `TargetableStatus |= ObjectTargetableFlags.IsTargetable` を設定し、ゲームエンジンの LookAt IK システムが対象を正常認識できるように改善。Chonk などの他カスタムスポーンに対しても身体だけでなく顔と視線（目線）が完璧に向くように改修。
+
 ## [0.1.76] - 2026-10-03
 ### Added
 - **LookAt Custom Spawn (アクター間相互注視) の新設 (`Models/SceneData.cs`, `Services/AnimationService.cs`, `Managers/SceneManager.cs`, `UI/SceneEditWindow.cs`)**:

@@ -386,6 +386,10 @@ public unsafe class ActorManager : IDisposable
                 return null;
             }
 
+            // ゲーム内 LookAt (SetTargetId) およびアクター相互参照用のユニーク EntityId を確立
+            uint assignedEntityId = (uint)(0x20000000 | (globalIdx + 1));
+            nativeChara->EntityId = assignedEntityId;
+
             // スロット再利用時の外見汚染（Glamourerステートキャッシュ/Penumbra/CustomizePlus残存）を完全パージ
             ClearActorSlotState(globalIdx, puppetName);
 
@@ -397,7 +401,7 @@ public unsafe class ActorManager : IDisposable
                 NativeAddress = (nint)nativeChara,
                 GlobalIndex = globalIdx,
                 ComIndex = comIdx,
-                GameObjectId = nativeChara->EntityId,
+                GameObjectId = assignedEntityId,
                 Transform = new TransformData
                 {
                     Position = pos,
@@ -421,12 +425,19 @@ public unsafe class ActorManager : IDisposable
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
                 nativeChara->GameObject.Scale = targetScale;
 
+                // 自キャラからコピーされた装備モデルID（胴・手・脚・足等）を完全にゼロクリア
+                // （デミヒューマンやモンスターで存在しない装備パスを読み込もうとしてギズモ化する不具合を根絶）
+                var equipSpan = nativeChara->DrawData.EquipmentModelIds;
+                for (int i = 0; i < equipSpan.Length; i++)
+                {
+                    equipSpan[i] = default;
+                }
+
                 if (template.NpcEquipmentModelIds != null && template.NpcEquipmentModelIds.Length > 0)
                 {
-                    var equipSpan = nativeChara->DrawData.EquipmentModelIds;
                     for (int idx = 0; idx < template.NpcEquipmentModelIds.Length && idx < equipSpan.Length; idx++)
                     {
-                        equipSpan[idx] = new EquipmentModelId { Value = template.NpcEquipmentModelIds[idx] };
+                        equipSpan[idx] = new EquipmentModelId { Value = (uint)template.NpcEquipmentModelIds[idx] };
                     }
                     nativeChara->DrawData.IsHatHidden = false;
                 }
@@ -436,10 +447,9 @@ public unsafe class ActorManager : IDisposable
                     var demiEquip = gameDataService.GetDemiHumanEquipment(template.ModelCharaId);
                     if (demiEquip != null && demiEquip.Length > 0)
                     {
-                        var equipSpan = nativeChara->DrawData.EquipmentModelIds;
                         for (int idx = 0; idx < demiEquip.Length && idx < equipSpan.Length; idx++)
                         {
-                            equipSpan[idx] = new EquipmentModelId { Value = demiEquip[idx] };
+                            equipSpan[idx] = new EquipmentModelId { Value = (uint)demiEquip[idx] };
                         }
                         nativeChara->DrawData.IsHatHidden = false;
                         logManager?.Info($"Populated DemiHuman equipment for '{template.Name}' (ModelChara: {template.ModelCharaId}).");

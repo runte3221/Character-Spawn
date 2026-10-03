@@ -260,7 +260,12 @@ public unsafe class AnimationService : IDisposable
                     {
                         var tChara = (Character*)targetActor.NativeAddress;
                         targetPos = tChara->Position;
-                        targetEntityId = tChara->EntityId;
+                        targetEntityId = (tChara->EntityId != 0 && tChara->EntityId != 0xE0000000)
+                            ? tChara->EntityId
+                            : (uint)targetActor.GameObjectId;
+
+                        // 対象アクターがゲームエンジンの視線追従(LookAt IK)対象として探索・解決できるようターゲット許可フラグを保証
+                        tChara->GameObject.TargetableStatus |= ObjectTargetableFlags.IsTargetable;
                         hasTarget = true;
                     }
                 }
