@@ -421,7 +421,6 @@ public class SceneEditWindow : Window, IDisposable
         // 9. Default Scale (モンスターの原寸サイズまたは標準サイズ 1.0 に復元)
         if (ImGui.Button("Default Scale", new Vector2(120, 26)))
         {
-            var template = configuration.Templates.FirstOrDefault(t => t.Id == placement.CharacterTemplateId);
             float defaultScale = (template != null && template.Scale > 0.001f) ? template.Scale : 1.0f;
             placement.Scale = defaultScale;
             sceneManager.SaveScenes();
