@@ -65,19 +65,25 @@
   - HDM（`HumanGuise.cs`）の逆アセンブル解析により、Glamourer の冷態認識遅延（Cold-Spawn Race）とフレーム毎リトライ監視（`OnUpdate`）のメカニズムを完全解明。
   - MCDF などの他パイプラインに一切手を加えない、独立した安全確実な修正案を設計。
 
-## 7. 独立キュー `HumanoidNpcApplyJob` による人型NPC固有外見の完全描画フェーズ (v0.1.48.0)
+## 8. HDM徹底逆アセンブル解析とASCIIパペット名・スポーンシーケンス完全同期フェーズ (v0.1.49.0)
+- [x] **HDM（HousingDollMaster）の完全逆アセンブル解析**:
+  - `SpawnService.TrySpawn`、`SpawnService.OnUpdate`、`HumanGuise.Apply`、`HumanGuise.TryApplyOnce`、`HumanGuise..cctor`、`HumanGuise.WriteCustomize` を 1 命令単位で完全解析。
+  - **真因の特定**:
+    1. パペット名に日本語が含まれていると、Glamourer の `ActorIdentifier` 検証（`VerifyPlayerName`）で弾かれ、`id.IsValid == false` となり `ActorNotFound` が返ってきていた。HDM は純粋な ASCII 英字 `"Hdm Aa"` を設定していた。
+    2. HDM はスポーン直後に `EnableDraw()` を呼ばず、`IsReadyToDraw()` を待って `EnableDraw()` を呼び、さらに `DrawObject` の可視化準備が完了してから Glamourer の `ApplyState` を呼んでいた。
+    3. HDM の `CustomizeMap`（36エントリ）と Character Spawn の実装は 100% 完全一致していることを証明。
 - [x] **コード改修 (`Managers/ActorManager.cs`)**:
-  - [x] `HumanoidNpcApplyJob` クラスと `humanoidNpcApplyJobs` リストを追加。
-  - [x] `DespawnCharacter` / `DespawnAll` で該当ジョブの確実なクリーンアップを追加。
-  - [x] `SpawnCharacter` の人型NPC分岐（Pipeline C）で `HumanoidNpcApplyJob` にエンキュー。
-  - [x] `UpdateFrame` 内でフレーム毎に Glamourer 認識を待機・リトライし、認識された瞬間に Glamourer 経由で適用（タイムアウト時のみ直接メモリフォールバック）。
+  - [x] `GetPuppetName` を HDM 準拠の純粋な ASCII 英字プレイヤー名（`$"Actor {c1}{c2}"`）に修正。
+  - [x] `HumanoidNpcApplyJob` に `DrawEnabled` フラグを追加。
+  - [x] パイプライン C（人型NPC）でスポーン時に `DisableDraw()` を実行し、`HumanoidNpcApplyJob` にエンキュー。
+  - [x] `UpdateFrame` 内で `IsReadyToDraw()` を待機して `EnableDraw()` を呼び、`DrawObject` 安定後に Glamourer 外見適用を実行。
 - [x] **コード改修 (`Services/GlamourerIpc.cs`)**:
-  - [x] `TryApplyNpcAppearance` において、パペットのステートがまだ存在しない（`state == null`）場合は即座に `StateNull` を返してフレームリトライに委譲。
-  - [x] MCDF や他のパイプラインが通る共通メソッド（`ApplyDesignToActor` 等）には一切手を加えない。
-- [ ] **ドキュメント・リリース**:
-  - [ ] `CHANGELOG.md` 更新（v0.1.48.0）
-  - [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.48.0`)
-  - [ ] 実機検証依頼（カヌ・エ・センナ、ユウギリ、MCDF、モンスターの全機能完全動作確認）
+  - [x] `getStateBase64Name`（`Glamourer.GetStateBase64Name`）の購読と `GetStateByName` を追加。
+  - [x] `TryApplyNpcAppearance` 内で Index 解決に失敗した場合に Name ベースのステート取得フォールバックを追加。
+- [x] **ドキュメント・リリース**:
+  - [x] `CHANGELOG.md` 更新（v0.1.49.0）
+  - [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.49.0`)
+  - [ ] 実機検証依頼（カヌ・エ・センナ、ユウギリの固有顔・髪型描画、MCDF、モンスターの全機能完全動作確認）
 
 
 

@@ -49,10 +49,12 @@ public unsafe class ActorManager : IDisposable
         public SpawnedActorData Spawned = null!;
         public CharacterTemplate Template = null!;
         public int Ticks;
+        public bool DrawEnabled;
         public const int MaxTicks = 60; // 最大約1秒間 (60フレーム) リトライ
     }
     private readonly List<HumanoidNpcApplyJob> humanoidNpcApplyJobs = new();
 
+    private int puppetSerial = 0;
     private const int MaxReadyTicks = 200;
 
 
@@ -116,24 +118,16 @@ public unsafe class ActorManager : IDisposable
 
     private string GetPuppetName(CharacterTemplate template)
     {
-        // AQR & Brio 黄金パターン:
-        // テンプレートの名前（先頭単語）から英字を抽出し " Cnpc" を付加（例: "Kimo Cnpc"）
-        // FF14 の PlayerIdentifier / VerifyPlayerName 規則 (Forename + " " + Surname, 各15文字以内, 合計20文字以内) を完全充足
-        string baseName = "Actor";
-        if (!string.IsNullOrWhiteSpace(template.Name))
-        {
-            var letters = new string(template.Name.TakeWhile(c => char.IsLetter(c)).ToArray());
-            if (letters.Length >= 2)
-            {
-                baseName = char.ToUpper(letters[0]) + letters.Substring(1).ToLower();
-            }
-        }
-
-        if (baseName.Length > 14) baseName = baseName.Substring(0, 14);
-        string candidate = $"{baseName} Cnpc";
-        if (candidate.Length <= 20) return candidate;
-
-        return "Cutscene Player";
+        // HDM (HousingDollMaster) 黄金律:
+        // FF14 の PlayerIdentifier / VerifyPlayerName 規則: Forename + " " + Surname, 各15文字以内, 合計20文字以内, 純粋な ASCII 英字のみ
+        // 日本語文字列（ひらがな・カタカナ・漢字）が含まれると Glamourer の ActorIdentifier が不正（Invalid）となり、
+        // GetState / ApplyState が ActorNotFound (ec=42) で永久に失敗する！
+        // したがって、内部 GameObject 名は純粋な ASCII 英字 "Actor Aa", "Actor Ab", ... を生成する。
+        // ※頭上のネームプレート表示やUI表示は SpawnedActorData.DisplayName / NamePlate.CustomName (template.Name) が保持されるため完全に日本語で表示される。
+        int s = Interlocked.Increment(ref puppetSerial);
+        char c1 = (char)('A' + ((s / 26) % 26));
+        char c2 = (char)('a' + (s % 26));
+        return $"Actor {c1}{c2}";
     }
 
     /// <summary>
@@ -363,6 +357,7 @@ public unsafe class ActorManager : IDisposable
             // =========================================================================
             if (template.SourceType == CharacterSourceType.Npc)
             {
+                nativeChara->GameObject.DisableDraw();
                 nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
                 nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
@@ -370,12 +365,13 @@ public unsafe class ActorManager : IDisposable
                 {
                     Spawned = spawned,
                     Template = template,
-                    Ticks = 0
+                    Ticks = 0,
+                    DrawEnabled = false
                 });
 
                 activeActors.Add(spawned);
                 createdIndexes.Add(globalIdx);
-                logManager?.Info($"[Pipeline C: NPC] Spawned '{spawned.DisplayName}' on Global#{globalIdx}. Enqueued to HumanoidNpcApplyJob (Cold-Spawn Race synchronization).");
+                logManager?.Info($"[Pipeline C: NPC] Spawned '{spawned.DisplayName}' on Global#{globalIdx}. Enqueued to HumanoidNpcApplyJob (HDM ReadyJob synchronization).");
                 return spawned;
             }
 
@@ -661,7 +657,7 @@ public unsafe class ActorManager : IDisposable
                 }
             }
 
-            // HDM HumanGuise.cs 準拠: 人型NPCの外見非同期同期待機ジョブ (Cold-Spawn Race 解消)
+            // HDM SpawnService & HumanGuise 準拠: 人型NPCの外見非同期同期待機ジョブ
             if (humanoidNpcApplyJobs.Count > 0)
             {
                 for (int i = humanoidNpcApplyJobs.Count - 1; i >= 0; i--)
@@ -676,6 +672,9 @@ public unsafe class ActorManager : IDisposable
                             humanoidNpcApplyJobs.RemoveAt(i);
                             continue;
                         }
+
+                        // 最低 2 フレーム待機 (COM生成とエンジンの登録完了待ち)
+                        if (job.Ticks < 2) continue;
 
                         if (job.Spawned.GlobalIndex >= objectTable.Length)
                         {
@@ -694,6 +693,22 @@ public unsafe class ActorManager : IDisposable
                         var chara = (Character*)charaObj.Address;
                         int actorIndex = (int)job.Spawned.GlobalIndex;
 
+                        // 1. HDM 準拠: ゲームエンジンが描画準備完了 (IsReadyToDraw) になるのを待って EnableDraw
+                        if (!job.DrawEnabled)
+                        {
+                            bool ready = false;
+                            try { ready = chara->GameObject.IsReadyToDraw(); } catch { }
+                            if (!ready && job.Ticks < 15) continue;
+
+                            try { chara->GameObject.EnableDraw(); } catch { }
+                            job.DrawEnabled = true;
+                        }
+
+                        // 2. HDM 準拠: DrawObject が存在することを確認
+                        var drawObj = (nint)chara->GameObject.DrawObject;
+                        if (drawObj == nint.Zero && job.Ticks < 30) continue;
+
+                        // 3. Glamourer 経由で外見を適用
                         bool glamSuccess = false;
                         if (glamourerIpc != null && glamourerIpc.IsAvailable)
                         {
@@ -723,11 +738,11 @@ public unsafe class ActorManager : IDisposable
                             try { chara->GameObject.EnableDraw(); } catch { }
                             job.Spawned.IsReady = true;
                             humanoidNpcApplyJobs.RemoveAt(i);
-                            logManager?.Info($"[Pipeline C: NPC] Humanoid NPC appearance applied via Glamourer on Global#{actorIndex} after {job.Ticks} tick(s).");
+                            logManager?.Info($"[Pipeline C: NPC] Humanoid NPC appearance successfully applied via Glamourer on Global#{actorIndex} ('{job.Spawned.DisplayName}') after {job.Ticks} tick(s).");
                         }
                         else if (job.Ticks >= HumanoidNpcApplyJob.MaxTicks)
                         {
-                            logManager?.Warning($"[Pipeline C: NPC] Glamourer NPC appearance timed out after {job.Ticks} ticks on Global#{actorIndex}. Applying direct memory fallback...");
+                            logManager?.Warning($"[Pipeline C: NPC] Glamourer NPC appearance timed out after {job.Ticks} ticks on Global#{actorIndex} ('{job.Spawned.DisplayName}'). Applying direct memory fallback...");
                             ApplyNpcAppearanceDirectFallback(chara, job.Template);
 
                             chara->DrawData.HideWeapons(!job.Template.WeaponVisible);

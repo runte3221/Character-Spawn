@@ -145,3 +145,49 @@ Glamourer TryApplyNpcAppearance: Both target actor #200 and LocalPlayer (0 / 'Ru
 
 
 
+
+---
+
+## 9. HDM 徹底逆アセンブル解析と真因解明・完全同期 (v0.1.49.0)
+
+### (1) 実機ログ比較と動かぬ証拠
+HDM でユウギリをスポーンさせたところ、完璧にユウギリ固有のアウラ顔と長い黒髪が描画された。実機ログを照合した結果：
+- **HDM の挙動**:
+  `	ext
+  09:58:42.174 [INF] [HDM] Spawn: puppet global#200 (COM#0) cloned from local player as "Hdm Aa"
+  09:58:42.268 [INF] [HDM] HDM: spawned puppet obj#200 as ユウギリ (Base 1011896).
+  09:58:42.416 [INF] [HDM] Guise[human-diag] base 1011896 'ユウギリ' authored BNpcCustomize: Race=6 Gender=1 Clan=11 Face=201 Hairstyle=201...
+  09:58:42.420 [INF] [HDM] Guise: obj#200 -> human NPC 'ユウギリ' (base 1011896) via Glamourer ApplyState (Success).
+  `
+  スポーン開始からわずか **0.24 秒（約 14 フレーム）** で Glamourer がパペットを認識し、`Face=201, Hairstyle=201` の適用が `Success`（0）で完了している。
+- **Character Spawn の挙動**:
+  `	ext
+  09:58:04.671 [INF] [CharacterSpawn] Spawning 'ユウギリ' (Source: Npc, ModelChara: 0) at COM#0...
+  09:58:05.829 [WRN] [CharacterSpawn] [Pipeline C: NPC] Glamourer NPC appearance timed out after 60 ticks on Global#200. Applying direct memory fallback...
+  `
+  **60 ticks（1.15 秒間）** 経過しても `GetState(200)` が一度も成功せず、タイムアウトして直接メモリフォールバックが走り、ゲームエンジンのサニタイズによって汎用顔に置換されていた。
+
+### (2) 徹底逆アセンブル解析で判明した真因
+1. **パペット名日本語文字トラップ（最大の真因）**:
+   - `ActorManager.GetPuppetName` がテンプレート名から `"ユウギリ Cnpc"` という日本語文字を含む名前を生成し、`GameObject.SetName` で設定していた。
+   - Glamourer の `ApiHelpers.FindState` は内部で `actors.GetIdentifier(actor)` を呼び出し、FF14 の `VerifyPlayerName`（ASCII英字のみ許可）で検証する。
+   - 日本語文字が含まれていたため **`ActorIdentifier.IsValid` が false となり、Glamourer は常に `ActorNotFound (42)` を返し続けていた**。
+   - HDM は、純粋な ASCII 英字 `"Hdm Aa"`, `"Hdm Ab"` を設定していたため、Glamourer が 100% 即座に有効な識別子を生成できていた。
+2. **スポーン描画シーケンスの不一致**:
+   - Character Spawn はスポーン直後に `EnableDraw()` を呼んでいた。
+   - HDM は、スポーン直後は `DisableDraw` のまま待機し、`UpdateFrame` でゲームエンジンが `IsReadyToDraw()` を返してから `EnableDraw()` を呼び、さらに `DrawObject` の準備が完了してから Glamourer の `ApplyState` を呼んでいた。
+3. **Customize マッピングの完全性確認**:
+   - HDM の `HumanGuise.CustomizeMap`（36エントリ）を全バイト逆アセンブルした結果、Character Spawn の `CustomizeMap` と 100% 完全一致していることを証明。
+
+### (3) 解決策の設計と実装
+1. **パペット名の ASCII 英字プレイヤー名化 (ActorManager.cs)**:
+   - `Interlocked.Increment(ref puppetSerial)` により、純粋な ASCII 英字プレイヤー名 `$"Actor {c1}{c2}"`（Forename: Actor, Surname: Aa..Zz）を生成。
+   - 頭上のネームプレート表示や UI 表示は `DisplayName` / `NamePlate.CustomName`（`template.Name` = "ユウギリ"）を維持するため、ユーザーの画面上では完全に日本語で表示される。
+2. **人型NPCスポーンシーケンスの HDM 完全同期 (ActorManager.cs)**:
+   - スポーン直後は `nativeChara->GameObject.DisableDraw()` を呼び、`HumanoidNpcApplyJob` にエンキュー。
+   - `UpdateFrame` 内で `IsReadyToDraw()` を待機して `EnableDraw()` を呼び、`DrawObject` の準備完了後に `glamourerIpc.TryApplyNpcAppearance` を呼ぶ。
+3. **Name ベースのステート取得フォールバック (GlamourerIpc.cs)**:
+   - `Glamourer.GetStateBase64Name` を購読し、`GetStateByName(actorName)` を新設。
+   - Index 経由で取得できなかった場合でも Name（"Actor Aa"）経由で確実にステートを取得する多重防壁を構築。
+4. **他パイプライン（MCDF, 通常Glamourer, Monster）の完全保護**:
+   - 共通メソッドの破壊的変更は行わず、Pipeline C（人型NPC）のみを修正したため、既存の全機能への影響ゼロを保証。

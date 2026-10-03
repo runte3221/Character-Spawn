@@ -32,6 +32,7 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<int, uint, uint, int>? reapplyStateV2Uint;
     private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
     private readonly ICallGateSubscriber<int, uint, (int, string?)>? getStateBase64;
+    private readonly ICallGateSubscriber<string, uint, (int, string?)>? getStateBase64Name;
     private readonly ICallGateSubscriber<int, uint, (int, JObject?)>? getStateV2;
     private readonly ICallGateSubscriber<int, (int, JObject?)>? getStateLegacy;
     private readonly ICallGateSubscriber<Guid, JObject?>? getDesignJObject;
@@ -86,6 +87,7 @@ public class GlamourerIpc
             reapplyStateV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.ReapplyState");
             getCustomizationFromActor = pi.GetIpcSubscriber<int, string?>("Glamourer.GetCustomizationFromActor");
             getStateBase64 = pi.GetIpcSubscriber<int, uint, (int, string?)>("Glamourer.GetStateBase64");
+            getStateBase64Name = pi.GetIpcSubscriber<string, uint, (int, string?)>("Glamourer.GetStateBase64Name");
             getStateV2 = pi.GetIpcSubscriber<int, uint, (int, JObject?)>("Glamourer.GetState");
             getStateLegacy = pi.GetIpcSubscriber<int, (int, JObject?)>("Glamourer.GetState");
             revertStateV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
@@ -598,6 +600,30 @@ public class GlamourerIpc
         return null;
     }
 
+    public JObject? GetStateByName(string actorName)
+    {
+        if (!IsAvailable || string.IsNullOrWhiteSpace(actorName)) return null;
+
+        if (getStateBase64Name != null)
+        {
+            try
+            {
+                var (ec, base64) = getStateBase64Name.InvokeFunc(actorName, 0);
+                if (ec == 0 && !string.IsNullOrWhiteSpace(base64))
+                {
+                    var jobj = ParseDesignString(base64);
+                    if (jobj != null) return jobj;
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer GetStateBase64Name failed on actorName '{actorName}': {ex.Message}");
+            }
+        }
+
+        return null;
+    }
+
     public enum NpcApplyResult
     {
         Applied,
@@ -608,13 +634,17 @@ public class GlamourerIpc
     /// <summary>
     /// HDM (HumanGuise.cs) 準拠の 1 フレーム非ブロッキング NPC 外見適用
     /// 26バイト CustomizeData と 10スロットの EquipmentModelIds を Glamourer JObject にマッピングして適用
-    /// スポーン直後でアクターのステートキャッシュがコールドな場合は、LocalPlayer (0) のステート構造をひな形としてディープコピーして即時適用する
     /// </summary>
     public NpcApplyResult TryApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null)
     {
         if (!IsAvailable) return NpcApplyResult.Failed;
 
         var state = GetState(actorIndex);
+        if (state == null && !string.IsNullOrWhiteSpace(actorName))
+        {
+            state = GetStateByName(actorName);
+        }
+
         if (state == null)
         {
             // パペットがまだ Glamourer に認識されていなければ StateNull を返してフレームリトライに委譲

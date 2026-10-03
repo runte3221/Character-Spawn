@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.49] - 2026-10-03
+### Fixed
+- **HDM (HousingDollMaster) 徹底逆アセンブル解析に基づく真因解明・パペット名 ASCII 化・スポーン描画シーケンス完全同期**:
+  - **根本原因の完全解明 (日本語パペット名による Glamourer の ActorIdentifier 検証失敗)**:
+    - HDM の実機ログではスポーン開始からわずか 0.24 秒で Glamourer がパペットを認識してユウギリ固有の顔・黒髪が完璧に描画されていたのに対し、Character Spawn では 60 ticks（1.15秒）経過しても `GetState` が null でタイムアウトしていた。
+    - HDM（`HDM.dll`）および Glamourer（`Glamourer.dll`）の完全逆アセンブル解析を行った結果、`ActorManager.GetPuppetName` がテンプレート名から `"ユウギリ Cnpc"` という日本語文字を含む名前を生成し、`GameObject.SetName` に設定していたことが最大の真因と判明。
+    - Glamourer の `ApiHelpers.FindState` は内部で `actors.GetIdentifier(actor)` を呼び出し、FF14 の `VerifyPlayerName`（ASCII英字のみ許可）で検証するため、日本語が含まれていると `ActorIdentifier.IsValid` が false となり、**常に `ActorNotFound (42)` を返し続けていた**。
+    - HDM は、純粋な ASCII 英字 `"Hdm Aa"`, `"Hdm Ab"` を設定していたため、Glamourer が 100% 即座に有効な識別子を生成できていた。
+  - **対策 1: パペット名の ASCII 英字プレイヤー名化 (`ActorManager.cs`)**:
+    - `Interlocked.Increment(ref puppetSerial)` により、純粋な ASCII 英字プレイヤー名 `$"Actor {c1}{c2}"`（Forename: Actor, Surname: Aa..Zz）を生成。
+    - 頭上のネームプレート表示や UI 表示は `DisplayName` / `NamePlate.CustomName`（`template.Name` = "ユウギリ"）を維持するため、ユーザーの画面上では完全に日本語で表示される。
+  - **対策 2: スポーン描画シーケンスの HDM 完全同期 (`ActorManager.cs`)**:
+    - 人型NPC（Pipeline C）スポーン直後は `nativeChara->GameObject.DisableDraw()` を呼び、描画待機ジョブにエンキュー。
+    - `UpdateFrame` 内でゲームエンジンの `IsReadyToDraw()` を待機して `EnableDraw()` を呼び、さらに `DrawObject` の準備完了後に `glamourerIpc.TryApplyNpcAppearance` を実行。
+  - **対策 3: Name ベースのステート取得フォールバック (`GlamourerIpc.cs`)**:
+    - `Glamourer.GetStateBase64Name` を購読し、`GetStateByName(actorName)` を新設。Index 経由で取得できなかった場合でも Name（"Actor Aa"）経由で確実にステートを取得する多重防壁を構築。
+  - **他機能への影響ゼロ保証**:
+    - 共通メソッドの破壊的変更は行わず、Pipeline C（人型NPC）のみを修正したため、MCDF（Pipeline A/B）、Monster / Demihuman（Pipeline D）を含む既存機能への副作用はゼロ。
+
 ## [0.1.48] - 2026-10-03
 ### Fixed
 - **独立キュー `HumanoidNpcApplyJob` による人型NPC固有外見（カヌ・エ・センナ、ユウギリ等）の完全描画**:

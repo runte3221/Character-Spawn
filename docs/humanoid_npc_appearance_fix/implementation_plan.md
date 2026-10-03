@@ -74,11 +74,32 @@
   3. **`Services/GlamourerIpc.cs` の `TryApplyNpcAppearance` の適正化**:
      - パペットのステートがまだ存在しない（`state == null`）場合は即座に `StateNull` を返してフレームリトライに委譲。
      - パペットのステートが取得できたら、そのステートに NPC の Customize / Equipment を書き込んで `ApplyState` を呼ぶ。
+## 8. v0.1.49.0 改修計画（HDM 逆アセンブル解析に基づく ASCII パペット名とスポーン待機シーケンス完全同期）
+- **徹底逆アセンブル解析によって判明した真因**:
+  1. **パペット名の日本語文字トラップ**:
+     - `ActorManager.GetPuppetName` がテンプレート名「ユウギリ」等から `"ユウギリ Cnpc"` という日本語文字を含む内部名を生成していた。
+     - Glamourer の `ApiHelpers.FindState` は `actors.GetIdentifier(actor)` を呼ぶが、FF14 のプレイヤー名ルール（ASCII英字のみ）に違反しているため `id.IsValid` が false となり、**`ActorNotFound (42)` を返し続けていた**。
+     - その結果、60 ticks 経ってもステートが取得できずタイムアウトし、直接メモリフォールバックが走ってゲームエンジンのサニタイズにより汎用顔に戻されていた。
+     - HDM は、純粋な ASCII 英字 `"Hdm Aa"`, `"Hdm Ab"` を設定していたため、Glamourer が 100% 即座に認識（`id.IsValid == true`）していた。
+  2. **描画待機シーケンスの不一致**:
+     - Character Spawn ではスポーン直後に `EnableDraw()` を呼んでいたが、HDM ではスポーン直後は描画を無効化（`DisableDraw`）のまま保持し、`UpdateFrame` でゲームエンジンが `IsReadyToDraw()` を返してから `EnableDraw()` を呼び、さらに `DrawObject` の可視化準備が完了してから Glamourer の `ApplyState` を呼んでいた。
+  3. **Customize マッピングの完全性確認**:
+     - HDM の `HumanGuise.CustomizeMap`（36エントリ）と Character Spawn の実装は 100% 完全一致していることを証明。
+- **改修方針**:
+  1. **`Managers/ActorManager.cs` のパペット名生成を ASCII 英字化**:
+     - `Interlocked.Increment(ref puppetSerial)` により、`$"Actor {c1}{c2}"`（ASCII英字プレイヤー名）を生成。
+     - ネームプレート（頭上の名前表示）は `SpawnedActorData.NamePlate.CustomName = template.Name`（日本語）のまま維持されるため、ゲーム画面上では完全に元の名前が表示される。
+  2. **`Managers/ActorManager.cs` の人型NPCスポーンシーケンスを HDM 準拠化**:
+     - スポーン直後は `nativeChara->GameObject.DisableDraw()` を呼び、`HumanoidNpcApplyJob` にエンキュー。
+     - `UpdateFrame` 内で `IsReadyToDraw()` を待って `EnableDraw()` を呼び、`DrawObject` の準備完了後に `glamourerIpc.TryApplyNpcAppearance` を呼ぶ。
+  3. **`Services/GlamourerIpc.cs` に Name ベースのフォールバックを追加**:
+     - `Glamourer.GetStateBase64Name` を購読し、`GetStateByName(actorName)` を新設。
+     - `TryApplyNpcAppearance` 内で Index 経由で取得できなかった場合でも Name 経由で確実にステートを取得する多重防壁を構築。
 - **検証手順**:
-  1. `tools/release.ps1 0.1.48.0` で全自動リリース。
-  2. MCDF キャラクターをスポーンさせ、正常に動作することを確認（他機能への影響ゼロ確認）。
-  3. 通常の Glamourer キャラクターおよびモンスター・デミヒューマンが正常に動作することを確認。
-  4. カヌ・エ・センナ、ユウギリをスポーンさせ、角尊のツノ・編み込み髪型、アウラ固有顔が 100% 確実に描画されることを確認。
+  1. `tools/release.ps1 0.1.49.0` で全自動リリース。
+  2. カヌ・エ・センナ、ユウギリをスポーンさせ、角尊のツノ・固有髪型、ユウギリ固有のアウラ顔・長い黒髪が HDM とまったく同じように 100% 確実に描画されることを確認。
+  3. MCDF キャラクターおよびモンスター・デミヒューマンが引き続き完璧に動作することを確認。
+
 
 
 
