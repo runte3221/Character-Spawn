@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.87] - 2026-10-04
+### Fixed
+- **自キャラ抜刀武器の漏洩根本解消および正規NPC・モブ武器の安全な自動反映 (`Managers/ActorManager.cs`, `Services/GlamourerIpc.cs`, `Services/GameDataService.cs`)**:
+  - **現象の完全解決**: 自キャラが武器を抜刀した状態で Show を行った際、サキュバス（デミヒューマン）やアリゼー（人型NPC）が自キャラの抜刀武器を所持・表示してしまう不具合を根本解決。
+  - **人型NPC (アリゼー等) の武器制御**:
+    - `GlamourerIpc.TryApplyNpcAppearance` において、従来の武器スロット管理解除（`Apply = false`）を完全撤廃。
+    - `ENpcBase` および `NpcEquip` から `ModelMainHand` / `ModelOffHand`（64bit Quad値）を取得し、NPC固有武器がある場合は Penumbra 準拠の `CustomItemId` を構築して `Apply = true` で適用。武器を持たないNPCは `ItemId = 0, Apply = true` で素手（武器消去）を明示適用。
+    - 自キャラからコピーされた武器が Glamourer 経由で 100% 確実に消去され、NPC本来の武器（または素手）のみが表示されるよう修正。
+  - **モンスター・デミヒューマン (サキュバス等) の武器制御**:
+    - スポーン初期化時、`meNative`（自キャラ）からのベースラインコピー直後に `nativeChara->DrawData.WeaponData` の `ModelId` 値型のみを安全に `default` 初期化（構造体まるごとクリアではないためポインタ破壊による 0xC0000005 クラッシュは皆無）。
+    - `BNpcBase.NpcEquip` を解析する `GetMonsterEquipment` を新設。元から武器を所持しているモブ（サハギン、武器持ちサキュバス等）のみ正規の `WeaponModelId` をセットし、武器を持たないモブ（通常のサキュバス等）は武器非表示・素手を維持。
+    - `SafeSetWeaponVisibility` の条件判定を更新し、武器を持つモブに対する表示切り替えを可能にしつつ武器なしモブへの誤操作を防止。
+
 ## [0.1.86] - 2026-10-04
 ### Fixed
 - **Demihuman スポーン時の Access Violation クラッシュ (0xC0000005) の完全解消 (`Managers/ActorManager.cs`)**:

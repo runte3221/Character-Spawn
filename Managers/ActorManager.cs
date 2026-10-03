@@ -326,8 +326,10 @@ public unsafe class ActorManager : IDisposable
                         template.ModelCharaId = app.ModelCharaId;
                         template.CustomizeData = app.CustomizeData;
                         template.NpcEquipmentModelIds = app.EquipmentModelIds;
+                        template.NpcMainHandModelId = app.MainHandModelId;
+                        template.NpcOffHandModelId = app.OffHandModelId;
                         template.McType = app.McType;
-                        logManager?.Info($"Auto-resolved NPC appearance data for '{template.Name}' from ENpc (ModelChara: {template.ModelCharaId}, McType: {template.McType}, Race: {(app.CustomizeData != null && app.CustomizeData.Length > 0 ? app.CustomizeData[0].ToString() : "N/A")}).");
+                        logManager?.Info($"Auto-resolved NPC appearance data for '{template.Name}' from ENpc (ModelChara: {template.ModelCharaId}, McType: {template.McType}, MainHand: 0x{template.NpcMainHandModelId:X16}, Race: {(app.CustomizeData != null && app.CustomizeData.Length > 0 ? app.CustomizeData[0].ToString() : "N/A")}).");
                     }
                 }
             }
@@ -342,11 +344,17 @@ public unsafe class ActorManager : IDisposable
             nativeChara->CharacterSetup.CopyFromCharacter(meNative, CharacterCopyFlags.WeaponHiding);
             nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
 
-            // 2. ベースラインのリセット
+            // 2. ベースラインのリセット: 自キャラ抜刀武器の漏洩を完全に遮断
+            var initialWeapons = nativeChara->DrawData.WeaponData;
+            for (int i = 0; i < initialWeapons.Length; i++)
+            {
+                initialWeapons[i].ModelId = default;
+            }
+
             nativeChara->ModelContainer.ModelCharaId = 0;
             nativeChara->GameObject.Scale = targetScale;
             nativeChara->DrawData.IsWeaponHidden = true; // 自キャラ抜刀状態の誤波及を防止するためデフォルト非表示
-            if (template.ModelCharaId == 0 && template.WeaponVisible)
+            if (template.ModelCharaId == 0 && template.WeaponVisible && template.SourceType != CharacterSourceType.Npc)
             {
                 nativeChara->DrawData.IsWeaponHidden = false;
             }
@@ -426,9 +434,45 @@ public unsafe class ActorManager : IDisposable
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
                 nativeChara->GameObject.Scale = targetScale;
 
-                // モンスター・デミヒューマンは武器を持たないため、武器描画フラグを非表示に強制
-                // ※ WeaponData (DrawObjectData) の構造体ゼロクリアは内部ポインタ破壊によるクラッシュ (0xC0000005) を引き起こすため厳禁！
-                nativeChara->DrawData.IsWeaponHidden = true;
+                // モンスター・デミヒューマンの武器解決:
+                // 自キャラからコピーされた武器モデルID（MainHand/OffHand）を初期化
+                var weaponSpan = nativeChara->DrawData.WeaponData;
+                for (int i = 0; i < weaponSpan.Length; i++)
+                {
+                    weaponSpan[i].ModelId = default;
+                }
+
+                ulong monsterMainHand = template.NpcMainHandModelId;
+                ulong monsterOffHand = template.NpcOffHandModelId;
+
+                // テンプレートに未設定の場合、ゲームデータから自動解決
+                if (monsterMainHand == 0 && gameDataService != null)
+                {
+                    var (mEquip, mMain, mOff) = gameDataService.GetMonsterEquipment(template.DataId, template.ModelCharaId);
+                    if (mMain > 0) monsterMainHand = mMain;
+                    if (mOff > 0) monsterOffHand = mOff;
+                    if (template.NpcEquipmentModelIds == null || template.NpcEquipmentModelIds.Length == 0)
+                    {
+                        template.NpcEquipmentModelIds = mEquip;
+                    }
+                }
+
+                if (monsterMainHand > 0 && weaponSpan.Length > 0)
+                {
+                    weaponSpan[0].ModelId = new WeaponModelId { Value = monsterMainHand };
+                    nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
+                    logManager?.Info($"Set monster weapon MainHand for '{template.Name}' (Value: 0x{monsterMainHand:X16}).");
+                }
+                else
+                {
+                    nativeChara->DrawData.IsWeaponHidden = true;
+                }
+
+                if (monsterOffHand > 0 && weaponSpan.Length > 1)
+                {
+                    weaponSpan[1].ModelId = new WeaponModelId { Value = monsterOffHand };
+                    logManager?.Info($"Set monster weapon OffHand for '{template.Name}' (Value: 0x{monsterOffHand:X16}).");
+                }
 
                 // 自キャラからコピーされた装備モデルID（胴・手・脚・足等）を完全にゼロクリア
                 // （デミヒューマンやモンスターで存在しない装備パスを読み込もうとしてギズモ化する不具合を根絶）
@@ -485,7 +529,23 @@ public unsafe class ActorManager : IDisposable
             if (template.SourceType == CharacterSourceType.Npc)
             {
                 nativeChara->GameObject.DisableDraw();
-                SafeSetWeaponVisibility(nativeChara, template.WeaponVisible);
+
+                // パペットメモリ上の武器モデルIDを初期化し、NPC固有武器があればセット
+                var weaponSpan = nativeChara->DrawData.WeaponData;
+                for (int i = 0; i < weaponSpan.Length; i++)
+                {
+                    weaponSpan[i].ModelId = default;
+                }
+                if (template.NpcMainHandModelId > 0 && weaponSpan.Length > 0)
+                {
+                    weaponSpan[0].ModelId = new WeaponModelId { Value = template.NpcMainHandModelId };
+                }
+                if (template.NpcOffHandModelId > 0 && weaponSpan.Length > 1)
+                {
+                    weaponSpan[1].ModelId = new WeaponModelId { Value = template.NpcOffHandModelId };
+                }
+
+                SafeSetWeaponVisibility(nativeChara, template.WeaponVisible && template.NpcMainHandModelId > 0);
 
                 humanoidNpcApplyJobs.Add(new HumanoidNpcApplyJob
                 {
@@ -903,7 +963,9 @@ public unsafe class ActorManager : IDisposable
                                     job.Template.CustomizeData,
                                     job.Template.NpcEquipmentModelIds,
                                     showHeadgear: true,
-                                    job.Spawned.PuppetName);
+                                    job.Spawned.PuppetName,
+                                    job.Template.NpcMainHandModelId,
+                                    job.Template.NpcOffHandModelId);
 
                                 if (res == GlamourerIpc.NpcApplyResult.Applied)
                                 {
@@ -925,7 +987,7 @@ public unsafe class ActorManager : IDisposable
                                 logManager?.Warning($"[Pipeline C: NPC] Glamourer NPC appearance timed out after {job.Ticks} ticks on Global#{actorIndex} ('{job.Spawned.DisplayName}'). Applying direct memory fallback...");
                                 ApplyNpcAppearanceDirectFallback(chara, job.Template);
 
-                                SafeSetWeaponVisibility(chara, job.Template.WeaponVisible);
+                                SafeSetWeaponVisibility(chara, job.Template.WeaponVisible && job.Template.NpcMainHandModelId > 0);
 
                                 try { chara->GameObject.EnableDraw(); } catch { }
                                 job.Spawned.IsReady = true;
@@ -945,7 +1007,7 @@ public unsafe class ActorManager : IDisposable
                             try { ready = chara->GameObject.IsReadyToDraw(); } catch { }
                             if (!ready && job.RebuildTicks < 15) continue;
 
-                            SafeSetWeaponVisibility(chara, job.Template.WeaponVisible);
+                            SafeSetWeaponVisibility(chara, job.Template.WeaponVisible && job.Template.NpcMainHandModelId > 0);
 
                             try { chara->GameObject.EnableDraw(); } catch { }
                             job.Spawned.IsReady = true;
@@ -1184,6 +1246,20 @@ public unsafe class ActorManager : IDisposable
             }
         }
 
+        var weaponSpan = chara->DrawData.WeaponData;
+        for (int i = 0; i < weaponSpan.Length; i++)
+        {
+            weaponSpan[i].ModelId = default;
+        }
+        if (template.NpcMainHandModelId > 0 && weaponSpan.Length > 0)
+        {
+            weaponSpan[0].ModelId = new WeaponModelId { Value = template.NpcMainHandModelId };
+        }
+        if (template.NpcOffHandModelId > 0 && weaponSpan.Length > 1)
+        {
+            weaponSpan[1].ModelId = new WeaponModelId { Value = template.NpcOffHandModelId };
+        }
+
         chara->CharacterSetup.CopyFromCharacter(chara, CharacterCopyFlags.None);
     }
 
@@ -1207,7 +1283,14 @@ public unsafe class ActorManager : IDisposable
         bool glamSuccess = false;
         if (glamourerIpc != null && glamourerIpc.IsAvailable)
         {
-            glamSuccess = glamourerIpc.ApplyNpcAppearance(actorIndex, template.CustomizeData, template.NpcEquipmentModelIds, showHeadgear: true, spawned?.PuppetName);
+            glamSuccess = glamourerIpc.ApplyNpcAppearance(
+                actorIndex,
+                template.CustomizeData,
+                template.NpcEquipmentModelIds,
+                showHeadgear: true,
+                spawned?.PuppetName,
+                template.NpcMainHandModelId,
+                template.NpcOffHandModelId);
             logManager?.Info($"[Pipeline C: NPC] Glamourer ApplyNpcAppearance result on Global#{actorIndex}: {glamSuccess}");
         }
 
@@ -1217,18 +1300,18 @@ public unsafe class ActorManager : IDisposable
             ApplyNpcAppearanceDirectFallback(chara, template);
         }
 
-        SafeSetWeaponVisibility(chara, template.WeaponVisible);
+        SafeSetWeaponVisibility(chara, template.WeaponVisible && template.NpcMainHandModelId > 0);
         logManager?.Info($"[Pipeline C: NPC] Applied Humanoid NPC appearance to Global#{actorIndex} (Glamourer: {glamSuccess}).");
     }
 
     /// <summary>
-    /// 人型アクターの武器表示状態を安全に設定（DrawObject 未生成時やモンスターへの誤呼び出しによるクラッシュを防止）
+    /// アクターの武器表示状態を安全に設定（DrawObject 未生成時や武器なしモンスターへの誤呼び出しによるクラッシュを防止）
     /// </summary>
     private static void SafeSetWeaponVisibility(Character* chara, bool visible)
     {
         if (chara == null) return;
-        // モンスター（ModelCharaId > 0）には武器が存在しないため非表示フラグを立てて即リターン
-        if (chara->ModelContainer.ModelCharaId != 0)
+        // モンスター（ModelCharaId > 0）で武器モデルを持たない場合は非表示フラグを立てて即リターン
+        if (chara->ModelContainer.ModelCharaId != 0 && (chara->DrawData.WeaponData.Length == 0 || chara->DrawData.WeaponData[0].ModelId.Value == 0))
         {
             chara->DrawData.IsWeaponHidden = true;
             return;
@@ -1539,8 +1622,8 @@ public unsafe class ActorManager : IDisposable
         var nativeChara = (Character*)actor.NativeAddress;
         if (nativeChara == null) return;
 
-        // モンスター（ModelCharaId > 0）には武器が存在しないため処理しない
-        if (nativeChara->ModelContainer.ModelCharaId != 0)
+        // モンスター（ModelCharaId > 0）で武器モデルを持たない場合は処理しない
+        if (nativeChara->ModelContainer.ModelCharaId != 0 && (nativeChara->DrawData.WeaponData.Length == 0 || nativeChara->DrawData.WeaponData[0].ModelId.Value == 0))
         {
             nativeChara->DrawData.IsWeaponHidden = true;
             return;

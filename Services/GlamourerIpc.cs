@@ -633,9 +633,16 @@ public class GlamourerIpc
 
     /// <summary>
     /// HDM (HumanGuise.cs) 準拠の 1 フレーム非ブロッキング NPC 外見適用
-    /// 26バイト CustomizeData と 10スロットの EquipmentModelIds を Glamourer JObject にマッピングして適用
+    /// 26バイト CustomizeData と 10スロットの EquipmentModelIds、および武器モデルIDを Glamourer JObject にマッピングして適用
     /// </summary>
-    public NpcApplyResult TryApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null)
+    public NpcApplyResult TryApplyNpcAppearance(
+        int actorIndex,
+        byte[]? customizeData,
+        ulong[]? equipmentModelIds,
+        bool showHeadgear = true,
+        string? actorName = null,
+        ulong mainHandModelId = 0,
+        ulong offHandModelId = 0)
     {
         if (!IsAvailable) return NpcApplyResult.Failed;
 
@@ -671,12 +678,11 @@ public class GlamourerIpc
         // 4. ForceAllApply で全スロットの強制適用を保証
         ForceAllApply(state);
 
-        // 5. 武器スロットの管理解除（自キャラの武器がNPCに上書きされるのを防止）
+        // 5. 武器スロットの明示適用（自キャラの武器混入を完全消去し、NPC固有武器または素手を適用）
         if (state["Equipment"] is JObject eqObj)
         {
-            UnmanageWeaponSlot(eqObj, "MainHand");
-            UnmanageWeaponSlot(eqObj, "OffHand");
-            if (eqObj["Weapon"] is JObject wv) wv["Apply"] = false;
+            WriteWeaponSlot(eqObj, "MainHand", mainHandModelId, isOffhand: false);
+            WriteWeaponSlot(eqObj, "OffHand", offHandModelId, isOffhand: true);
         }
 
         // 6. HDM (HumanGuise.cs) 準拠: ApplyFlag.Equipment | ApplyFlag.Customization (6UL) で永続適用
@@ -718,9 +724,16 @@ public class GlamourerIpc
         return success ? NpcApplyResult.Applied : NpcApplyResult.Failed;
     }
 
-    public bool ApplyNpcAppearance(int actorIndex, byte[]? customizeData, ulong[]? equipmentModelIds, bool showHeadgear = true, string? actorName = null)
+    public bool ApplyNpcAppearance(
+        int actorIndex,
+        byte[]? customizeData,
+        ulong[]? equipmentModelIds,
+        bool showHeadgear = true,
+        string? actorName = null,
+        ulong mainHandModelId = 0,
+        ulong offHandModelId = 0)
     {
-        return TryApplyNpcAppearance(actorIndex, customizeData, equipmentModelIds, showHeadgear, actorName) == NpcApplyResult.Applied;
+        return TryApplyNpcAppearance(actorIndex, customizeData, equipmentModelIds, showHeadgear, actorName, mainHandModelId, offHandModelId) == NpcApplyResult.Applied;
     }
 
     private static readonly (string Key, ulong EquipType)[] Slots =
@@ -742,11 +755,38 @@ public class GlamourerIpc
     private static ulong CustomItemId(ushort model, byte variant, ulong equipType)
         => model | ((ulong)variant << 32) | (equipType << 40) | CustomFlag;
 
-    private static void UnmanageWeaponSlot(JObject equip, string key)
+    private static void WriteWeaponSlot(JObject equip, string key, ulong weaponModelVal, bool isOffhand)
     {
         if (equip[key] is not JObject slot) return;
-        slot["Apply"] = false;
-        slot["ApplyStain"] = false;
+
+        if (weaponModelVal == 0)
+        {
+            // 武器を持たないNPC: ItemId = 0 で素手を明示適用（自キャラ武器を強制消去）
+            slot["ItemId"] = 0;
+            slot["Apply"] = true;
+            slot["Stain"] = 0;
+            slot["Stain2"] = 0;
+            slot["ApplyStain"] = true;
+            return;
+        }
+
+        // Lumina ModelMainHand / ModelOffHand (ulong) のビット配置:
+        // 0..15: Model (PrimaryId)
+        // 16..31: Type (SecondaryId)
+        // 32..47: Variant
+        // 48..55: Stain0
+        ushort model = (ushort)(weaponModelVal & 0xFFFF);
+        ushort type = (ushort)((weaponModelVal >> 16) & 0xFFFF);
+        byte variant = (byte)((weaponModelVal >> 32) & 0xFF);
+        byte dye = (byte)((weaponModelVal >> 48) & 0xFF);
+        ulong equipType = isOffhand ? 67ul : 66ul; // Penumbra FullEquipType.UnknownOffhand (67) / UnknownMainhand (66)
+
+        ulong customItemId = model | ((ulong)type << 16) | ((ulong)variant << 32) | (equipType << 40) | CustomFlag;
+        slot["ItemId"] = customItemId;
+        slot["Apply"] = true;
+        slot["Stain"] = dye;
+        slot["Stain2"] = 0;
+        slot["ApplyStain"] = true;
     }
 
     private static void SetHeadgearShown(JObject equip, bool show)

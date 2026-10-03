@@ -20,7 +20,9 @@ public class GameDataService
         uint ModelCharaId,
         byte[]? CustomizeData,
         ulong[]? EquipmentModelIds,
-        int McType = 1
+        int McType = 1,
+        ulong MainHandModelId = 0,
+        ulong OffHandModelId = 0
     );
 
     private List<NpcEntry>? cachedNpcs;
@@ -116,11 +118,15 @@ public class GameDataService
         if (modelCharaId > 0 && mcType != 1)
         {
             ulong[]? demiEquip = null;
+            ulong demiMainHand = 0;
+            ulong demiOffHand = 0;
             if (baseRow.NpcEquip.RowId != 0)
             {
                 var npcEquipSheet = dataManager.GetExcelSheet<NpcEquip>();
                 if (npcEquipSheet != null && npcEquipSheet.TryGetRow(baseRow.NpcEquip.RowId, out var eqRow))
                 {
+                    demiMainHand = eqRow.ModelMainHand;
+                    demiOffHand = eqRow.ModelOffHand;
                     demiEquip = [
                         eqRow.ModelHead, eqRow.ModelBody, eqRow.ModelHands, eqRow.ModelLegs, eqRow.ModelFeet,
                         eqRow.ModelEars, eqRow.ModelNeck, eqRow.ModelWrists, eqRow.ModelRightRing, eqRow.ModelLeftRing
@@ -129,12 +135,14 @@ public class GameDataService
             }
             else
             {
+                demiMainHand = baseRow.ModelMainHand;
+                demiOffHand = baseRow.ModelOffHand;
                 demiEquip = [
                     baseRow.ModelHead, baseRow.ModelBody, baseRow.ModelHands, baseRow.ModelLegs, baseRow.ModelFeet,
                     baseRow.ModelEars, baseRow.ModelNeck, baseRow.ModelWrists, baseRow.ModelRightRing, baseRow.ModelLeftRing
                 ];
             }
-            return new NpcAppearanceData(modelCharaId, null, demiEquip, mcType);
+            return new NpcAppearanceData(modelCharaId, null, demiEquip, mcType, demiMainHand, demiOffHand);
         }
 
         // 人型NPC（ミューヌ等のHumanモデル）
@@ -167,11 +175,15 @@ public class GameDataService
         cust[25] = baseRow.FacePaintColor;
 
         var equip = new ulong[10];
+        ulong mainHand = 0;
+        ulong offHand = 0;
         if (baseRow.NpcEquip.RowId != 0)
         {
             var npcEquipSheet = dataManager.GetExcelSheet<NpcEquip>();
             if (npcEquipSheet != null && npcEquipSheet.TryGetRow(baseRow.NpcEquip.RowId, out var eqRow))
             {
+                mainHand = eqRow.ModelMainHand;
+                offHand = eqRow.ModelOffHand;
                 equip[0] = eqRow.ModelHead;
                 equip[1] = eqRow.ModelBody;
                 equip[2] = eqRow.ModelHands;
@@ -186,6 +198,8 @@ public class GameDataService
         }
         else
         {
+            mainHand = baseRow.ModelMainHand;
+            offHand = baseRow.ModelOffHand;
             equip[0] = baseRow.ModelHead;
             equip[1] = baseRow.ModelBody;
             equip[2] = baseRow.ModelHands;
@@ -198,7 +212,54 @@ public class GameDataService
             equip[9] = baseRow.ModelLeftRing;
         }
 
-        return new NpcAppearanceData(0, cust, equip);
+        return new NpcAppearanceData(0, cust, equip, 1, mainHand, offHand);
+    }
+
+    /// <summary>
+    /// モンスター・デミヒューマン（BNpcBase）の装備および武器モデルを解決
+    /// BNpcBase.NpcEquip に武器が定義されている場合はその武器を返し、武器を持たないモブは 0 を返す
+    /// </summary>
+    public (ulong[]? equip, ulong mainHand, ulong offHand) GetMonsterEquipment(uint bNpcBaseId, uint modelCharaId)
+    {
+        ulong[]? equip = null;
+        ulong mainHand = 0;
+        ulong offHand = 0;
+
+        try
+        {
+            if (bNpcBaseId > 0)
+            {
+                var baseSheet = dataManager.GetExcelSheet<BNpcBase>();
+                if (baseSheet != null && baseSheet.TryGetRow(bNpcBaseId, out var bRow))
+                {
+                    if (bRow.NpcEquip.RowId > 0)
+                    {
+                        var equipSheet = dataManager.GetExcelSheet<NpcEquip>();
+                        if (equipSheet != null && equipSheet.TryGetRow(bRow.NpcEquip.RowId, out var eqRow))
+                        {
+                            mainHand = eqRow.ModelMainHand;
+                            offHand = eqRow.ModelOffHand;
+                            equip = [
+                                eqRow.ModelHead, eqRow.ModelBody, eqRow.ModelHands, eqRow.ModelLegs, eqRow.ModelFeet,
+                                eqRow.ModelEars, eqRow.ModelNeck, eqRow.ModelWrists, eqRow.ModelRightRing, eqRow.ModelLeftRing
+                            ];
+                        }
+                    }
+                }
+            }
+
+            // デミヒューマン (McType == 2: サキュバス等) の標準装備でフォールバック
+            if (equip == null && modelCharaId > 0)
+            {
+                equip = GetDemiHumanEquipment(modelCharaId);
+            }
+        }
+        catch (Exception ex)
+        {
+            logManager?.Warning($"GetMonsterEquipment failed for BNpcBase #{bNpcBaseId} (Model: {modelCharaId}): {ex.Message}");
+        }
+
+        return (equip, mainHand, offHand);
     }
 
     public IReadOnlyList<TimelineEntry> SearchTimelines(string query, string category = "All", string? modelPrefix = null, int maxResults = 0, HashSet<ushort>? favoriteIds = null)

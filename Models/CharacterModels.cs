@@ -35,6 +35,8 @@ public class CharacterTemplate
     public bool WeaponVisible { get; set; } = true;
     public byte[]? CustomizeData { get; set; }
     public ulong[]? NpcEquipmentModelIds { get; set; } // Head, Body, Hands, Legs, Feet, Ears, Neck, Wrists, RingR, RingL
+    public ulong NpcMainHandModelId { get; set; } = 0;
+    public ulong NpcOffHandModelId { get; set; } = 0;
     public Dictionary<EquipSlot, EquipmentItem>? Equipment { get; set; }
 
     // External integration data
