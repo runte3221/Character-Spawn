@@ -592,7 +592,6 @@ public class SceneEditWindow : Window, IDisposable
         }
 
         // 対象アクターがモンスター・マウント・ミニオン・デミヒューマン等の場合、モデル固有モーション絞り込みトグルを表示
-        var template = configuration.Templates.FirstOrDefault(t => t.Id == placement.CharacterTemplateId);
         string? activeModelPrefix = null;
         if (template != null && template.ModelCharaId > 0 && gameDataService != null)
         {
