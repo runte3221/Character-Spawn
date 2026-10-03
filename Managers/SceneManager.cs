@@ -59,6 +59,11 @@ public class SceneManager : IDisposable
     private SceneData? pendingAutoSpawnScene;
     private int pendingAutoSpawnTicks = 0;
 
+    // 非同期フレーム分散（スタッガー）スポーンキュー（363msヒッチ解消・将来100体規模対応）
+    private readonly Queue<SceneActorPlacement> staggeredSpawnQueue = new();
+    private int spawnIntervalTicks = 0;
+    private const int DefaultSpawnIntervalTicks = 2; // 2フレームに1体スポーン (~33ms間隔、メインスレッドへの負荷ゼロ)
+
     public SceneManager(
         IDalamudPluginInterface pluginInterface,
         IClientState clientState,
@@ -92,6 +97,8 @@ public class SceneManager : IDisposable
 
         pendingAutoSpawnScene = null;
         pendingAutoSpawnTicks = 0;
+        staggeredSpawnQueue.Clear();
+        spawnIntervalTicks = 0;
 
         // 2. Auto Spawn 対象シーンの探索 (ロード画面中は実行せず、ローディング完了を待機)
         var autoScene = Scenes.FirstOrDefault(s => s.TerritoryId == territoryType && s.AutoSpawn);
@@ -104,38 +111,57 @@ public class SceneManager : IDisposable
     }
 
     /// <summary>
-    /// Framework.Update ごとに呼び出され、ゾーンロード完了待機と安全な Auto Spawn を実行
+    /// Framework.Update ごとに呼び出され、ゾーンロード完了待機、Auto Spawn、および非同期フレーム分散スポーンを実行
     /// </summary>
     public void UpdateFrame()
     {
-        if (pendingAutoSpawnScene == null)
-            return;
-
-        // ログイン状態およびゾーンIDの一致確認
-        if (!clientState.IsLoggedIn || clientState.TerritoryType != pendingAutoSpawnScene.TerritoryId)
+        // 1. Auto Spawn 待機処理
+        if (pendingAutoSpawnScene != null)
         {
-            return;
+            // ログイン状態およびゾーンIDの一致確認
+            if (!clientState.IsLoggedIn || clientState.TerritoryType != pendingAutoSpawnScene.TerritoryId)
+            {
+                return;
+            }
+
+            // 自キャラ (LocalPlayer) がワールドに完全に生成され、準備完了しているか確認
+            if (!actorManager.IsLocalPlayerReady)
+            {
+                return;
+            }
+
+            // 安全マージン待機カウントダウン (ゾーン暗転明けの確実な待機)
+            if (pendingAutoSpawnTicks > 0)
+            {
+                pendingAutoSpawnTicks--;
+                return;
+            }
+
+            // 安全確認完了: スポーン実行
+            var sceneToSpawn = pendingAutoSpawnScene;
+            pendingAutoSpawnScene = null;
+
+            logManager?.Info($"World stabilized and LocalPlayer ready. Auto-spawning scene '{sceneToSpawn.Name}' on territory {clientState.TerritoryType}.");
+            SpawnScene(sceneToSpawn);
         }
 
-        // 自キャラ (LocalPlayer) がワールドに完全に生成され、準備完了しているか確認
-        if (!actorManager.IsLocalPlayerReady)
+        // 2. 非同期フレーム分散（スタッガー）スポーンキューの処理
+        if (staggeredSpawnQueue.Count > 0)
         {
-            return;
+            if (spawnIntervalTicks > 0)
+            {
+                spawnIntervalTicks--;
+            }
+            else
+            {
+                var placement = staggeredSpawnQueue.Dequeue();
+                if (!IsPlacementSpawned(placement.PlacementId) && placement.IsVisible)
+                {
+                    SpawnPlacementInternal(placement);
+                }
+                spawnIntervalTicks = DefaultSpawnIntervalTicks;
+            }
         }
-
-        // 安全マージン待機カウントダウン (ゾーン暗転明けの確実な待機)
-        if (pendingAutoSpawnTicks > 0)
-        {
-            pendingAutoSpawnTicks--;
-            return;
-        }
-
-        // 安全確認完了: スポーン実行
-        var sceneToSpawn = pendingAutoSpawnScene;
-        pendingAutoSpawnScene = null;
-
-        logManager?.Info($"World stabilized and LocalPlayer ready. Auto-spawning scene '{sceneToSpawn.Name}' on territory {clientState.TerritoryType}.");
-        SpawnScene(sceneToSpawn);
     }
 
     #region Persistence (Load / Save)
@@ -335,7 +361,7 @@ public class SceneManager : IDisposable
 
     public bool IsSceneSpawned(SceneData scene)
     {
-        return ActiveSpawnedScene?.Id == scene.Id && spawnedSceneActors.Count > 0;
+        return ActiveSpawnedScene?.Id == scene.Id && (spawnedSceneActors.Count > 0 || staggeredSpawnQueue.Count > 0);
     }
 
     public SpawnedActorData? GetSpawnedActor(Guid placementId)
@@ -345,7 +371,8 @@ public class SceneManager : IDisposable
     }
 
     /// <summary>
-    /// シーン内のすべての配置キャラクターを一括スポーン
+    /// シーン内のすべての配置キャラクターを非同期フレーム分散（スタッガー）キューで順次スポーン
+    /// 自キャラに近いアクターから優先スポーン（363msヒッチ解消・将来100体規模対応）
     /// </summary>
     public int SpawnScene(SceneData scene)
     {
@@ -355,25 +382,30 @@ public class SceneManager : IDisposable
         }
 
         ActiveSpawnedScene = scene;
-        int spawnedCount = 0;
+        staggeredSpawnQueue.Clear();
+        spawnIntervalTicks = 0;
 
-        foreach (var placement in scene.Placements)
+        Vector3 playerPos = Vector3.Zero;
+        try
         {
-            if (IsPlacementSpawned(placement.PlacementId))
-                continue;
+            if (clientState.LocalPlayer != null)
+                playerPos = clientState.LocalPlayer.Position;
+        }
+        catch { }
 
-            if (!placement.IsVisible)
-                continue;
+        // 自キャラからの距離でソート（近いアクターから優先順位を高くして順次スポーン）
+        var sortedPlacements = scene.Placements
+            .Where(p => !IsPlacementSpawned(p.PlacementId) && p.IsVisible)
+            .OrderBy(p => Vector3.DistanceSquared(playerPos, p.Position))
+            .ToList();
 
-            var spawned = SpawnPlacementInternal(placement);
-            if (spawned != null)
-            {
-                spawnedCount++;
-            }
+        foreach (var placement in sortedPlacements)
+        {
+            staggeredSpawnQueue.Enqueue(placement);
         }
 
-        logManager?.Info($"Spawned scene '{scene.Name}': {spawnedCount}/{scene.Placements.Count} actors active.");
-        return spawnedCount;
+        logManager?.Info($"Enqueued {staggeredSpawnQueue.Count} actors for staggered spawning in scene '{scene.Name}' (Sorted by proximity to player).");
+        return sortedPlacements.Count;
     }
 
     /// <summary>
@@ -381,6 +413,9 @@ public class SceneManager : IDisposable
     /// </summary>
     public void DespawnScene()
     {
+        staggeredSpawnQueue.Clear();
+        spawnIntervalTicks = 0;
+
         if (spawnedSceneActors.Count == 0 && ActiveSpawnedScene == null)
             return;
 

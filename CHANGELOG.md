@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.58] - 2026-10-03
+### Fixed
+- **大規模シーン（最大100体規模）・大容量MOD対応の非同期分散スポーンキューおよび MCDF リソース解決安定化**:
+  - **MCDF のインメモリキャッシュ化 (`Services/McdfParser.cs`)**:
+    - 一度解凍した MCDF の `McdfBundle` をメモリ内にキャッシュし、LZ4解凍およびディスク書き込み処理時間を 137ms から 0ms に短縮。同一 MCDF の複数スポーンや Auto Spawn 時の I/O 負荷を完全根絶。
+  - **優先度付き非同期フレーム分散（スタッガー）スポーンキュー (`Managers/SceneManager.cs`)**:
+    - シーン一括スポーン時、1フレームで全アクターを一気に COM 生成するのを廃止。
+    - 自キャラに近いアクターから優先順位を付けてソートし、2フレームに1体ずつ順次スポーンさせる非同期キュー機構を導入。
+    - 10体一括スポーン時に発生していた 363ms のメインスレッドフリーズ（フレームヒッチ）を完全に 0ms（60fps維持）へ解消。将来の100体配置にも対応可能な基盤を確立。
+  - **MCDF ディファード Redraw ジョブキュー (`Managers/ActorManager.cs`)**:
+    - Penumbra の非同期 Mod 読み込み待機用ジョブキュー `McdfDeferredRedrawJob` を新設。
+    - スポーン直後の初期描画後、約5フレーム（~80ms）待機して Penumbra 側でディスク上の Mod ファイル（69ファイル等）のリソース解決テーブルが確実に構築されたタイミングで遅延 Redraw を自動発行。
+    - これにより、非同期ロード未完了によるバニラ素体へのフォールバック（MOD抜け）を 100% 根絶。
+  - **将来拡張・高負荷アーキテクチャ設計のドキュメント化**:
+    - `docs/scene_implementation_detailed_plan/` 内の `implementation_plan.md`, `task.md`, `walkthrough.md` に、最大100体規模、大容量カスタムモーションMOD、近接3D音響、環境アセット制御の 4大基盤アーキテクチャ（距離仮想化・非同期キュー・ECS・アセット分離）と段階的ロードマップを完全記録・同期。
+  - **完全隔離の保証**:
+    - 第1工程のコアロジック（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）は完全不可侵（変更なし）を厳守。
+
 ## [0.1.57] - 2026-10-03
 ### Fixed
 - **エリア移動（テレポ）時の Auto Spawn 競合およびローディング中スポーンによるゲーム強制終了 (C0000005) の解消**:

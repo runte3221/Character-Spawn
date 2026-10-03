@@ -28,12 +28,18 @@
     - [x] 全タブ共通上段: 4モードギズモ切替 (Select, Translate, Rotate, Scale) + テンプレート選択コンボ + `[+Add]`
     - [x] アクター一覧リスト: 紫色の人アイコン + Custom Name (または Character Name) + 右端の目のアイコン (表示/非表示即時トグル) + 右下 `[Delete]`
     - [x] 下段 `[Spawn]` タブ: Character Name (表示専用), Custom Name / Custom Title 入力 & チェックボックス, Translation (X,Y,Z), Rotation (角度), Scale, `[Apply Own Transform]` ボタン
+- [ ] **1-5. 大規模（〜100体）・高負荷対応非同期スポーンキュー＆MCDFリソース解決安定化**:
+  - [ ] `McdfParser.cs`: MCDF バンドルのインメモリキャッシュ機構（LZ4解凍時間 137ms → 0ms）
+  - [ ] `SceneManager.cs`: シーン一括スポーン時の非同期フレーム分散（スタッガー）スポーンキュー（メインスレッドヒッチ 363ms → 0ms）
+  - [ ] `ActorManager.cs`: MCDF アクターに対する Penumbra 非同期リソース解決待機（ディファード Redraw ジョブキュー）
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか
   - [ ] [QA-1-3] 一括デスポーン時に一時コレクション・一時プロファイル・COMスロットが完全に解放されるか
   - [ ] [QA-1-4] 既存の「Character」タブ（Preview）との相互切り替えで干渉・衝突が起きないか
   - [ ] [QA-1-5] テリトリー移動時に残留オブジェクトやクラッシュが発生しないか
+  - [ ] [QA-1-6] 10体以上のシーン（MCDF含有）を Auto Spawn した際に、ヒッチなく全員の MOD・外見が抜けずに正しく描画されるか
+
 
 ---
 

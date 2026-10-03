@@ -56,6 +56,16 @@ public unsafe class ActorManager : IDisposable
     }
     private readonly List<HumanoidNpcApplyJob> humanoidNpcApplyJobs = new();
 
+    // MCDF 非同期 Mod リソース解決待機キュー (Penumbra 非同期ロード完了待ちディファード Redraw)
+    private sealed class McdfDeferredRedrawJob
+    {
+        public SpawnedActorData Spawned = null!;
+        public ushort GlobalIndex;
+        public int Ticks;
+        public const int DelayTicks = 5; // Penumbra の非同期 Mod 読み込み待機 (約5フレーム / ~80ms)
+    }
+    private readonly List<McdfDeferredRedrawJob> mcdfDeferredRedrawJobs = new();
+
     private int puppetSerial = 0;
     private const int MaxReadyTicks = 200;
 
@@ -126,6 +136,8 @@ public unsafe class ActorManager : IDisposable
             }
         }
         monsterRedrawJobs.Clear();
+        humanoidNpcApplyJobs.Clear();
+        mcdfDeferredRedrawJobs.Clear();
         activeActors.Clear();
         createdIndexes.Clear();
         CurrentPreviewActor = null;
@@ -487,6 +499,8 @@ public unsafe class ActorManager : IDisposable
         {
             actor.IsReady = false;
             monsterRedrawJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
+            humanoidNpcApplyJobs.RemoveAll(j => j.Spawned == actor || j.Spawned.GlobalIndex == actor.GlobalIndex);
+            mcdfDeferredRedrawJobs.RemoveAll(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex);
 
             // Penumbra 一時コレクションのクリーンアップ (AQR / Mare 準拠)
             if (actor.TemporaryCollectionGuid.HasValue)
@@ -792,6 +806,42 @@ public unsafe class ActorManager : IDisposable
                 }
             }
 
+            // MCDF 非同期 Mod リソース解決待機ジョブ (Penumbra 非同期ロード完了待ちディファード Redraw)
+            if (mcdfDeferredRedrawJobs.Count > 0)
+            {
+                for (int i = mcdfDeferredRedrawJobs.Count - 1; i >= 0; i--)
+                {
+                    try
+                    {
+                        var job = mcdfDeferredRedrawJobs[i];
+                        job.Ticks++;
+
+                        if (!activeActors.Contains(job.Spawned))
+                        {
+                            mcdfDeferredRedrawJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        if (job.Ticks < McdfDeferredRedrawJob.DelayTicks)
+                            continue;
+
+                        // Penumbra の非同期ファイル解決が完了したタイミングで最終 Redraw を実行
+                        if (penumbraIpc.IsAvailable && job.GlobalIndex < objectTable.Length)
+                        {
+                            penumbraIpc.Redraw((int)job.GlobalIndex);
+                            logManager?.Info($"[Pipeline B: MCDF] Deferred Penumbra Redraw executed for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex} after {job.Ticks} ticks.");
+                        }
+
+                        mcdfDeferredRedrawJobs.RemoveAt(i);
+                    }
+                    catch (Exception ex)
+                    {
+                        logManager?.Error($"McdfDeferredRedrawJob exception: {ex}");
+                        if (i < mcdfDeferredRedrawJobs.Count) mcdfDeferredRedrawJobs.RemoveAt(i);
+                    }
+                }
+            }
+
             // 全アクティブアクターの描画可視化保証 (Brio DrawWhenReady & AQR 準拠)
             foreach (var actor in activeActors)
             {
@@ -988,6 +1038,18 @@ public unsafe class ActorManager : IDisposable
                         {
                             penumbraIpc.Redraw(actorIndex);
                             logManager?.Info($"MCDF Penumbra Redraw for Global#{actorIndex}.");
+                        }
+
+                        // Penumbra 非同期ファイル解決完了を待って確実に MOD を適用させるディファード Redraw キューへ登録
+                        if (spawned != null)
+                        {
+                            mcdfDeferredRedrawJobs.RemoveAll(j => j.Spawned == spawned || j.GlobalIndex == (ushort)actorIndex);
+                            mcdfDeferredRedrawJobs.Add(new McdfDeferredRedrawJob
+                            {
+                                Spawned = spawned,
+                                GlobalIndex = (ushort)actorIndex,
+                                Ticks = 0
+                            });
                         }
 
                         // Customize+ Profile の適用

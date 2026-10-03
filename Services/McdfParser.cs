@@ -12,6 +12,7 @@ namespace CharacterSpawn.Services;
 public class McdfParser
 {
     private readonly IPluginLog log;
+    private readonly Dictionary<string, (DateTime LastModified, McdfBundle Bundle)> memoryCache = new(StringComparer.OrdinalIgnoreCase);
 
     public record McdfData(string? GlamourerDesign, byte[]? CustomizeData, string? Description);
 
@@ -29,6 +30,14 @@ public class McdfParser
         this.log = log;
     }
 
+    public void ClearCache()
+    {
+        lock (memoryCache)
+        {
+            memoryCache.Clear();
+        }
+    }
+
     /// <summary>
     /// AQR / Mare 準拠: MCDF から外見文字列および内包 Mod ファイル群を展開し、Penumbra 用のパス対応マップを生成する
     /// </summary>
@@ -42,6 +51,28 @@ public class McdfParser
 
         try
         {
+            var lastWrite = File.GetLastWriteTimeUtc(filePath);
+            lock (memoryCache)
+            {
+                if (memoryCache.TryGetValue(filePath, out var cached) && cached.LastModified == lastWrite)
+                {
+                    bool allFilesExist = true;
+                    foreach (var p in cached.Bundle.ModPaths.Values)
+                    {
+                        if (!File.Exists(p))
+                        {
+                            allFilesExist = false;
+                            break;
+                        }
+                    }
+                    if (allFilesExist)
+                    {
+                        log.Information($"MCDF cache hit for '{Path.GetFileName(filePath)}' (ModFiles: {cached.Bundle.ModPaths.Count}). Skipping extraction.");
+                        return cached.Bundle;
+                    }
+                }
+            }
+
             using var fileStream = File.OpenRead(filePath);
             using var lz4Stream = new LZ4Stream(fileStream, LZ4StreamMode.Decompress, LZ4StreamFlags.HighCompression);
             using var reader = new BinaryReader(lz4Stream);
@@ -121,6 +152,11 @@ public class McdfParser
                         }
                     }
                 }
+            }
+
+            lock (memoryCache)
+            {
+                memoryCache[filePath] = (lastWrite, bundle);
             }
 
             log.Information($"Extracted MCDF '{Path.GetFileName(filePath)}': GlamourerLen={bundle.GlamourerDesign?.Length ?? 0}, ModFiles={bundle.ModPaths.Count}");
