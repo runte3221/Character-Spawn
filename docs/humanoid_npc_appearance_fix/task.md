@@ -38,6 +38,6 @@
   - [x] `GetStateName` による自キャラ名ベースのテンプレート取得フォールバックを追加。
   - [x] `ActorManager.cs` から `localPlayerName` を渡すように連携。
 - [x] `CHANGELOG.md` 更新（v0.1.45.0）
-- [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.45.0`)
+- [x] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.45.0`)
 - [ ] ゲーム内実機でのユウギリ固有顔描画の確認
 
