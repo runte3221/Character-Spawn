@@ -29,6 +29,9 @@ public class SceneData
     public uint TerritoryId { get; set; } = 0; // 0 = どこでも可
     public string Description { get; set; } = string.Empty;
     public List<SceneActorPlacement> Placements { get; set; } = new();
+
+    // Phase 5: マップ上の消去アセット一覧（正式実装）
+    public List<SceneHiddenAssetEntry> HiddenAssets { get; set; } = new();
 }
 
 public class SceneActorPlacement
@@ -40,9 +43,14 @@ public class SceneActorPlacement
     public float Rotation { get; set; }
     public bool AutoSpawnOnTerritory { get; set; } = false;
 
-    // Phase 2, 3 の設定用オブジェクト (null 安全)
+    // Phase 2: モーション・視線・接近リアクション設定
     public SceneActorMotionConfig Motion { get; set; } = new();
+
+    // Phase 3: ネームプレート・称号設定
     public SceneActorNamePlateConfig NamePlate { get; set; } = new();
+
+    // Phase 4: 接近時サウンド設定（正式実装）
+    public SceneActorSoundConfig Sound { get; set; } = new();
 }
 ```
 
@@ -124,15 +132,45 @@ public class SceneActorPlacement
 
 ---
 
-### ■ Phase 4: サウンド制御 (将来拡張)
-- 3D 空間音響による接近時オーディオ再生。
-- 距離減衰式: $\text{Volume} = \text{Clamp}(1.0 - \frac{\text{Distance}}{\text{MaxDistance}}, 0.0, 1.0) \times \text{BaseVolume}$
-- **[QA-4-1]**: 接近時にフェードインし、離れると自然に消音するか。
-- **[QA-4-2]**: ファイル不正時に安全にエラーログを出力しクラッシュしないか。
+### ■ Phase 4: 3D空間オーディオ・接近サウンド制御（正式実装）
+
+#### 1. 3D空間オーディオエンジン (`Services/SoundService.cs`)
+- パペットの 3D 座標とプレイヤー座標の距離減衰・パンニング計算。
+- 距離減衰式:
+  $$\text{Volume} = \text{Clamp}\left(1.0 - \frac{\text{Distance}}{\text{TriggerDistance}}, 0.0, 1.0\right) \times \text{BaseVolume}$$
+- 接近判定:
+  - プレイヤーが `TriggerDistance` 内に入ると、設定された音声（ゲーム内環境音/SE、または外部 WAV/OGG/MP3 ファイル）を自動再生（フェードイン）。
+  - 離脱時は自然にフェードアウト・停止。
+
+#### 2. UI 統合
+- 各配置キャラクターの設定モーダル内に「サウンド設定」タブを追加。
+- 音声ファイルパス選択（または内蔵サウンド一覧）、プレビュー再生ボタン、検知距離・基準音量スライダー。
+
+#### 【Phase 4 の品質検証チェックリスト】
+- [ ] **[QA-4-1: 接近フェードと減衰]**: プレイヤーが近づいた時に音が自然に立ち上がり、離れると距離に応じて減衰・消音するか。
+- [ ] **[QA-4-2: 音声ファイルの安全ハンドリング]**: 指定ファイルが存在しない、またはフォーマット不正の場合でも、ゲームが落ちず安全に警告ログが出るか。
+- [ ] **[QA-4-3: 複数音源の定位]**: 複数のパペットに異なる音声を配置した場合、それぞれの方向（左右パン）と距離から自然に立体的に聞こえるか。
 
 ---
 
-### ■ Phase 5: アセットハイダー (将来拡張)
-- Stagehand 準拠のレイキャスト選択と `DisableDraw()`。
-- **[QA-5-1]**: 目的の椅子・道具だけがピンポイントで消去できるか。
-- **[QA-5-2]**: シーンデスポーン時、消したオブジェクトが確実に 100% 復活するか。
+### ■ Phase 5: マップアセット消去・スポイト制御（正式実装）
+
+#### 1. スポイト機能とオブジェクト検出 (`Services/AssetHiderService.cs`)
+- Stagehand / Brio 準拠のレイキャスト処理。
+- マウスカーソル直下、またはプレイヤー前方の視線光線（Ray）とマップの衝突判定（BG / Layout / Housing オブジェクト）。
+- クリックされたオブジェクトのポインタ（`DrawObject*`）と識別子（ModelId, SGB ID, 座標）を取得。
+
+#### 2. 非表示制御とシーン保存
+- 該当オブジェクトの描画ポインタに対して `DrawObject->DisableDraw()` または可視フラグ操作を実行し、**マップ上から目的の小道具・家具をピンポイントで消去**。
+- シーンデータ `SceneData.HiddenAssets` に消去したオブジェクト情報を記録。
+- シーンスポーン時に自動消去、シーンデスポーン時またはゾーン移動時に `EnableDraw()` で 100% 確実に復元。
+
+#### 3. UI 統合
+- Scene タブに「アセット消去（スポイト）」サブセクションを追加。
+- 「スポイト開始」トグルボタン、選択中のオブジェクトのハイライト表示。
+- 「消去アセット一覧」テーブル、個別「復元」ボタン、一括復元ボタン。
+
+#### 【Phase 5 の品質検証チェックリスト】
+- [ ] **[QA-5-1: ピンポイント消去]**: 目的の椅子・道具だけが正確に消え、周囲の地面・壁・建物全体が巻き添えで消えないか。
+- [ ] **[QA-5-2: シーン連動の完全復元]**: シーンデスポーン時、または別エリアへテレポした際、消去されていたオブジェクトが 100% 元通り再表示されるか。
+- [ ] **[QA-5-3: シーン再スポーン時の自動再消去]**: 一度保存したシーンを再スポーンさせた際、以前消去したオブジェクトが自動的に再び消去されるか。
