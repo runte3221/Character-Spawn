@@ -29,5 +29,5 @@
 ## 3. ドキュメント・リリース・検証フェーズ
 - [x] `docs/customize_plus_temporary_profile_migration/` の 3 ファイル作成・更新
 - [x] `CHANGELOG.md` 更新（v0.1.52.0）
-- [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.52.0`)
+- [x] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.52.0` / CI/CD 成功確認)
 - [ ] 実機での Customize+ 適用・デスポーン動作確認
