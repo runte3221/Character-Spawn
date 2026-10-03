@@ -304,7 +304,8 @@ public class PenumbraIpc
     /// </summary>
     public bool UnassignCollectionForActor(int actorIndex)
     {
-        if (!IsAvailable) return false;
+        // 自キャラ (Index 0) や無効なインデックスは絶対に保護
+        if (!IsAvailable || actorIndex <= 0) return false;
 
         bool success = false;
 
@@ -323,32 +324,18 @@ public class PenumbraIpc
             }
         }
 
-        // 2. 通常コレクションの割り当て解除 (null / Guid.Empty)
+        // 2. 通常コレクションの個別設定をリストから完全削除 (null 渡し & allowCreateNew: false, allowDelete: true)
         if (setCollectionForObjectV5NullableGuid != null)
         {
             try
             {
-                var res = setCollectionForObjectV5NullableGuid.InvokeFunc(actorIndex, null, true, true);
-                log.Information($"Penumbra Unassign SetCollectionForObject.V5 (null) from actor #{actorIndex}: ec={res.Item1}");
+                var res = setCollectionForObjectV5NullableGuid.InvokeFunc(actorIndex, null, false, true);
+                log.Information($"Penumbra Remove Individual Assignment (null) for actor #{actorIndex}: ec={res.Item1}");
                 if (res.Item1 == 0 || res.Item1 == 1) success = true;
             }
             catch (Exception ex)
             {
                 log.Debug($"Unassign SetCollection nullable failed: {ex.Message}");
-            }
-        }
-
-        if (setCollectionForObjectV5Guid != null)
-        {
-            try
-            {
-                var res = setCollectionForObjectV5Guid.InvokeFunc(actorIndex, Guid.Empty, true, true);
-                log.Information($"Penumbra Unassign SetCollectionForObject.V5 (Guid.Empty) from actor #{actorIndex}: ec={res.Item1}");
-                if (res.Item1 == 0 || res.Item1 == 1) success = true;
-            }
-            catch (Exception ex)
-            {
-                log.Debug($"Unassign SetCollection Guid.Empty failed: {ex.Message}");
             }
         }
 

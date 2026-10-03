@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.68] - 2026-10-03
+### Fixed
+- **Penumbra 個別設定リスト（Individual Assignments）汚染防止＆自キャラ設定の完全保護 (`Services/PenumbraIpc.cs` & `Managers/ActorManager.cs`)**:
+  - **根本原因の解明**:
+    - `PenumbraIpc.UnassignCollectionForActor` において、`null` 渡しによる削除処理の直後に `setCollectionForObjectV5Guid(actorIndex, Guid.Empty, true, true)` が実行されていた。
+    - Penumbra の仕様上、`Guid.Empty` は「Use No Mods（Mod無効）」コレクションを意味し、`allowCreateNew: true` のため、削除した直後に `[Use No Mods]` の個別設定カードがリストに再作成・永続保存されていた。
+  - **解除ロジックの適正化 (`Services/PenumbraIpc.cs`)**:
+    - `Guid.Empty` の呼び出しを完全撤廃。
+    - 通常コレクションの解除は `setCollectionForObjectV5NullableGuid(actorIndex, null, allowCreateNew: false, allowDelete: true)` のみに統一。これにより、アクターを Hide（デスポーン）した瞬間に Penumbra のリストから該当カード自体が自動的に完全削除され、`[Use No Mods]` が残る不具合を 100% 根絶。
+    - `actorIndex <= 0` ガードを追加し、自キャラ（LocalPlayer: Index 0）の Penumbra 設定を物理保護。
+  - **自キャラ設定の完全保護 (`Managers/ActorManager.cs`)**:
+    - `RevertLocalPlayer()` から `penumbraIpc.UnassignCollectionForActor(0)` の呼び出しを削除。ユーザーが自キャラに手動で割り当てている Penumbra コレクションやデフォルト設定を Character Spawn 側から誤ってリセット・削除するリスクを完全に排除。
+  - **完全隔離の保証**:
+    - 第1工程のコア（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）の基本仕様を壊さず完全隔離・安全保持。自キャラ（LocalPlayer）への二重物理遮断を厳守。
+
 ## [0.1.67] - 2026-10-03
 ### Fixed
 - **人型アクター（NPC ユウギリ、Chonk、自キャラクローン等）のフレーム更新によるスケールリセット防止＆常時維持 (`Managers/ActorManager.cs`)**:

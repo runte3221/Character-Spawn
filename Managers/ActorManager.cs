@@ -1524,11 +1524,7 @@ public unsafe class ActorManager : IDisposable
                 var player = objectTable.Length > 0 ? objectTable[0] as ICharacter : null;
                 string? name = player?.Name.TextValue;
                 glamourerIpc?.RevertLocalPlayer(name, player);
-                if (penumbraIpc != null && penumbraIpc.IsAvailable)
-                {
-                    penumbraIpc.UnassignCollectionForActor(0);
-                }
-                logManager?.Info($"Reverted LocalPlayer state via Glamourer & Penumbra on main thread (Name: '{name}').");
+                logManager?.Info($"Reverted LocalPlayer state via Glamourer on main thread (Name: '{name}').");
             }
             catch (Exception ex)
             {
