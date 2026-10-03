@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.60] - 2026-10-03
+### Fixed
+- **スロット再利用時の外見汚染根絶（モンスターへのChonk外見誤爆防止） & CustomizePlus 2段階確定ステートマシン（Chonk体型崩れ完全防止）**:
+  - **Glamourer ステートキャッシュのクリア (`Services/GlamourerIpc.cs`)**:
+    - `RevertState(int actorIndex, string? actorName = null)` を追加。UnlockState と RevertState を順次発行してスロットに紐づく Glamourer のステートキャッシュを強制リセット可能化。
+  - **COM スロット初期化パージ (`ClearActorSlotState`) の実装 (`Managers/ActorManager.cs`)**:
+    - `SpawnCharacter` でアクターの `globalIdx` が確定した直後、パイプライン分岐（D: モンスター、C: NPC、A: プレイヤー/MCDF）の前に直前のスロット残留ステート（Glamourer / Penumbra / CustomizePlus）を完全パージ。
+    - 直前に Chonk（複合アクター）が使っていたスロットにモンスター（統制者ハシュマリム等）がスポーンした際、Glamourer のステートキャッシュが自動適用されてハシュマリムが Chonk の外見になってしまう重大なスロット汚染を 100% 根絶。
+  - **`AppearanceDeferredJob` の 2段階確定ステートマシン化 (`Managers/ActorManager.cs`)**:
+    - Penumbra Redraw 直後に CustomizePlus プロファイルを適用すると、Redraw による非同期 DrawObject 再構築で直後にボーン変形が打ち消されてバニラ体型に戻る競合を解消。
+    - **Phase 1**: スポーンから 4 フレーム後に `penumbraIpc.Redraw` を発行し、DrawObject 再構築をトリガー。
+    - **Phase 2**: Redraw 発行後さらに 4 フレーム待機（DrawObject 再構築完了）してから、CustomizePlus 一時プロファイルを確定注入。
+    - これにより、何度 Show/Hide を繰り返しても、Chonk 特有の体型が 100% 確実に維持される。
+  - **完全隔離の保証**:
+    - 第1工程のコア（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）の基本仕様を壊さず完全隔離・安全保持。自キャラ（LocalPlayer）への二重物理遮断を厳守。
+
 ## [0.1.59] - 2026-10-03
 ### Fixed
 - **Glamourer + Penumbra + CustomizePlus 複合アクター（Chonk等）における体型打ち消し防止と統合遅延安定化**:

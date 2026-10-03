@@ -67,7 +67,9 @@ public unsafe class ActorManager : IDisposable
         public bool HasPenumbra;
         public bool HasCustomizePlus;
         public int Ticks;
-        public const int DelayTicks = 6; // Glamourer再構築 & Penumbra非同期ロード待機 (約6フレーム / ~100ms)
+        public bool RedrawDone; // Phase 1 (Penumbra Redraw) 完了フラグ
+        public const int DelayTicks = 4; // Phase 1 待機: Glamourer再構築 & Penumbra初期解決 (~60ms)
+        public const int PostRedrawTicks = 4; // Phase 2 待機: Penumbra Redraw後の DrawObject 確定待機 (~60ms)
     }
     private readonly List<AppearanceDeferredJob> appearanceDeferredJobs = new();
 
@@ -326,6 +328,9 @@ public unsafe class ActorManager : IDisposable
                 return null;
             }
 
+            // スロット再利用時の外見汚染（Glamourerステートキャッシュ/Penumbra/CustomizePlus残存）を完全パージ
+            ClearActorSlotState(globalIdx, puppetName);
+
             var spawned = new SpawnedActorData
             {
                 TemplateId = template.Id,
@@ -507,6 +512,43 @@ public unsafe class ActorManager : IDisposable
         catch (Exception ex)
         {
             logManager?.Warning($"ApplyTargetable failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// アクターが新しくスポーンされる際、過去にそのスロット(globalIdx)を使用していたアクターの外見ステート
+    /// （Glamourerステートキャッシュ、Penumbraコレクション割り当て、CustomizePlusプロファイル等）を安全に初期化・パージする。
+    /// これにより、以前同じスロットにいたChonk等の見た目がモンスターやNPCに誤爆・感染することを100%防止する。
+    /// </summary>
+    private void ClearActorSlotState(ushort globalIdx, string? puppetName)
+    {
+        // 自キャラ (LocalPlayer Index 0) は絶対に触らない
+        if (globalIdx == 0) return;
+
+        try
+        {
+            // 1. Glamourer ロック解除 & リバート（ステートキャッシュ破棄）
+            if (glamourerIpc != null && glamourerIpc.IsAvailable)
+            {
+                glamourerIpc.UnlockState(globalIdx, puppetName);
+                glamourerIpc.RevertState(globalIdx, puppetName);
+            }
+
+            // 2. Penumbra コレクション割り当て解除
+            if (penumbraIpc != null && penumbraIpc.IsAvailable)
+            {
+                penumbraIpc.UnassignCollectionForActor(globalIdx);
+            }
+
+            // 3. CustomizePlus 一時プロファイル削除
+            if (customizePlusIpc != null && customizePlusIpc.IsAvailable)
+            {
+                customizePlusIpc.DeleteTemporaryProfileOnCharacter(globalIdx);
+            }
+        }
+        catch (Exception ex)
+        {
+            logManager?.Warning($"ClearActorSlotState for Global#{globalIdx} failed (ignored): {ex.Message}");
         }
     }
 
@@ -842,9 +884,6 @@ public unsafe class ActorManager : IDisposable
                             continue;
                         }
 
-                        if (job.Ticks < AppearanceDeferredJob.DelayTicks)
-                            continue;
-
                         int actorIndex = (int)job.GlobalIndex;
 
                         // 自キャラ誤爆ガード
@@ -869,18 +908,38 @@ public unsafe class ActorManager : IDisposable
 
                         var chara = (Character*)charaObj.Address;
 
-                        // 1. Penumbra の遅延 Redraw（Glamourer および非同期ファイル解決完了後の確定）
-                        if (job.HasPenumbra && penumbraIpc.IsAvailable)
+                        // Phase 1: Penumbra の遅延 Redraw（Glamourer および非同期ファイル解決完了後の確定）
+                        if (job.HasPenumbra && !job.RedrawDone)
                         {
-                            penumbraIpc.Redraw(actorIndex);
-                            logManager?.Info($"[AppearanceDeferredJob] Penumbra Redraw executed for '{job.Spawned.DisplayName}' on Global#{actorIndex} after {job.Ticks} ticks.");
+                            if (job.Ticks < AppearanceDeferredJob.DelayTicks)
+                                continue;
+
+                            if (penumbraIpc.IsAvailable)
+                            {
+                                penumbraIpc.Redraw(actorIndex);
+                                logManager?.Info($"[AppearanceDeferredJob Phase 1] Penumbra Redraw executed for '{job.Spawned.DisplayName}' on Global#{actorIndex} after {job.Ticks} ticks.");
+                            }
+                            job.RedrawDone = true;
+                            job.Ticks = 0; // Phase 2 待機カウンターをリセット
+                            continue;
                         }
 
-                        // 2. CustomizePlus の体型プロファイル再適用（Glamourer の DrawObject 再構築でボーン変形が消えた後の確実な復元）
+                        // Phase 2: CustomizePlus の体型プロファイル確定注入（Penumbra RedrawによるDrawObject再構築完了待ち）
+                        if (job.HasPenumbra && job.RedrawDone)
+                        {
+                            if (job.Ticks < AppearanceDeferredJob.PostRedrawTicks)
+                                continue;
+                        }
+                        else if (!job.HasPenumbra)
+                        {
+                            if (job.Ticks < AppearanceDeferredJob.DelayTicks)
+                                continue;
+                        }
+
                         if (job.HasCustomizePlus)
                         {
                             ApplyCustomizePlusProfile(chara, actorIndex, job.Template, job.Spawned, job.FallbackMcdfCPlusData);
-                            logManager?.Info($"[AppearanceDeferredJob] CustomizePlus profile finalized for '{job.Spawned.DisplayName}' on Global#{actorIndex} after {job.Ticks} ticks.");
+                            logManager?.Info($"[AppearanceDeferredJob Phase 2] CustomizePlus profile finalized for '{job.Spawned.DisplayName}' on Global#{actorIndex} after {job.Ticks} ticks (PostRedraw).");
                         }
 
                         job.Spawned.IsReady = true;

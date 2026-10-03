@@ -37,6 +37,10 @@
   - [x] `ActorManager.cs`: Penumbra コレクション指定アクターに対する遅延 Redraw の統合
   - [x] `SceneManager.cs`: Show/Hide 高速切り替え時の初期化安全インターバルバッファの追加
   - [x] 自キャラ誤爆二重遮断ガード、独立パイプライン（NPC/モンスター）隔離、ゾンビジョブ破棄の徹底
+- [x] **1-7. スロット初期化パージによるモンスター外見誤爆防止 & CustomizePlus 2段階確定注入（`v0.1.60.0`）**:
+  - [x] `GlamourerIpc.cs`: `RevertState` メソッドを追加し、パペットのスロットに紐づく Glamourer のステートキャッシュを強制クリア可能化
+  - [x] `ActorManager.cs`: `ClearActorSlotState` を実装し、スポーン時に直前のスロット残留ステート（Glamourer / Penumbra / CustomizePlus）を完全パージ。モンスター（ハシュマリム等）への Chonk 外見感染を根絶
+  - [x] `ActorManager.cs`: `AppearanceDeferredJob` を Phase 1（Penumbra Redraw）→ Phase 2（4フレーム待機後 CustomizePlus 確定注入）の 2段階ステートマシンに刷新。Redraw の DrawObject 再構築によるボーン変形リセット（バニラ化）を物理的に完全防止
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか

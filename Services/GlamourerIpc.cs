@@ -931,6 +931,28 @@ public class GlamourerIpc
     }
 
     /// <summary>
+    /// 指定アクターの Glamourer ステートをリバート（解除・初期化）してステートキャッシュをクリアする
+    /// </summary>
+    public bool RevertState(int actorIndex, string? actorName = null)
+    {
+        if (!IsAvailable) return false;
+        UnlockState(actorIndex, actorName);
+        if (!string.IsNullOrWhiteSpace(actorName) && revertStateNameV2Ulong != null)
+        {
+            try { revertStateNameV2Ulong.InvokeFunc(actorName, 0, 7UL); } catch { }
+        }
+        if (revertStateV2Ulong != null)
+        {
+            try { return revertStateV2Ulong.InvokeFunc(actorIndex, 0, 7UL) == 0; } catch { }
+        }
+        else if (revertStateV2Uint != null)
+        {
+            try { return revertStateV2Uint.InvokeFunc(actorIndex, 0, 7U) == 0; } catch { }
+        }
+        return false;
+    }
+
+    /// <summary>
     /// 自キャラ (LocalPlayer Index 0) の Glamourer ステートを解除・リバートして本来の姿を復元
     /// </summary>
     /// <summary>
