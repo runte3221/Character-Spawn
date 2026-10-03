@@ -26,6 +26,9 @@ public class Configuration : IPluginConfiguration
     // Stored scene presets
     public List<ScenePreset> Scenes { get; set; } = new();
 
+    // Favorite ActionTimeline IDs
+    public HashSet<ushort> FavoriteTimelineIds { get; set; } = new();
+
     // Settings
     public bool ShowGizmo
     {

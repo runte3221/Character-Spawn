@@ -201,7 +201,7 @@ public class GameDataService
         return new NpcAppearanceData(0, cust, equip);
     }
 
-    public IReadOnlyList<TimelineEntry> SearchTimelines(string query, string category = "All", string? modelPrefix = null, int maxResults = 0)
+    public IReadOnlyList<TimelineEntry> SearchTimelines(string query, string category = "All", string? modelPrefix = null, int maxResults = 0, HashSet<ushort>? favoriteIds = null)
     {
         cachedTimelines ??= BuildTimelineCache();
 
@@ -216,7 +216,9 @@ public class GameDataService
         // カテゴリ絞り込み
         if (!string.IsNullOrWhiteSpace(category) && category != "All")
         {
-            if (category == "Emotes")
+            if (category == "Favorite")
+                filtered = filtered.Where(t => favoriteIds != null && favoriteIds.Contains(t.Id));
+            else if (category == "Emotes")
                 filtered = filtered.Where(t => t.IsEmote);
             else if (category == "NPC")
                 filtered = filtered.Where(t => t.Description.StartsWith("[NPC]"));
@@ -235,8 +237,10 @@ public class GameDataService
                                            t.Id.ToString().Contains(query));
         }
 
-        // エモート優先、その後 ID 順
-        filtered = filtered.OrderByDescending(t => t.IsEmote).ThenBy(t => t.Id);
+        // お気に入り優先、その後エモート優先、その後 ID 順
+        filtered = filtered.OrderByDescending(t => favoriteIds != null && favoriteIds.Contains(t.Id))
+                           .ThenByDescending(t => t.IsEmote)
+                           .ThenBy(t => t.Id);
 
         return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
     }

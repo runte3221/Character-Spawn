@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.78] - 2026-10-04
+### Added
+- **モーションお気に入り登録機能（Favorite）の新設 (`Configuration.cs`, `Services/GameDataService.cs`, `UI/SceneEditWindow.cs`)**:
+  - モーション選択リスト（`##MotionList`）の各モーション左端に「星マーク（★ / ☆）」ボタンを追加。
+  - 星マークをクリックすることで、お気に入りへの登録（ゴールド★）・解除（グレー☆）をワンクリックで即座に切り替え、設定に永続保存。
+  - カテゴリ一覧に「`Favorite`」カテゴリを新設し、お気に入り登録されたモーションのみを瞬時にフィルタリング・一覧表示可能に。
+  - すべてのカテゴリ表示において、お気に入り登録されたモーションがリスト最上位に優先ソートされるように改善。
+
 ## [0.1.77] - 2026-10-04
 ### Fixed
 - **サキュバス等のデミヒューマン（DemiHuman）描画不具合の完全修正 (`Services/GameDataService.cs`, `Managers/ActorManager.cs`)**:

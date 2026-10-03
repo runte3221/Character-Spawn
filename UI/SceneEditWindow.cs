@@ -33,7 +33,7 @@ public class SceneEditWindow : Window, IDisposable
     private string motionSearchQuery = string.Empty;
     private string facialSearchQuery = string.Empty;
     private int selectedMotionCategoryIndex = 0;
-    private static readonly string[] MotionCategories = { "All", "Emotes", "NPC", "Monster", "Battle", "General" };
+    private static readonly string[] MotionCategories = { "All", "Favorite", "Emotes", "NPC", "Monster", "Battle", "General" };
     private bool onlyModelSpecificMotions = false;
 
     public SceneEditWindow(
@@ -705,14 +705,41 @@ public class SceneEditWindow : Window, IDisposable
 
         if (gameDataService != null)
         {
-            var timelines = gameDataService.SearchTimelines(motionSearchQuery, MotionCategories[selectedMotionCategoryIndex], activeModelPrefix, 500);
+            var timelines = gameDataService.SearchTimelines(motionSearchQuery, MotionCategories[selectedMotionCategoryIndex], activeModelPrefix, 500, configuration.FavoriteTimelineIds);
             if (ImGui.BeginListBox("##MotionList", new Vector2(-1, 180)))
             {
                 foreach (var t in timelines)
                 {
+                    bool isFav = configuration.FavoriteTimelineIds.Contains(t.Id);
+                    if (isFav)
+                    {
+                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1.0f, 0.85f, 0.2f, 1.0f));
+                    }
+                    else
+                    {
+                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.45f, 0.45f, 0.45f, 0.5f));
+                    }
+
+                    if (ImGuiComponents.IconButton($"##Fav_{t.Id}", FontAwesomeIcon.Star))
+                    {
+                        if (isFav)
+                            configuration.FavoriteTimelineIds.Remove(t.Id);
+                        else
+                            configuration.FavoriteTimelineIds.Add(t.Id);
+                        configuration.Save();
+                    }
+                    ImGui.PopStyleColor();
+
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip(isFav ? "お気に入りを解除" : "お気に入りに追加");
+                    }
+
+                    ImGui.SameLine();
+
                     bool isSelected = placement.Motion.TimelineId == t.Id;
                     string label = $"[{t.Id}] {t.Description} ({t.Key})";
-                    if (ImGui.Selectable(label, isSelected))
+                    if (ImGui.Selectable($"{label}##Motion_{t.Id}", isSelected))
                     {
                         placement.Motion.TimelineId = t.Id;
                         placement.Motion.TimelineKey = t.Key;

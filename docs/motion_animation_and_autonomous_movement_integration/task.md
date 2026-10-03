@@ -108,6 +108,13 @@ Character Spawn プラグインの根幹機能となる、カスタムスポー�
   - [x] COM アクターにユニークなワールド EntityId（`0x20000000 | (globalIdx + 1)`）を割り当て
   - [x] 注視対象アクターに `TargetableStatus |= ObjectTargetableFlags.IsTargetable` を設定し、LookAtIK が正常認識・追従するよう改修
 
+### 【Step 2.1-fix7】モーションお気に入り登録 ＆ Favorite カテゴリ新設（`v0.1.78.0`）
+- [x] **モーションお気に入り登録機能 (`Configuration.cs`, `Services/GameDataService.cs`, `UI/SceneEditWindow.cs`)**
+  - [x] `Configuration.cs` に `FavoriteTimelineIds` (`HashSet<ushort>`) を追加し、お気に入り状態の永続保存を実現
+  - [x] モーション一覧の各アイテム行左端に星マークボタン（★ / ☆）を配置し、ワンクリックでのお気に入り登録・解除トグル
+  - [x] モーションカテゴリに「`Favorite`」を追加し、お気に入り登録されたモーションのみを瞬時にフィルタリング
+  - [x] すべてのカテゴリ表示において、お気に入り登録されたモーションを最上位に優先ソート
+
 ### 【Step 2.2】自律移動 AI ＆ パトロール・追従・復帰ルーチン（次工程）
 - [ ] ウェイポイント巡回ルーチン (指定ルート巡回、各地点でのモーション再生)
 - [ ] プレイヤー接近感知・追従・規定距離超過時の元の位置復帰ルーチン
