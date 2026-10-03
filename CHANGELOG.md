@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.69] - 2026-10-03
+### Changed
+- **SceneEditWindow 閉鎖時の 3D ギズモ自動非表示連動 (`Plugin.cs`)**:
+  - **操作感の洗練**:
+    - [Scene Edit] ウィンドウ内でギズモ（移動・回転・スケール）を操作した後、ウィンドウを閉じた（[X] ボタンまたは Esc キー）際に、画面上に 3D ギズモだけが残り続けてしまう問題を解消。
+    - ギズモの描画判定に `sceneEditWindow.IsOpen || (mainWindow.IsOpen && actorManager.CurrentPreviewActor != null)` の可視性チェックを組み込み、ウィンドウが閉じられている間はギズモを自動的に非表示にする制御を実装。
+    - ウィンドウを開いた際には即座にギズモが復帰し、編集をスムーズに再開可能。
+
 ## [0.1.68] - 2026-10-03
 ### Fixed
 - **Penumbra 個別設定リスト（Individual Assignments）汚染防止＆自キャラ設定の完全保護 (`Services/PenumbraIpc.cs` & `Managers/ActorManager.cs`)**:
