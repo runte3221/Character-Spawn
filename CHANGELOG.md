@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.86] - 2026-10-04
+### Fixed
+- **Demihuman スポーン時の Access Violation クラッシュ (0xC0000005) の完全解消 (`Managers/ActorManager.cs`)**:
+  - **現象の解消**: v0.1.85.0 で Show を実行した際に `ffxiv_dx11.exe+8B31E6`（`Character.EnableDraw`）でゲームが強制終了するクリティカルエラーを根本解決。
+  - **根本原因と対策**:
+    - `v0.1.85.0` で追加した `WeaponData`（`DrawObjectData`）の全スロット `default` ゼロクリア処理により、内部リソースポインタが NULL に破壊され、`EnableDraw()` 内で `[RAX+8]`（`RAX=0`）を参照してアクセス違反が発生していた。
+    - 危険な `WeaponData` ゼロクリア処理を完全削除。
+    - モンスター・デミヒューマンに対する武器非表示は安全なメモリフラグ `nativeChara->DrawData.IsWeaponHidden = true;` のみで行う設計に純化し、内部ポインタを一切破壊することなく安全に武器非表示を実現。
+
 ## [0.1.85] - 2026-10-04
 ### Fixed
 - **自キャラ抜刀時のモンスター・デミヒューマンへの武器波及バグ修正 (`Managers/ActorManager.cs`)**:

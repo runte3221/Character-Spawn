@@ -426,14 +426,9 @@ public unsafe class ActorManager : IDisposable
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
                 nativeChara->GameObject.Scale = targetScale;
 
-                // モンスター・デミヒューマンは武器を持たないため、武器描画フラグを非表示に強制し、
-                // 自キャラからコピーされた武器データ（抜刀中の武器モデル等）を完全にゼロクリア
+                // モンスター・デミヒューマンは武器を持たないため、武器描画フラグを非表示に強制
+                // ※ WeaponData (DrawObjectData) の構造体ゼロクリアは内部ポインタ破壊によるクラッシュ (0xC0000005) を引き起こすため厳禁！
                 nativeChara->DrawData.IsWeaponHidden = true;
-                var weaponSpan = nativeChara->DrawData.WeaponData;
-                for (int i = 0; i < weaponSpan.Length; i++)
-                {
-                    weaponSpan[i] = default;
-                }
 
                 // 自キャラからコピーされた装備モデルID（胴・手・脚・足等）を完全にゼロクリア
                 // （デミヒューマンやモンスターで存在しない装備パスを読み込もうとしてギズモ化する不具合を根絶）
