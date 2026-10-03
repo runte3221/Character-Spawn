@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.61] - 2026-10-03
+### Fixed
+- **シーンスポーン順固定化（シャッフル根絶）・MCDF DrawObject 待機遅延外見適用・COMスロット決定論的命名**:
+  - **シーンスポーン順の固定化 (`Managers/SceneManager.cs`)**:
+    - プレイヤーからの距離ソート（`OrderBy`）を完全廃止。シーン内の定義順（固定順）でスポーンキューにエンキューすることで、Show/Hide を繰り返しても各アクターが常に同一の COM スロット（#0〜#9）にスポーンされる決定論的配置を確立。アクターの入れ替わり・シャッフルを 100% 根絶。
+  - **COM スロット連動の決定論的パペット命名 (`Managers/ActorManager.cs`)**:
+    - 無限インクリメントする一時命名を廃止し、COM スロット番号（0〜19）に 1対1 で紐づく固定英名（`Actor CS00`, `Actor CS01`, ...）を採用。
+    - スロット再利用時に同一の名前で Glamourer の `RevertStateName` を呼ぶことで、前のアクターのステートキャッシュが残存する問題を完全解消。
+  - **MCDF の DrawObject 生成待機遅延外見適用 (`Managers/ActorManager.cs`)**:
+    - COM 生成直後の DrawObject 未生成状態で Base64 外見を適用しようとしていたため、Glamourer が `ActorNotFound (ec=6)` で失敗し、MCDF の顔・髪型・衣装が適用されず自キャラ素体に戻っていた不具合を完全解決。
+    - `AppearanceDeferredJob` に **Phase 0** を新設し、ゲームエンジンが `IsReadyToDraw()` かつ `DrawObject != null`（描画モデル展開完了）になるのを待ってから Glamourer `ApplyDesignToActor` を確実に呼び出し。
+    - 適用直後に `DisableDraw()` で DrawObject の再構築をトリガーし、その後 Phase 1（Penumbra Redraw）→ Phase 2（CustomizePlus 確定注入）と流れる完璧なパイプラインを確立。
+  - **完全隔離の保証**:
+    - 第1工程のコア（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）の基本仕様を壊さず完全隔離・安全保持。自キャラ（LocalPlayer）への二重物理遮断を厳守。
+
 ## [0.1.60] - 2026-10-03
 ### Fixed
 - **スロット再利用時の外見汚染根絶（モンスターへのChonk外見誤爆防止） & CustomizePlus 2段階確定ステートマシン（Chonk体型崩れ完全防止）**:

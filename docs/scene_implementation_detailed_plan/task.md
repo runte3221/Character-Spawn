@@ -41,6 +41,10 @@
   - [x] `GlamourerIpc.cs`: `RevertState` メソッドを追加し、パペットのスロットに紐づく Glamourer のステートキャッシュを強制クリア可能化
   - [x] `ActorManager.cs`: `ClearActorSlotState` を実装し、スポーン時に直前のスロット残留ステート（Glamourer / Penumbra / CustomizePlus）を完全パージ。モンスター（ハシュマリム等）への Chonk 外見感染を根絶
   - [x] `ActorManager.cs`: `AppearanceDeferredJob` を Phase 1（Penumbra Redraw）→ Phase 2（4フレーム待機後 CustomizePlus 確定注入）の 2段階ステートマシンに刷新。Redraw の DrawObject 再構築によるボーン変形リセット（バニラ化）を物理的に完全防止
+- [x] **1-8. スポーン順固定化（シャッフル根絶）＆ MCDF DrawObject 待機遅延適用＆スロット固定命名（`v0.1.61.0`）**:
+  - [x] `SceneManager.cs`: 距離ソート（`OrderBy`）を完全廃止し、シーン内の定義順（固定順）で決定論的にスポーン。COMスロット番号とアクターの対応を固定化しシャッフルを根絶
+  - [x] `ActorManager.cs`: パペット名を COM スロット連動固定名（`Actor CS00`〜`Actor CS19`）に変更。スロット再利用時のステートキャッシュ（RevertStateName）を確実にパージ可能化
+  - [x] `ActorManager.cs`: MCDF（パイプラインB）の Glamourer 適用を `AppearanceDeferredJob` の Phase 0（DrawObject 生成確認後）に移行。早すぎる呼び出しによる `ActorNotFound (ec=6)` を完全根絶し、MCDF の顔・髪・衣装を 100% 確実に適用
 - [ ] **【Phase 1 検証チェック項目】**:
   - [ ] [QA-1-1] 最大 5 体以上の複数キャラクターが同時に正常スポーンできるか
   - [ ] [QA-1-2] 各キャラクターが指定した座標・向きに寸分狂わず配置されるか

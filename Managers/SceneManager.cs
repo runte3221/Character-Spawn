@@ -385,21 +385,18 @@ public class SceneManager : IDisposable
         staggeredSpawnQueue.Clear();
         spawnIntervalTicks = DefaultSpawnIntervalTicks;
 
-        Vector3 playerPos = actorManager.LocalPlayerPosition;
-
-        // 自キャラからの距離でソート（近いアクターから優先順位を高くして順次スポーン）
-        var sortedPlacements = scene.Placements
+        // シーン内の定義順（固定順）で決定論的にスポーン（COMスロット番号とアクターの対応を固定化しシャッフルを根絶）
+        var orderedPlacements = scene.Placements
             .Where(p => !IsPlacementSpawned(p.PlacementId) && p.IsVisible)
-            .OrderBy(p => Vector3.DistanceSquared(playerPos, p.Position))
             .ToList();
 
-        foreach (var placement in sortedPlacements)
+        foreach (var placement in orderedPlacements)
         {
             staggeredSpawnQueue.Enqueue(placement);
         }
 
-        logManager?.Info($"Enqueued {staggeredSpawnQueue.Count} actors for staggered spawning in scene '{scene.Name}' (Sorted by proximity to player).");
-        return sortedPlacements.Count;
+        logManager?.Info($"Enqueued {staggeredSpawnQueue.Count} actors for staggered spawning in scene '{scene.Name}' (Deterministic order).");
+        return orderedPlacements.Count;
     }
 
     /// <summary>

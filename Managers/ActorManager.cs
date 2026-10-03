@@ -57,16 +57,20 @@ public unsafe class ActorManager : IDisposable
     private readonly List<HumanoidNpcApplyJob> humanoidNpcApplyJobs = new();
 
     // 統合アピアランス遅延安定化キュー (Glamourer モデル再構築 & Penumbra 非同期ロード完了待ち確定処理)
-    // Chonk などの Glamourer + Penumbra + CustomizePlus 複合アクターにおける体型打ち消し・MOD抜けを完全根絶
+    // Chonk や MCDF などの Glamourer + Penumbra + CustomizePlus 複合アクターにおける体型打ち消し・MOD抜け・ActorNotFoundを完全根絶
     private sealed class AppearanceDeferredJob
     {
         public SpawnedActorData Spawned = null!;
         public ushort GlobalIndex;
         public CharacterTemplate Template = null!;
         public string? FallbackMcdfCPlusData;
+        public string? PendingGlamourerDesign; // MCDF等の遅延Glamourerデザイン (DrawObject生成待ち)
         public bool HasPenumbra;
         public bool HasCustomizePlus;
         public int Ticks;
+        public int RebuildTicks;
+        public bool GlamourerApplied; // Phase 0 (Glamourer 遅延適用) 完了フラグ
+        public bool DrawRebuilt; // Phase 0 後の DrawObject 再構築完了フラグ
         public bool RedrawDone; // Phase 1 (Penumbra Redraw) 完了フラグ
         public const int DelayTicks = 4; // Phase 1 待機: Glamourer再構築 & Penumbra初期解決 (~60ms)
         public const int PostRedrawTicks = 4; // Phase 2 待機: Penumbra Redraw後の DrawObject 確定待機 (~60ms)
@@ -165,18 +169,14 @@ public unsafe class ActorManager : IDisposable
         CurrentPreviewActor = null;
     }
 
-    private string GetPuppetName(CharacterTemplate template)
+    private string GetPuppetName(ushort comIdx)
     {
-        // HDM (HousingDollMaster) 黄金律:
+        // HDM & AQR 黄金律:
         // FF14 の PlayerIdentifier / VerifyPlayerName 規則: Forename + " " + Surname, 各15文字以内, 合計20文字以内, 純粋な ASCII 英字のみ
-        // 日本語文字列（ひらがな・カタカナ・漢字）が含まれると Glamourer の ActorIdentifier が不正（Invalid）となり、
-        // GetState / ApplyState が ActorNotFound (ec=42) で永久に失敗する！
-        // したがって、内部 GameObject 名は純粋な ASCII 英字 "Actor Aa", "Actor Ab", ... を生成する。
+        // COM スロット番号 (0〜19等) と 1対1 に対応する決定論的 ASCII 英名 "Actor CS00", "Actor CS01", ... を生成する。
+        // これにより、同じスロットを再利用した際にも同一名で Glamourer / Penumbra のステートキャッシュを 100% 確実にリバート・パージ可能。
         // ※頭上のネームプレート表示やUI表示は SpawnedActorData.DisplayName / NamePlate.CustomName (template.Name) が保持されるため完全に日本語で表示される。
-        int s = Interlocked.Increment(ref puppetSerial);
-        char c1 = (char)('A' + ((s / 26) % 26));
-        char c2 = (char)('a' + (s % 26));
-        return $"Actor {c1}{c2}";
+        return $"Actor CS{comIdx:D2}";
     }
 
     /// <summary>
@@ -298,7 +298,7 @@ public unsafe class ActorManager : IDisposable
             nativeChara->GameObject.TargetableStatus = 0;
             nativeChara->GameObject.EventId = 0;
 
-            string puppetName = GetPuppetName(template);
+            string puppetName = GetPuppetName(comIdx);
             nativeChara->GameObject.SetName(puppetName);
 
             // 位置・回転・透明度の設定
@@ -908,6 +908,49 @@ public unsafe class ActorManager : IDisposable
 
                         var chara = (Character*)charaObj.Address;
 
+                        // Phase 0: MCDF 等の Base64 デザイン遅延適用（ゲームエンジンの DrawObject 生成を待って確実に適用）
+                        if (!string.IsNullOrEmpty(job.PendingGlamourerDesign) && !job.GlamourerApplied)
+                        {
+                            if (job.Ticks < 2) continue;
+
+                            bool ready = false;
+                            try { ready = chara->GameObject.IsReadyToDraw(); } catch { }
+                            var drawObj = (nint)chara->GameObject.DrawObject;
+                            if ((!ready || drawObj == nint.Zero) && job.Ticks < 30)
+                            {
+                                try { chara->GameObject.EnableDraw(); } catch { }
+                                continue;
+                            }
+
+                            if (glamourerIpc.IsAvailable)
+                            {
+                                bool glamSuccess = glamourerIpc.ApplyDesignToActor(job.PendingGlamourerDesign, actorIndex, job.Spawned.PuppetName);
+                                logManager?.Info($"[AppearanceDeferredJob Phase 0] Deferred Glamourer ApplyDesign for '{job.Spawned.DisplayName}' on Global#{actorIndex} result: {glamSuccess} (after {job.Ticks} ticks).");
+                            }
+
+                            job.GlamourerApplied = true;
+                            // HDM 黄金律: ApplyDesign 直後に DisableDraw を行い、DrawObject を強制再構築する！
+                            try { chara->GameObject.DisableDraw(); } catch { }
+                            job.Ticks = 0;
+                            continue;
+                        }
+
+                        // Phase 0 後の DrawObject 再構築待ち
+                        if (!string.IsNullOrEmpty(job.PendingGlamourerDesign) && job.GlamourerApplied && !job.DrawRebuilt)
+                        {
+                            job.RebuildTicks++;
+                            if (job.RebuildTicks < 2) continue;
+
+                            bool ready = false;
+                            try { ready = chara->GameObject.IsReadyToDraw(); } catch { }
+                            if (!ready && job.RebuildTicks < 15) continue;
+
+                            try { chara->GameObject.EnableDraw(); } catch { }
+                            job.DrawRebuilt = true;
+                            job.Ticks = 0;
+                            continue;
+                        }
+
                         // Phase 1: Penumbra の遅延 Redraw（Glamourer および非同期ファイル解決完了後の確定）
                         if (job.HasPenumbra && !job.RedrawDone)
                         {
@@ -1130,28 +1173,15 @@ public unsafe class ActorManager : IDisposable
                             }
                         }
 
-                        // AQR 準拠: MCDF 内包の Base64 データをそのまま無加工で適用
+                        // AQR 準拠: MCDF 内包の Base64 データを取得
                         string? designString = bundle.GlamourerDesign;
                         if (string.IsNullOrWhiteSpace(designString)) designString = template.GlamourerDesignString;
-
-                        if (glamourerIpc.IsAvailable && !string.IsNullOrWhiteSpace(designString))
-                        {
-                            bool glamSuccess = glamourerIpc.ApplyDesignToActor(designString, actorIndex, spawned?.PuppetName);
-                            logManager?.Info($"MCDF Glamourer ApplyDesign result on Global#{actorIndex} ('{spawned?.PuppetName}'): {glamSuccess}");
-                        }
 
                         // 武器の表示・非表示
                         chara->DrawData.HideWeapons(!template.WeaponVisible);
                         chara->DrawData.IsWeaponHidden = !template.WeaponVisible;
 
-                        // Penumbra Redraw (AQR 方式: 最後に必ず Redraw)
-                        if (penumbraIpc.IsAvailable)
-                        {
-                            penumbraIpc.Redraw(actorIndex);
-                            logManager?.Info($"MCDF Penumbra Redraw for Global#{actorIndex}.");
-                        }
-
-                        // 統合アピアランス遅延安定化キューへ登録 (Penumbra 非同期ロード完了 & CustomizePlus 体型復元)
+                        // 統合アピアランス遅延安定化キューへ登録 (DrawObject生成待ち Glamourer 適用 & Penumbra Redraw & CustomizePlus 確定注入)
                         if (spawned != null)
                         {
                             appearanceDeferredJobs.RemoveAll(j => j.Spawned == spawned || j.GlobalIndex == (ushort)actorIndex);
@@ -1161,14 +1191,12 @@ public unsafe class ActorManager : IDisposable
                                 GlobalIndex = (ushort)actorIndex,
                                 Template = template,
                                 FallbackMcdfCPlusData = bundle.CustomizePlusData,
+                                PendingGlamourerDesign = designString,
                                 HasPenumbra = true,
                                 HasCustomizePlus = !string.IsNullOrWhiteSpace(template.CustomizePlusProfileGuid) || !string.IsNullOrWhiteSpace(bundle.CustomizePlusData),
                                 Ticks = 0
                             });
                         }
-
-                        // Customize+ Profile の適用
-                        ApplyCustomizePlusProfile(chara, actorIndex, template, spawned, bundle.CustomizePlusData);
 
                         if (spawned != null) spawned.IsReady = true;
                         return;
