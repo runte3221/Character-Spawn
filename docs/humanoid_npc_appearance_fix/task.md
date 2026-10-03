@@ -25,4 +25,19 @@
 - [x] `CHANGELOG.md` 更新（v0.1.44.0）
 - [x] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.44.0`)
 - [x] GitHub Actions ビルド成功＆Fastly CDN キャッシュ失効の自動確認
-- [ ] ゲーム内実機でのミューヌ・ユウギリ正常スポーン確認
+- [x] ゲーム内実機でのミューヌ・ユウギリ正常スポーン確認（ミューヌ成功、ユウギリの衣装・体は成功、顔がプレイヤー汎用顔に置換される事象を検知）
+
+## 4. NPC固有顔（ユウギリ等）サニタイズ問題の解決フェーズ (v0.1.45.0)
+- [x] **原因究明**:
+  - `dalamud.log` 解析により、`Glamourer ApplyNpcAppearance` が `False` となり、直接メモリ書き込みフォールバックが走っていたことを特定。
+  - ゲームエンジンの `FilterCustomizeData` により、直接メモリ書き込みされた未解放NPC顔番号がプレイヤー選択可能顔に強制サニタイズされていた。
+  - Glamourer `ApplyState` が失敗していた原因は、IPC 購読型が `string` で Provider（`object`）と型不一致になっていたこと。
+- [x] **コード改修**:
+  - [x] `ApplyState` / `ApplyStateName` の購読型を `object` に修正（`GlamourerIpc.cs`）。
+  - [x] JObject 直接適用メソッド `ApplyStateJObject` を新設しダイレクト適用。
+  - [x] `GetStateName` による自キャラ名ベースのテンプレート取得フォールバックを追加。
+  - [x] `ActorManager.cs` から `localPlayerName` を渡すように連携。
+- [x] `CHANGELOG.md` 更新（v0.1.45.0）
+- [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.45.0`)
+- [ ] ゲーム内実機でのユウギリ固有顔描画の確認
+

@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.45] - 2026-10-03
+### Fixed
+- **ユウギリ等のNPC固有顔がプレイヤー選択可能顔タイプに置き換わってしまう不具合の根本解決**:
+  - **根本原因 (Glamourer IPC 型不一致による FilterCustomizeData 丸め込み)**:
+    - 公式の `Glamourer.ApplyState` IPC プロバイダは第1引数の型が `object`（`FuncProvider<object, int, uint, ulong, int>`）で登録されている。
+    - プラグイン側の購読型が `string`（`GetIpcSubscriber<string, int, uint, ulong, int>`）となっており、Dalamud IPC の厳密な型照合により型不一致で呼び出しが失敗。
+    - その結果、フォールバックの直接メモリ書き込み（`ApplyNpcAppearanceDirectFallback`）が動作していたが、ネイティブメモリ直接書き込みではゲームエンジン内部の `FilterCustomizeData` が働き、ユウギリ等の NPC 固有顔番号（未解放フェイス）がプレイヤークラスの選択可能な標準顔に強制サニタイズ（丸め込み）されてしまっていた。
+  - **対策 1: Glamourer IPC 購読型の完全整合化 (`object` 型への統一)**:
+    - `Glamourer.ApplyState` および `Glamourer.ApplyStateName` の IPC 購読シグネチャを `string` から `object` に修正。
+    - これにより Glamourer 経由での外見適用が 100% 成功し、ゲームエンジンの `FilterCustomizeData` の丸め込みをバイパスして、ユウギリのツノ・ウロコ・固有フェイス造形を完全再現。
+  - **対策 2: JObject 直接適用メソッド (`ApplyStateJObject`) の新設**:
+    - JSON 文字列の再シリアライズや Base64 圧縮処理を介さず、メモリ上で構成した `JObject` をそのままダイレクトに Glamourer に渡す `ApplyStateJObject` を導入し、オーバーヘッドをゼロ化。
+  - **対策 3: 自キャラテンプレート取得の強化 (`GetStateName` フォールバック)**:
+    - スポーン直後のコールドパペット用ひな形取得において、`GetState(0)`（Index 0）に加えて `clientState.LocalPlayer?.Name.TextValue` を用いた `GetStateName` フォールバックを追加し、自キャラテンプレートの取得を強固に保証。
+
 ## [0.1.44] - 2026-10-03
 ### Fixed
 - **人型NPC（ミューヌ、ユウギリ等）スポーン時に自キャラの姿で出現する不具合の根本解決**:

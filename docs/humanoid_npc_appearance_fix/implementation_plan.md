@@ -28,8 +28,20 @@
 ### ③ `Managers/ActorManager.cs`: NPC テンプレートデータの名前ベース自動解決補完
 - テンプレートの `CustomizeData` または `NpcEquipmentModelIds` が未設定の場合、`template.Name`（例: "ミューヌ", "ユウギリ"）からゲーム内 NPC データベースを即座に逆引きし、ENpcBaseId・外見データを自動解決して補完する。
 
-## 4. 検証手順
+## 4. 検証手順 (v0.1.44.0)
 1. `tools/release.ps1 0.1.44.0` を実行し、全自動リリース（バージョン一括更新、Git コミット・プッシュ、CI/CD ビルド監視、マニフェスト整合性確認）。
 2. ゲーム内でプラグインを v0.1.44.0 に更新。
 3. ミューヌ、ユウギリをそれぞれスポーンさせ、自キャラの姿ではなく正常な NPC の顔・髪型・衣装でスポーンすることを確認。
 4. レターモーグリ（デミヒューマン）およびモンスターが引き続き正常にスポーンできることを確認。
+
+## 5. v0.1.45.0 改修計画（NPC固有顔サニタイズ防止）
+- **課題**: 直接メモリ書き込み時に `FilterCustomizeData` によりユウギリ等の固有NPC顔がプレイヤー汎用顔に丸め込まれていた。Glamourer IPC の `ApplyState` 購読型が `string` だったため IPC が失敗していた。
+- **改修方針**:
+  1. `Services/GlamourerIpc.cs`: `ApplyState` / `ApplyStateName` の購読型を `object` に修正。
+  2. `Services/GlamourerIpc.cs`: `ApplyStateJObject` メソッドを新設し、JObject をダイレクトに渡す。
+  3. `Services/GlamourerIpc.cs`: `GetStateName` を新設し、自キャラ名ベースのテンプレート取得フォールバックを追加。
+  4. `Managers/ActorManager.cs`: `localPlayerName` を渡すように連携。
+- **検証手順**:
+  1. `tools/release.ps1 0.1.45.0` で全自動リリース。
+  2. ユウギリをスポーンさせ、固有のツノ・ウロコ・顔造形が完全に描画されることを確認。
+

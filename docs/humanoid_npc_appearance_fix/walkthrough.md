@@ -64,3 +64,28 @@
 - スポーン直後の新規パペット（Index 200）に対して Glamourer の `GetState` を呼ぶと、キャッシュ生成前で必ず `null` を返す。
 - したがって、スポーン直後に動的 JObject を組み立てる際は、**`GetState(0)`（常時存在する自キャラ）のステートをひな形としてディープコピーして利用する** のが最も確実で高速なアプローチである。
 - `ForceAllApply` を呼ぶ際は、NPC やモンスターなど武器を持たせないキャラクターに対して、自キャラの武器情報が誤って強制適用されないよう、武器スロットの除外ガードを徹底すること。
+
+---
+
+## 6. NPC固有顔（ユウギリ等）サニタイズ問題の経緯・原因分析と根本解決 (v0.1.45.0)
+
+### (1) 現象
+- ミューヌなどプレイヤーでもキャラクリ可能な顔のNPCは完璧に描画されるが、ユウギリなどNPC固有の特殊顔を持つキャラクターは、体や衣装はユウギリになるものの、顔だけがプレイヤー選択可能なアウラ汎用顔に置換されてしまう。
+
+### (2) 原因の技術的深掘り
+1. **`FilterCustomizeData` によるネイティブサニタイズ**:
+   - ゲームエンジンのプレイヤースケルトン描画システムには `FilterCustomizeData` が組み込まれており、メモリ上の CustomizeData にプレイヤー未解放のフェイス番号（NPC固有顔）が書き込まれていると、自動的に選択可能な標準顔へと強制置換（丸め込み）されてしまう。
+2. **Glamourer IPC 呼び出し失敗によるフォールバック動作**:
+   - 本来 Glamourer は `FilterCustomizeData` をバイパスして特殊フェイスを描画可能にするが、`dalamud.log` を確認したところ `Glamourer ApplyNpcAppearance result on Global#200: False` となり、メモリ直接書き込みフォールバックが発動していた。
+3. **Glamourer IPC 購読型の不一致**:
+   - 公式の Glamourer IPC プロバイダは `FuncProvider<object, int, uint, ulong, int>(pi, "Glamourer.ApplyState", ...)` として登録されている。
+   - 自作プラグイン側では `GetIpcSubscriber<string, int, uint, ulong, int>` と `string` で購読していたため、Dalamud IPC 内部の厳密な型照合によりシグネチャ不一致となって呼び出しが失敗していた。
+
+### (3) 解決策
+1. **IPC 購読型を `object` に整合化**:
+   - `ApplyState` および `ApplyStateName` の購読型引数を `object` に修正し、Glamourer プロバイダと完全一致させた。
+2. **JObject 直接適用メソッド `ApplyStateJObject` の導入**:
+   - JSON 文字列化や Base64 圧縮を行わず、メモリ上の `JObject` をそのままダイレクトに `ApplyState` に渡すことでゼロオーバーヘッド適用を実現。
+3. **自キャラ名ベースのテンプレート取得 (`GetStateName`)**:
+   - `GetState(0)` で万一ステートが得られない場合のフェイルセーフとして、`clientState.LocalPlayer?.Name.TextValue` を用いた `GetStateName` を併用。
+
