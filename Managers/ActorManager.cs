@@ -345,9 +345,10 @@ public unsafe class ActorManager : IDisposable
             // 2. ベースラインのリセット
             nativeChara->ModelContainer.ModelCharaId = 0;
             nativeChara->GameObject.Scale = targetScale;
-            if (template.ModelCharaId == 0)
+            nativeChara->DrawData.IsWeaponHidden = true; // 自キャラ抜刀状態の誤波及を防止するためデフォルト非表示
+            if (template.ModelCharaId == 0 && template.WeaponVisible)
             {
-                nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
+                nativeChara->DrawData.IsWeaponHidden = false;
             }
 
             // AQR 黄金律:
@@ -424,6 +425,15 @@ public unsafe class ActorManager : IDisposable
                 nativeChara->GameObject.DisableDraw();
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
                 nativeChara->GameObject.Scale = targetScale;
+
+                // モンスター・デミヒューマンは武器を持たないため、武器描画フラグを非表示に強制し、
+                // 自キャラからコピーされた武器データ（抜刀中の武器モデル等）を完全にゼロクリア
+                nativeChara->DrawData.IsWeaponHidden = true;
+                var weaponSpan = nativeChara->DrawData.WeaponData;
+                for (int i = 0; i < weaponSpan.Length; i++)
+                {
+                    weaponSpan[i] = default;
+                }
 
                 // 自キャラからコピーされた装備モデルID（胴・手・脚・足等）を完全にゼロクリア
                 // （デミヒューマンやモンスターで存在しない装備パスを読み込もうとしてギズモ化する不具合を根絶）
@@ -1222,8 +1232,12 @@ public unsafe class ActorManager : IDisposable
     private static void SafeSetWeaponVisibility(Character* chara, bool visible)
     {
         if (chara == null) return;
-        // モンスター（ModelCharaId > 0）には武器が存在しないため絶対に呼ばない
-        if (chara->ModelContainer.ModelCharaId != 0) return;
+        // モンスター（ModelCharaId > 0）には武器が存在しないため非表示フラグを立てて即リターン
+        if (chara->ModelContainer.ModelCharaId != 0)
+        {
+            chara->DrawData.IsWeaponHidden = true;
+            return;
+        }
 
         try
         {
@@ -1528,10 +1542,18 @@ public unsafe class ActorManager : IDisposable
     {
         if (actor.NativeAddress == 0) return;
         var nativeChara = (Character*)actor.NativeAddress;
+        if (nativeChara == null) return;
+
+        // モンスター（ModelCharaId > 0）には武器が存在しないため処理しない
+        if (nativeChara->ModelContainer.ModelCharaId != 0)
+        {
+            nativeChara->DrawData.IsWeaponHidden = true;
+            return;
+        }
+
         int actorIndex = (int)actor.GlobalIndex;
 
-        nativeChara->DrawData.HideWeapons(!visible);
-        nativeChara->DrawData.IsWeaponHidden = !visible;
+        SafeSetWeaponVisibility(nativeChara, visible);
         nativeChara->CharacterSetup.CopyFromCharacter(nativeChara, CharacterCopyFlags.None);
 
         if (penumbraIpc.IsAvailable)

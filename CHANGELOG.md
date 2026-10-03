@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.85] - 2026-10-04
+### Fixed
+- **自キャラ抜刀時のモンスター・デミヒューマンへの武器波及バグ修正 (`Managers/ActorManager.cs`)**:
+  - **現象の解消**: 自キャラが武器を抜刀した状態で Show を行った際、サキュバス等のデミヒューマンが自キャラと同じ武器を右手に持ってしまう不具合を根本解決。
+  - **根本原因と対策**:
+    - アクター生成時に骨格を確立する `CopyFromCharacter(meNative)` において、自キャラが抜刀していると武器モデルデータ（`WeaponData`）および抜刀表示フラグ（`IsWeaponHidden = false`）がパペットにコピーされていた。
+    - パイプライン D（`ModelCharaId > 0`）において、防具（`EquipmentModelIds`）のみゼロクリアされ武器データ（`WeaponData`）が残留していたため、デミヒューマンの右手ボーンに自キャラの武器がアタッチされていた。
+    - パイプライン D において `nativeChara->DrawData.IsWeaponHidden = true;` を強制し、`WeaponData` の全スロットを `default`（ゼロクリア）する処理を追加。
+    - スポーン初期ベースラインで `IsWeaponHidden = true` をデフォルトとし、人型かつ武器表示設定時のみ表示を許可する防御構造に改修。
+    - `SafeSetWeaponVisibility` および `SetWeaponVisibility` において、モンスターアクターへの不要な武器操作を遮断し、`IsWeaponHidden = true` を安全に維持。
+
 ## [0.1.84] - 2026-10-04
 ### Improved
 - **巡回ルート描画のジッター根本根絶 (`UI/GizmoRenderer.cs`)**:
