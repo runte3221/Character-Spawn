@@ -57,4 +57,28 @@
   1. `tools/release.ps1 0.1.46.0` で全自動リリース。
   2. カヌ・エ・センナ、ユウギリをスポーンさせ、角尊の角・固有髪型、アウラ固有顔が 100% 確実に描画されることを確認。
 
+## 7. v0.1.48.0 改修計画（独立キュー `HumanoidNpcApplyJob` による非同期同期待機）
+- **背景と課題の分離**:
+  - v0.1.45〜v0.1.46 で MCDF 適用に不具合が発生した原因は、MCDF と NPC の双方が通る共通メソッド `ApplyDesignToActor` のシグネチャ・引数型（JObject化）を変更してしまったため。
+  - スポーン直後のアクターは、ゲームエンジンが生成してから数フレーム経たないと Glamourer のアクター認識テーブルに登録されないため、0フレーム目の即時適用では必ず `ec=2`（`ActorNotFound`）が返る。
+  - HDM（`HumanGuise.cs`）の逆アセンブル解析により、HDM はフレーム更新ループ（`OnUpdate`）で Glamourer がパペットを認識するまで毎フレーム待機・リトライし、認識された瞬間に Glamourer 経由で適用していることが判明。
+- **改修方針（他機能への影響ゼロ保証）**:
+  1. **他パイプラインの完全保護**:
+     - MCDF や 通常の Glamourer（Pipeline A/B）、Monster（Pipeline D）のコードには **1行も触れない**。
+     - `Services/GlamourerIpc.cs` の共通メソッド `ApplyDesignToActor` も一切変更しない。
+  2. **`Managers/ActorManager.cs` に `HumanoidNpcApplyJob` を新設**:
+     - 人型NPC（`SourceType == Npc` かつ `ModelCharaId == 0`）をスポーンした際、`HumanoidNpcApplyJob` にエンキュー。
+     - 毎フレームの `UpdateFrame` 内で、Glamourer がアクターを認識してステートを返すまで待機・リトライ（最大60フレーム、約1秒）。
+     - 認識された瞬間に Glamourer 経由で外見を適用し、Penumbra Redraw を実行。
+     - タイムアウト時のみ安全網として直接メモリ書き込みフォールバックを実行。
+  3. **`Services/GlamourerIpc.cs` の `TryApplyNpcAppearance` の適正化**:
+     - パペットのステートがまだ存在しない（`state == null`）場合は即座に `StateNull` を返してフレームリトライに委譲。
+     - パペットのステートが取得できたら、そのステートに NPC の Customize / Equipment を書き込んで `ApplyState` を呼ぶ。
+- **検証手順**:
+  1. `tools/release.ps1 0.1.48.0` で全自動リリース。
+  2. MCDF キャラクターをスポーンさせ、正常に動作することを確認（他機能への影響ゼロ確認）。
+  3. 通常の Glamourer キャラクターおよびモンスター・デミヒューマンが正常に動作することを確認。
+  4. カヌ・エ・センナ、ユウギリをスポーンさせ、角尊のツノ・編み込み髪型、アウラ固有顔が 100% 確実に描画されることを確認。
+
+
 

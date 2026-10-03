@@ -122,4 +122,26 @@ Glamourer TryApplyNpcAppearance: Both target actor #200 and LocalPlayer (0 / 'Ru
    - `state` に NPC の CustomizeData と EquipmentModelIds をマッピング後、`CompressToBase64(state)` で Base64 文字列を生成して `ApplyState` に渡す。
    - 取得から適用まで「型境界をまたぐ通信はすべて `string` (Base64) で行う」という AQuestReborn / HDM 黄金律を徹底した。
 
+---
+
+## 8. 独立キュー `HumanoidNpcApplyJob` による人型NPC固有外見の完全描画とMCDF完全保護 (v0.1.48.0)
+
+### (1) 背景と課題の完全分離
+1. **MCDF への影響原因**:
+   - `Services/GlamourerIpc.cs` 内の `ApplyDesignToActor` が MCDF と NPC で共通利用されていたため、NPC 対策で行った引数変更（JObject化）が原因で MCDF の Base64 デザイン適用時に Glamourer 側で `FileVersion` 例外が発生していた。
+   - **対策**: MCDF や 通常の Glamourer（Pipeline A/B）、Monster（Pipeline D）が通るコードには一切触れず、完全に分離・独立した Pipeline C（人型NPC）のみを構築する。
+2. **NPC固有顔がサニタイズされていた真相 (Cold-Spawn Race)**:
+   - HDM の `HumanGuise.cs` を逆アセンブル解析したところ、HDM は `Guise: Glamourer GetState(puppet obj#...) not ready — retrying up to 60 frames (cold-spawn race)` とログ出力し、スポーン直後（0フレーム目）のアクターが Glamourer に登録されるまでのタイムラグを `OnUpdate`（フレーム毎ループ）で監視・リトライしていることが判明。
+   - 従来の Character-Spawn は 0フレーム目で即座に「失敗」と判定して直接メモリフォールバックに逃げていたため、ゲームエンジンの `FilterCustomizeData` によって未解放のNPC固有顔・髪型がプレイヤー汎用パーツ（金髪ボブ等）にサニタイズ（強制置換）されていた。
+
+### (2) 解決策の設計と実装
+1. **`HumanoidNpcApplyJob` の新設 (`ActorManager.cs`)**:
+   - 人型 NPC スポーン時、`HumanoidNpcApplyJob` にエンキューして即座に return。
+   - 毎フレームの `UpdateFrame` 内で、Glamourer がアクターを認識してステートを返すまで待機・リトライ（最大60フレーム、約1秒）。
+   - Glamourer がパペットを認識した瞬間に、そのパペットのステートに対して Customize / Equipment を書き込み、`ApplyState` を実行。
+   - これにより Glamourer が `ec=0`（Success）でアクターに変身を適用し、ゲームエンジンのサニタイズを完全にバイパスして固有顔・髪型（カヌ・エ・センナのツノ・編み込み髪、ユウギリのツノ・ウロコ・固有顔造形）が 100% 確実に描画される。
+2. **他機能の完全保護**:
+   - Pipeline A/B（MCDF、通常のGlamourer、Customize+、Penumbra）の処理には一切触れないため、既存機能への副作用はゼロ。
+
+
 

@@ -31,6 +31,7 @@ public class GlamourerIpc
     private readonly ICallGateSubscriber<int, uint, ulong, int>? reapplyStateV2Ulong;
     private readonly ICallGateSubscriber<int, uint, uint, int>? reapplyStateV2Uint;
     private readonly ICallGateSubscriber<int, string?>? getCustomizationFromActor;
+    private readonly ICallGateSubscriber<int, uint, (int, string?)>? getStateBase64;
     private readonly ICallGateSubscriber<int, uint, (int, JObject?)>? getStateV2;
     private readonly ICallGateSubscriber<int, (int, JObject?)>? getStateLegacy;
     private readonly ICallGateSubscriber<Guid, JObject?>? getDesignJObject;
@@ -84,6 +85,7 @@ public class GlamourerIpc
             reapplyStateV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.ReapplyState");
             reapplyStateV2Uint = pi.GetIpcSubscriber<int, uint, uint, int>("Glamourer.ReapplyState");
             getCustomizationFromActor = pi.GetIpcSubscriber<int, string?>("Glamourer.GetCustomizationFromActor");
+            getStateBase64 = pi.GetIpcSubscriber<int, uint, (int, string?)>("Glamourer.GetStateBase64");
             getStateV2 = pi.GetIpcSubscriber<int, uint, (int, JObject?)>("Glamourer.GetState");
             getStateLegacy = pi.GetIpcSubscriber<int, (int, JObject?)>("Glamourer.GetState");
             revertStateV2Ulong = pi.GetIpcSubscriber<int, uint, ulong, int>("Glamourer.RevertState");
@@ -549,6 +551,24 @@ public class GlamourerIpc
     {
         if (!IsAvailable) return null;
 
+        // 1. 最優先: GetStateBase64 (ALC / Newtonsoft.Json 型衝突を 100% 回避)
+        if (getStateBase64 != null)
+        {
+            try
+            {
+                var (ec, base64) = getStateBase64.InvokeFunc(actorIndex, 0);
+                if (ec == 0 && !string.IsNullOrWhiteSpace(base64))
+                {
+                    var jobj = ParseDesignString(base64);
+                    if (jobj != null) return jobj;
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Debug($"Glamourer GetStateBase64 failed on actorIndex {actorIndex}: {ex.Message}");
+            }
+        }
+
         if (getStateV2 != null)
         {
             try
@@ -597,14 +617,9 @@ public class GlamourerIpc
         var state = GetState(actorIndex);
         if (state == null)
         {
-            // スポーン直後の新規パペット(actorIndex 200)は Glamourer 内部キャッシュがまだコールドで GetState が null になる。
-            // そのため、自キャラ(LocalPlayer Index 0)のステート構造をひな形(Template)としてディープコピーして使用する！
-            state = GetState(0)?.DeepClone() as JObject;
-            log.Information($"Glamourer TryApplyNpcAppearance: Target actor #{actorIndex} state is cold, using LocalPlayer template for NPC transformation.");
-        }
-
-        if (state == null)
+            // パペットがまだ Glamourer に認識されていなければ StateNull を返してフレームリトライに委譲
             return NpcApplyResult.StateNull;
+        }
 
         // 1. CustomizeData (26バイト) の適用
         if (customizeData != null && customizeData.Length >= 26 && state["Customize"] is JObject custObj)

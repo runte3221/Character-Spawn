@@ -43,6 +43,16 @@ public unsafe class ActorManager : IDisposable
     }
     private readonly List<MonsterRedrawJob> monsterRedrawJobs = new();
 
+    // HDM HumanGuise.cs 準拠: 人型NPC専用の非同期同期待機キュー (Cold-Spawn Race 解消)
+    private sealed class HumanoidNpcApplyJob
+    {
+        public SpawnedActorData Spawned = null!;
+        public CharacterTemplate Template = null!;
+        public int Ticks;
+        public const int MaxTicks = 60; // 最大約1秒間 (60フレーム) リトライ
+    }
+    private readonly List<HumanoidNpcApplyJob> humanoidNpcApplyJobs = new();
+
     private const int MaxReadyTicks = 200;
 
 
@@ -353,13 +363,19 @@ public unsafe class ActorManager : IDisposable
             // =========================================================================
             if (template.SourceType == CharacterSourceType.Npc)
             {
-                ApplyNpcAppearance(nativeChara, globalIdx, template, spawned);
-                nativeChara->GameObject.EnableDraw();
-                spawned.IsReady = true;
+                nativeChara->DrawData.HideWeapons(!template.WeaponVisible);
+                nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
+
+                humanoidNpcApplyJobs.Add(new HumanoidNpcApplyJob
+                {
+                    Spawned = spawned,
+                    Template = template,
+                    Ticks = 0
+                });
 
                 activeActors.Add(spawned);
                 createdIndexes.Add(globalIdx);
-                logManager?.Info($"[Pipeline C: NPC] Spawned '{spawned.DisplayName}' on Global#{globalIdx}. Appearance finalized immediately.");
+                logManager?.Info($"[Pipeline C: NPC] Spawned '{spawned.DisplayName}' on Global#{globalIdx}. Enqueued to HumanoidNpcApplyJob (Cold-Spawn Race synchronization).");
                 return spawned;
             }
 
@@ -556,6 +572,7 @@ public unsafe class ActorManager : IDisposable
         }
         finally
         {
+            humanoidNpcApplyJobs.RemoveAll(j => j.Spawned == actor || j.Spawned.GlobalIndex == actor.GlobalIndex);
             createdIndexes.Remove(actor.GlobalIndex);
             activeActors.Remove(actor);
             if (CurrentPreviewActor == actor)
@@ -571,6 +588,7 @@ public unsafe class ActorManager : IDisposable
     public void DespawnAll()
     {
         monsterRedrawJobs.Clear();
+        humanoidNpcApplyJobs.Clear();
         var list = activeActors.ToList();
         foreach (var actor in list)
         {
@@ -643,6 +661,97 @@ public unsafe class ActorManager : IDisposable
                 }
             }
 
+            // HDM HumanGuise.cs 準拠: 人型NPCの外見非同期同期待機ジョブ (Cold-Spawn Race 解消)
+            if (humanoidNpcApplyJobs.Count > 0)
+            {
+                for (int i = humanoidNpcApplyJobs.Count - 1; i >= 0; i--)
+                {
+                    try
+                    {
+                        var job = humanoidNpcApplyJobs[i];
+                        job.Ticks++;
+
+                        if (!activeActors.Contains(job.Spawned))
+                        {
+                            humanoidNpcApplyJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        if (job.Spawned.GlobalIndex >= objectTable.Length)
+                        {
+                            if (job.Ticks >= HumanoidNpcApplyJob.MaxTicks) humanoidNpcApplyJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        var obj = objectTable[job.Spawned.GlobalIndex];
+                        if (obj is not ICharacter charaObj || charaObj.Address == nint.Zero)
+                        {
+                            if (job.Ticks >= HumanoidNpcApplyJob.MaxTicks) humanoidNpcApplyJobs.RemoveAt(i);
+                            continue;
+                        }
+
+                        job.Spawned.NativeAddress = charaObj.Address;
+                        var chara = (Character*)charaObj.Address;
+                        int actorIndex = (int)job.Spawned.GlobalIndex;
+
+                        bool glamSuccess = false;
+                        if (glamourerIpc != null && glamourerIpc.IsAvailable)
+                        {
+                            var res = glamourerIpc.TryApplyNpcAppearance(
+                                actorIndex,
+                                job.Template.CustomizeData,
+                                job.Template.NpcEquipmentModelIds,
+                                showHeadgear: true,
+                                job.Spawned.PuppetName);
+
+                            if (res == GlamourerIpc.NpcApplyResult.Applied)
+                            {
+                                glamSuccess = true;
+                            }
+                        }
+
+                        if (glamSuccess)
+                        {
+                            chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
+                            chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
+
+                            if (penumbraIpc.IsAvailable)
+                            {
+                                penumbraIpc.Redraw(actorIndex);
+                            }
+
+                            try { chara->GameObject.EnableDraw(); } catch { }
+                            job.Spawned.IsReady = true;
+                            humanoidNpcApplyJobs.RemoveAt(i);
+                            logManager?.Info($"[Pipeline C: NPC] Humanoid NPC appearance applied via Glamourer on Global#{actorIndex} after {job.Ticks} tick(s).");
+                        }
+                        else if (job.Ticks >= HumanoidNpcApplyJob.MaxTicks)
+                        {
+                            logManager?.Warning($"[Pipeline C: NPC] Glamourer NPC appearance timed out after {job.Ticks} ticks on Global#{actorIndex}. Applying direct memory fallback...");
+                            ApplyNpcAppearanceDirectFallback(chara, job.Template);
+
+                            chara->DrawData.HideWeapons(!job.Template.WeaponVisible);
+                            chara->DrawData.IsWeaponHidden = !job.Template.WeaponVisible;
+
+                            if (penumbraIpc.IsAvailable)
+                            {
+                                penumbraIpc.Redraw(actorIndex);
+                            }
+
+                            try { chara->GameObject.EnableDraw(); } catch { }
+                            job.Spawned.IsReady = true;
+                            humanoidNpcApplyJobs.RemoveAt(i);
+                            logManager?.Info($"[Pipeline C: NPC] Applied Humanoid NPC appearance fallback on Global#{actorIndex} after {job.Ticks} ticks.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        logManager?.Error($"HumanoidNpcApplyJob exception: {ex}");
+                        if (i < humanoidNpcApplyJobs.Count) humanoidNpcApplyJobs.RemoveAt(i);
+                    }
+                }
+            }
+
             // 全アクティブアクターの描画可視化保証 (Brio DrawWhenReady & AQR 準拠)
             foreach (var actor in activeActors)
             {
@@ -653,8 +762,9 @@ public unsafe class ActorManager : IDisposable
                 if (obj is not ICharacter charaObj || charaObj.Address == nint.Zero) continue;
                 var chara = (Character*)charaObj.Address;
 
-                // モンスターの再描画待機中（DisableDraw中）は干渉しない
-                if (monsterRedrawJobs.Any(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex)) continue;
+                // モンスターまたは人型NPCの適用待機中（描画準備中）は干渉しない
+                if (monsterRedrawJobs.Any(j => j.Spawned == actor || j.GlobalIndex == actor.GlobalIndex) ||
+                    humanoidNpcApplyJobs.Any(j => j.Spawned == actor || j.Spawned.GlobalIndex == actor.GlobalIndex)) continue;
 
                 // 1. DrawObject が存在する場合、非表示フラグ(0x10)があれば解除
                 if (chara->GameObject.DrawObject != null)

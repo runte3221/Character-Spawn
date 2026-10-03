@@ -60,9 +60,24 @@
 - [x] **リリース実行**:
   - `CHANGELOG.md` 更新（v0.1.47.0）
   - 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.47.0`)
-- [ ] **MCDF・NPC・Monster の競合ゼロ保証分析**:
+- [x] **MCDF・NPC・Monster の競合ゼロ保証分析**:
   - MCDF パイプライン（Pipeline A/B）、Monster パイプライン（Pipeline D）、NPC パイプライン（Pipeline C）の各パイプラインの独立性を再確認。
-  - NPC 固有顔問題の根本原因（なぜ `ApplyState` で `ActorNotFound` が出たのか、なぜ直接書き込みだとサニタイズされるのか）を徹底調査。
-  - 既存パイプラインに一切の副作用を与えない安全確実な修正案を設計。
+  - HDM（`HumanGuise.cs`）の逆アセンブル解析により、Glamourer の冷態認識遅延（Cold-Spawn Race）とフレーム毎リトライ監視（`OnUpdate`）のメカニズムを完全解明。
+  - MCDF などの他パイプラインに一切手を加えない、独立した安全確実な修正案を設計。
+
+## 7. 独立キュー `HumanoidNpcApplyJob` による人型NPC固有外見の完全描画フェーズ (v0.1.48.0)
+- [x] **コード改修 (`Managers/ActorManager.cs`)**:
+  - [x] `HumanoidNpcApplyJob` クラスと `humanoidNpcApplyJobs` リストを追加。
+  - [x] `DespawnCharacter` / `DespawnAll` で該当ジョブの確実なクリーンアップを追加。
+  - [x] `SpawnCharacter` の人型NPC分岐（Pipeline C）で `HumanoidNpcApplyJob` にエンキュー。
+  - [x] `UpdateFrame` 内でフレーム毎に Glamourer 認識を待機・リトライし、認識された瞬間に Glamourer 経由で適用（タイムアウト時のみ直接メモリフォールバック）。
+- [x] **コード改修 (`Services/GlamourerIpc.cs`)**:
+  - [x] `TryApplyNpcAppearance` において、パペットのステートがまだ存在しない（`state == null`）場合は即座に `StateNull` を返してフレームリトライに委譲。
+  - [x] MCDF や他のパイプラインが通る共通メソッド（`ApplyDesignToActor` 等）には一切手を加えない。
+- [ ] **ドキュメント・リリース**:
+  - [ ] `CHANGELOG.md` 更新（v0.1.48.0）
+  - [ ] 全自動リリースパイプライン実行 (`tools/release.ps1 0.1.48.0`)
+  - [ ] 実機検証依頼（カヌ・エ・センナ、ユウギリ、MCDF、モンスターの全機能完全動作確認）
+
 
 

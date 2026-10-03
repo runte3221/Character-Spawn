@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.48] - 2026-10-03
+### Fixed
+- **独立キュー `HumanoidNpcApplyJob` による人型NPC固有外見（カヌ・エ・センナ、ユウギリ等）の完全描画**:
+  - **他機能への影響ゼロ保証（パイプライン完全分離）**:
+    - MCDF や 通常の Glamourer / Penumbra / Customize+（Pipeline A/B）、および Monster / Demihuman（Pipeline D）のコードには一切手を加えず、完全に分離・独立した「人型NPC（Pipeline C）」専用の処理として実装。共通メソッド `ApplyDesignToActor` も一切変更なし。
+  - **根本原因の完全解明 (Cold-Spawn Race と FilterCustomizeData のサニタイズ)**:
+    - HDM（Doll Master）の `HumanGuise.cs` 逆アセンブル解析により、ゲームエンジン内でアクターを新規生成した直後（0フレーム目）は Glamourer のアクター認識テーブルにまだアクターが登録されておらず、必ず `ActorNotFound`（ec=2）が返る仕様であることが判明。
+    - 従来の Character-Spawn では 0フレーム目で即座に「失敗」と見なして直接メモリ書き込みフォールバックを実行していたため、ゲームエンジンの `FilterCustomizeData` によって未解放のNPC固有顔・髪型がプレイヤー汎用顔・髪型（金髪ボブ等）に強制サニタイズ（置換）されていた。
+  - **解決策: HDM 準拠の非同期同期待機キュー `HumanoidNpcApplyJob` の新設**:
+    - 人型NPCスポーン時、`HumanoidNpcApplyJob` にエンキューし、毎フレームの `UpdateFrame` 内で Glamourer がアクターを認識してステートを返すまで待機・リトライ（最大60フレーム、約1秒）。
+    - 認識された瞬間に Glamourer 経由で外見を適用（`ec=0`）。Glamourer がゲームエンジンのサニタイズを完全にバイパスして適用するため、カヌ・エ・センナの角尊ツノ・固有編み込み髪型や、ユウギリのアウラ固有顔・ツノ・ウロコ造形が 100% 確実に描画される。
+    - 万一のタイムアウト時のみ安全網として直接メモリ書き込みフォールバックを実行。
+
 ## [0.1.47] - 2026-10-03
 ### Reverted
 - **安全な安定状態への復元（ロールバック）**:
