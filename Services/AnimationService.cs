@@ -116,9 +116,9 @@ public unsafe class AnimationService : IDisposable
                 chara->StopTimeline(0);
                 chara->Timeline.TimelineSequencer.PlayTimeline(config.TimelineId);
             }
-            else
+            else if (!isInitialSpawn)
             {
-                // モーションなし (通常待機に戻す)
+                // 手動クリア時のみ通常待機に戻す (初期スポーン時はモンスター等のネイティブ待機アニメーションを保護)
                 chara->SetMode(CharacterModes.Normal, 0);
                 chara->Timeline.BaseOverride = 0;
                 chara->Timeline.OverallSpeed = 1.0f;
@@ -133,8 +133,9 @@ public unsafe class AnimationService : IDisposable
                 chara->Timeline.TimelineSequencer.PlayTimeline(config.FacialTimelineId);
                 chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 0.0f); // 表情スロットの速度を0にして固定！
             }
-            else
+            else if (!isInitialSpawn)
             {
+                // 手動クリア時のみ素顔に戻す (初期スポーン時にモンスターへ人型素顔604を誤適用することを防止)
                 chara->Timeline.TimelineSequencer.SetSlotSpeed(2, 1.0f);
                 chara->Timeline.TimelineSequencer.PlayTimeline(604); // 表情：素顔
             }
@@ -147,7 +148,7 @@ public unsafe class AnimationService : IDisposable
             }
 
             activeStates[spawned.InstanceId] = state;
-            logManager?.Info($"ApplyMotion: '{spawned.DisplayName}' -> Timeline: {config.TimelineId}, Loop: {config.IsLoop}, Speed: {state.Speed:F2}x, Facial: {config.FacialTimelineId}, LookAt: {config.LookAtPlayer}, Dist: {state.LookAtMaxDistance}m, BodyLimit: {config.BodyTurnAngleLimit}°");
+            logManager?.Info($"ApplyMotion: '{spawned.DisplayName}' -> Timeline: {config.TimelineId}, Loop: {config.IsLoop}, Speed: {state.Speed:F2}x, Facial: {config.FacialTimelineId}, LookAt: {config.LookAtPlayer}, LookAtCustom: {config.LookAtCustomSpawn}, Dist: {state.LookAtMaxDistance}m, BodyLimit: {config.BodyTurnAngleLimit}°");
         }
         catch (Exception ex)
         {
@@ -264,6 +265,11 @@ public unsafe class AnimationService : IDisposable
                         targetEntityId = (tChara->EntityId != 0 && tChara->EntityId != 0xE0000000)
                             ? tChara->EntityId
                             : (uint)targetActor.GameObjectId;
+
+                        if (tChara->EntityId == 0 || tChara->EntityId == 0xE0000000)
+                        {
+                            tChara->EntityId = targetEntityId;
+                        }
 
                         // 対象アクターがゲームエンジンの視線追従(LookAt IK)対象として探索・解決できるようターゲット許可フラグを保証
                         tChara->GameObject.TargetableStatus |= ObjectTargetableFlags.IsTargetable;

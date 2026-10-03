@@ -511,7 +511,11 @@ public class SceneManager : IDisposable
 
             // アニメーション・モーション・表情・視線の自動適用
             if (animationService != null && placement.Motion != null &&
-                (placement.Motion.TimelineId > 0 || placement.Motion.FacialTimelineId > 0 || placement.Motion.LookAtPlayer))
+                (placement.Motion.TimelineId > 0 ||
+                 placement.Motion.FacialTimelineId > 0 ||
+                 placement.Motion.LookAtPlayer ||
+                 placement.Motion.LookAtCustomSpawn ||
+                 MathF.Abs(placement.Motion.Speed - 1.0f) > 0.01f))
             {
                 animationService.ApplyMotion(spawned, placement.Motion, placement.Rotation, isInitialSpawn: true);
             }

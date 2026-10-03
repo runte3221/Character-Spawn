@@ -223,3 +223,29 @@
   - これに伴いゲーム内UIシステム（`AddonNamePlate`）が反応し、頭上にネームプレートが表示され、クリックでのターゲットや右クリック「調べる」等のローカルメニューが出るようになった。
   - 本プラグインで生成されるカスタムスポーンアクター（Puppet）は **100% 完全にプレイヤーのPCクライアント上のメモリ内でのみ管理** されている。
   - サーバーとのパケット送受信は一切発生せず、他プレイヤーからも一切見えないため、安全に使用できる。
+
+---
+
+## Hide/Show 時の LookAt Custom Spawn 視線維持 ＆ ネイティブ待機保護 (`v0.1.79.0`)
+
+### 1. Hide → Show 時に LookAt Custom Spawn が切れてしまう原因と修正
+- **原因の特定**:
+  - `SceneManager.SpawnPlacementInternal` において、シーンスポーン時に各アクターのアニメーション・視線制御を適用する条件式が以下となっていた：
+    ```csharp
+    (placement.Motion.TimelineId > 0 || placement.Motion.FacialTimelineId > 0 || placement.Motion.LookAtPlayer)
+    ```
+  - ここに `placement.Motion.LookAtCustomSpawn` が含まれていなかったため、モンスター（レストレス・ラプトル等）や表情・モーションを指定せず「LookAt Custom Spawn」のみを有効化していたアクターは、シーンを非表示（Hide）から再表示（Show）した際に **`ApplyMotion` 自体がスキップ** され、毎フレームの追従ループ（`activeStates`）に登録されていなかった。
+  - （※ MCDF Ruma などエモートやモーションが設定されていたアクターは `TimelineId > 0` を満たしていたため正常に動作していた。）
+- **改修内容**:
+  - `SceneManager.cs` のスポーン条件に `placement.Motion.LookAtCustomSpawn` および速度変更を漏れなく追加。
+  - これにより、Hide → Show 後も確実に `ApplyMotion` が呼び出され、追従ループへ即時復帰するように修正。
+
+### 2. 初期スポーン時におけるモンスター・NPCネイティブ待機アニメーションの完全保護
+- **課題とリスク**:
+  - `ApplyMotion` 内で、モーション未指定（`TimelineId == 0`）の際に `PlayTimeline(1)`（人型通常待機）、表情未指定（`FacialTimelineId == 0`）の際に `PlayTimeline(604)`（人型素顔）を強制再生していた。
+  - これにより、初期スポーン時にモンスター固有の待機アニメーションやボーンステートを阻害してしまうリスクが存在した。
+- **改修内容**:
+  - 初期スポーン時（`isInitialSpawn == true`）は、ゲームエンジンが生成したモンスターやNPCのネイティブな待機アニメーションをそのまま維持し、無用な `PlayTimeline(1)` や `PlayTimeline(604)` の強制再生を抑止。
+  - UI上でユーザーが手動でモーションや表情をクリアした場合（`!isInitialSpawn`）のみ、デフォルト待機（1）や素顔（604）へリセットするよう条件を厳格化。
+  - 追従ループにおいて、注視対象アクターの `EntityId` 再同期と `TargetableStatus` 保証を徹底。
+

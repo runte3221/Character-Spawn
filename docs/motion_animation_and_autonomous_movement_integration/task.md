@@ -115,6 +115,12 @@ Character Spawn プラグインの根幹機能となる、カスタムスポー�
   - [x] モーションカテゴリに「`Favorite`」を追加し、お気に入り登録されたモーションのみを瞬時にフィルタリング
   - [x] すべてのカテゴリ表示において、お気に入り登録されたモーションを最上位に優先ソート
 
+### 【Step 2.1-fix8】Hide/Show 時の LookAt Custom Spawn 視線維持 ＆ ネイティブ待機保護（`v0.1.79.0`）
+- [x] **シーン Hide → Show 時における LookAt Custom Spawn 視線追従の維持 (`Managers/SceneManager.cs`, `Services/AnimationService.cs`)**
+  - [x] `SpawnPlacementInternal` の `ApplyMotion` 呼び出し条件に `LookAtCustomSpawn` および速度変更を追加
+  - [x] 初期スポーン時（`isInitialSpawn`）に、モーション・表情未指定時の強制通常待機（1）や素顔（604）の再生を抑止し、モンスターやNPCのネイティブ待機アニメーションを保護
+  - [x] 追従ループにおいて注視対象アクターの `EntityId` 再同期と `TargetableStatus` 保証を徹底
+
 ### 【Step 2.2】自律移動 AI ＆ パトロール・追従・復帰ルーチン（次工程）
 - [ ] ウェイポイント巡回ルーチン (指定ルート巡回、各地点でのモーション再生)
 - [ ] プレイヤー接近感知・追従・規定距離超過時の元の位置復帰ルーチン

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.79] - 2026-10-04
+### Fixed
+- **シーン非表示（Hide）→再表示（Show）時における LookAt Custom Spawn 視線追従の維持修正 (`Managers/SceneManager.cs`, `Services/AnimationService.cs`)**:
+  - `SceneManager.SpawnPlacementInternal` において、スポーン時の `ApplyMotion` 呼び出し条件に `LookAtCustomSpawn` が含まれていなかったため、モーションや表情がデフォルト（未指定）のモンスターやカスタムアクターを Hide → Show した際に追従処理自体がスキップされていた問題を修正。
+  - 初期スポーン時（`isInitialSpawn`）に、モーション未指定（`TimelineId == 0`）や表情未指定（`FacialTimelineId == 0`）のアクターに対して人型通常待機（`PlayTimeline(1)`）や表情素顔（`PlayTimeline(604)`）を強制再生していた処理を抑止し、モンスターやNPCのネイティブ待機アニメーションを完全保護。
+  - `AnimationService` の追従ループにおいて、注視対象アクターの `EntityId` が未設定または初期化された場合でもワールド EntityId を自動同期し、再スポーン後も確実に首・瞳の視線追従が継続するように強化。
+
 ## [0.1.78] - 2026-10-04
 ### Added
 - **モーションお気に入り登録機能（Favorite）の新設 (`Configuration.cs`, `Services/GameDataService.cs`, `UI/SceneEditWindow.cs`)**:
