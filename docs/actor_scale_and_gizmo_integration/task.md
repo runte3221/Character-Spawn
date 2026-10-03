@@ -35,4 +35,4 @@
   - [x] `UI/GizmoRenderer.cs`: `CurrentGizmoMode == GizmoMode.Scale` の時のみ Scale を通知し、移動・回転ギズモによるスケール誤上書きを完全隔離
   - [x] `Plugin.cs` & `UI/StageSceneTab.cs`: `float? newScale` が非 null の時のみスケールを更新・保存するガードを配線
   - [x] `UI/SceneEditWindow.cs`: [Apply Own Transform] の隣に [Default Scale] ボタンを追加し、テンプレート固有のサイズにワンクリック復元
-  - [ ] ドキュメント更新、CHANGELOG.md 追記、`tools/release.ps1 0.1.66.0` でのリリース
+  - [x] ドキュメント更新、CHANGELOG.md 追記、`tools/release.ps1 0.1.66.0` でのリリース
