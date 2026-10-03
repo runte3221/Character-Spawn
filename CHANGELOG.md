@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.84] - 2026-10-04
+### Improved
+- **巡回ルート描画のジッター根本根絶 (`UI/GizmoRenderer.cs`)**:
+  - 従来の透明ウィンドウローカル DrawList (`GetWindowDrawList`) による描画から、メインビューポート最前面 DrawList (`GetForegroundDrawList(MainViewport)`) へ移行。
+  - ゲームカメラの最新 ViewProjection 行列から直接 NDC を経て画面絶対座標を計算する `ProjectWorldToScreen` を実装。
+  - ウィンドウの `NoInputs` フラグトグルやレイアウト再計算によるサブピクセル単位の振動（小刻みな震え）を 100% 根絶し、カメラ操作時・静止時ともにピタッと吸い付く完全同期描画を実現。
+
+### Added
+- **各種距離・角度パラメータの 3D 空間可視化（レンジオーバーレイ）(`UI/GizmoRenderer.cs`)**:
+  - **Stop Dist（停止距離）**: アクター足元を中心とするライムグリーン（緑色）の水平リング。
+  - **Trigger Dist（接近検知距離）**: アクター足元を中心とするシアン（水色）の水平リング。
+  - **LookAt Dist（視線有効距離）**: アクター足元を中心とするオレンジ色の水平リング。
+  - **Body Turn（体回転許容角度）**: アクターの正面方向を中心とする黄色扇形（アーク＋半透明塗りつぶし＋中央正面ライン）。
+  - 各リング外周に暗色ピル背景付きの文字ラベル（`Stop: 1.8m`、`Trigger: 4.0m`、`LookAt: 15.0m`、`Body Turn: ±45°`）を表示。
+  - スライダー操作に合わせて 3D 空間上の円の半径や扇形の角度がリアルタイムに伸縮。
+- **可視化オーバーレイの表示/非表示切り替えトグル新設 (`Configuration.cs`, `UI/SceneEditWindow.cs`)**:
+  - **全体マスターチェックボックス**: アクター一覧リスト直下に `[x] 3D Overlays` を新設し、すべての 3D 可視化を一括でオン/オフ可能に。
+  - **Animation タブ**: LookAt セクションに `[x] Show LookAt & Body Turn Overlay (3D可視化)` を新設。
+  - **Movement タブ**: 追従設定横に `[x] Range Overlay (3D可視化)`、巡回設定横に `[x] Route Overlay (3D可視化)` を新設。
+
 ## [0.1.83] - 2026-10-04
 ### Improved
 - **巡回＋追従における中心座標基準の検知 ＆ 巡回地点直行復帰 ＆ 段差高度適応の改善 (`Services/MovementService.cs`)**:

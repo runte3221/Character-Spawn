@@ -263,7 +263,19 @@ public class SceneEditWindow : Window, IDisposable
         }
         ImGui.EndChild();
 
-        // リスト右下の [Delete] ボタン
+        // リスト下のツールバー: 3D 可視化トグル & Delete ボタン
+        bool showOverlays = configuration.ShowVisualOverlays;
+        if (ImGui.Checkbox("3D Overlays##ShowVisualOverlays", ref showOverlays))
+        {
+            configuration.ShowVisualOverlays = showOverlays;
+            configuration.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("3D 空間上のルート描画および距離・角度範囲オーバーレイの表示/非表示を一括切り替えます。");
+        }
+
+        ImGui.SameLine();
         float delWidth = 75f;
         ImGui.SetCursorPosX(ImGui.GetWindowWidth() - delWidth - ImGui.GetStyle().WindowPadding.X);
         var curPlacement = sceneManager.SelectedPlacement;
@@ -534,6 +546,19 @@ public class SceneEditWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
         {
             ImGui.SetTooltip("Actor's head, eyes, and body turn toward another custom spawn actor in the same scene.");
+        }
+
+        ImGui.Spacing();
+
+        bool showAnimRanges = configuration.ShowAnimationRanges;
+        if (ImGui.Checkbox("Show LookAt & Body Turn Overlay (3D可視化)##ShowAnimRanges", ref showAnimRanges))
+        {
+            configuration.ShowAnimationRanges = showAnimRanges;
+            configuration.Save();
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("視線追従の有効距離 (オレンジ色の円) と、体の回転許容角度 (黄色の扇形) を 3D 空間上に可視化します。");
         }
 
         ImGui.Spacing();
@@ -948,6 +973,17 @@ public class SceneEditWindow : Window, IDisposable
         {
             ImGui.Spacing();
             ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), "Player Follow & Return (接近追従 ＆ 帰還設定)");
+            ImGui.SameLine(360);
+            bool showMoveRanges = configuration.ShowMovementRanges;
+            if (ImGui.Checkbox("Range Overlay (3D可視化)##ShowMoveRanges", ref showMoveRanges))
+            {
+                configuration.ShowMovementRanges = showMoveRanges;
+                configuration.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("Trigger Dist (水色の円) と Stop Dist (緑色の円) を 3D 空間上に可視化します。");
+            }
 
             float trigDist = move.FollowTriggerDistance;
             ImGui.TextUnformatted("Trigger Dist");
@@ -1003,6 +1039,17 @@ public class SceneEditWindow : Window, IDisposable
             ImGui.Spacing();
 
             ImGui.TextColored(new Vector4(0.5f, 0.95f, 0.5f, 1.0f), "Patrol Route & Waypoints (巡回ルート・通過地点)");
+            ImGui.SameLine(360);
+            bool showPath = configuration.ShowWaypointPath;
+            if (ImGui.Checkbox("Route Overlay (3D可視化)##ShowWaypointPath", ref showPath))
+            {
+                configuration.ShowWaypointPath = showPath;
+                configuration.Save();
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip("巡回ルートのパスラインとウェイポイント番号ピンを 3D 空間上に可視化します。");
+            }
 
             int loopIdx = (int)move.LoopType;
             string[] loopLabels = { "Loop (循環: A->B->C->A...)", "PingPong (往復: A->B->C->B...)", "Once (片道: A->B->C 停止)" };

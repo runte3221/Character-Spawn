@@ -152,8 +152,9 @@ public sealed class Plugin : IDalamudPlugin
 
                 bool hasWaypoints = waypoints != null && waypoints.Count > 0;
                 bool canDrawGizmo = targetActor != null && targetActor.IsSpawned && targetActor.IsReady && Configuration.CurrentGizmoMode != GizmoMode.Select;
+                bool canDrawOverlays = Configuration.ShowVisualOverlays && (hasWaypoints || curPlacement != null);
 
-                if (canDrawGizmo || hasWaypoints)
+                if (canDrawGizmo || canDrawOverlays)
                 {
                     gizmoRenderer.Render(
                         canDrawGizmo ? targetActor : null,
@@ -167,7 +168,8 @@ public sealed class Plugin : IDalamudPlugin
                         },
                         hasWaypoints ? waypoints : null,
                         loopType,
-                        homePos);
+                        homePos,
+                        curPlacement);
                 }
             }
         }

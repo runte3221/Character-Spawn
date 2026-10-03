@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
@@ -13,7 +14,9 @@ namespace CharacterSpawn.UI;
 
 public unsafe class GizmoRenderer
 {
+#pragma warning disable CS0414
     private readonly IGameGui gameGui;
+#pragma warning restore CS0414
     private readonly Configuration configuration;
 
     public bool IsManipulating => ImGuizmo.IsUsing();
@@ -25,7 +28,7 @@ public unsafe class GizmoRenderer
     }
 
     /// <summary>
-    /// Stagehand スタイルのモード切り替えツールバー (Select / Translate / Rotate)
+    /// Stagehand スタイルのモード切り替えツールバー (Select / Translate / Rotate / Scale)
     /// </summary>
     public void DrawToolbar()
     {
@@ -90,7 +93,8 @@ public unsafe class GizmoRenderer
         Action<Vector3, float, float?> onTransformChanged,
         IReadOnlyList<SceneActorWaypoint>? waypoints = null,
         PatrolLoopType loopType = PatrolLoopType.Loop,
-        Vector3? homePosition = null)
+        Vector3? homePosition = null,
+        SceneActorPlacement? selectedPlacement = null)
     {
         // FFXIV ゲームカメラの取得 (Stagehand / BDTH 準拠)
         var cameraManager = CameraManager.Instance();
@@ -103,47 +107,79 @@ public unsafe class GizmoRenderer
         var viewMatrix = camera->ViewMatrix;
         var projMatrix = renderCamera->ProjectionMatrix;
 
-        // FFXIV リバースZ深度プロジェクションの ImGuizmo 補正 (Stagehand & BDTH 準拠)
-        var far = renderCamera->FarPlane;
-        var near = renderCamera->NearPlane;
-        var clip = far / (far - near);
+        var viewport = ImGuiHelpers.MainViewport;
+        var vpPos = viewport.Pos;
+        var vpSize = viewport.Size;
+        var viewProj = viewMatrix * projMatrix;
 
-        projMatrix.M43 = -(clip * near);
-        projMatrix.M33 = -((far + near) / (far - near));
-        viewMatrix.M44 = 1.0f;
-
-        // フルスクリーン透明オーバーレイウィンドウ
-        ImGuiHelpers.ForceNextWindowMainViewport();
-        ImGuiHelpers.SetNextWindowPosRelativeMainViewport(Vector2.Zero);
-        ImGui.SetNextWindowSize(ImGui.GetIO().DisplaySize);
-
-        var flags = ImGuiWindowFlags.NoDecoration |
-                    ImGuiWindowFlags.NoSavedSettings |
-                    ImGuiWindowFlags.NoFocusOnAppearing |
-                    ImGuiWindowFlags.NoNav |
-                    ImGuiWindowFlags.NoBackground |
-                    ImGuiWindowFlags.NoBringToFrontOnFocus;
-
-        if (!isHoveredOrUsing)
+        // =========================================================================
+        // 1. 3D 空間オーバーレイ描画 (パスライン・ピン・範囲円・扇形)
+        // メインビューポートの ForegroundDrawList に直接描画し、ジッターやウィンドウ干渉を根絶
+        // =========================================================================
+        if (configuration.ShowVisualOverlays)
         {
-            flags |= ImGuiWindowFlags.NoInputs;
-        }
+            var foregroundDrawList = ImGui.GetForegroundDrawList(viewport);
 
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, 0);
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0);
-
-        if (ImGui.Begin("##CharacterSpawnGizmoOverlay", flags))
-        {
-            // 3D 空間上のウェイポイント巡回ルートライン描画
-            if (waypoints != null && waypoints.Count > 0)
+            // ウェイポイント巡回ルート描画
+            if (configuration.ShowWaypointPath && waypoints != null && waypoints.Count > 0)
             {
-                RenderWaypointsPath(waypoints, loopType, homePosition);
+                RenderWaypointsPath(foregroundDrawList, waypoints, loopType, homePosition, viewProj, vpPos, vpSize);
             }
 
-            if (selectedActor != null && selectedActor.IsSpawned && configuration.CurrentGizmoMode != GizmoMode.Select)
+            // 範囲円・Body Turn 扇形描画
+            if (selectedPlacement != null)
+            {
+                var actorPos = selectedActor != null && selectedActor.IsSpawned
+                    ? selectedActor.Transform.Position
+                    : selectedPlacement.Position;
+
+                var actorRot = selectedActor != null && selectedActor.IsSpawned
+                    ? selectedActor.Transform.Rotation
+                    : selectedPlacement.Rotation;
+
+                RenderRangeOverlays(foregroundDrawList, actorPos, actorRot, selectedPlacement, viewProj, vpPos, vpSize);
+            }
+        }
+
+        // =========================================================================
+        // 2. ImGuizmo 3D マニピュレータ (必要な時のみウィンドウを開いて操作)
+        // =========================================================================
+        if (selectedActor != null && selectedActor.IsSpawned && configuration.CurrentGizmoMode != GizmoMode.Select)
+        {
+            // FFXIV リバースZ深度プロジェクションの ImGuizmo 補正 (Stagehand & BDTH 準拠)
+            var far = renderCamera->FarPlane;
+            var near = renderCamera->NearPlane;
+            var clip = far / (far - near);
+
+            var imguizmoProj = projMatrix;
+            imguizmoProj.M43 = -(clip * near);
+            imguizmoProj.M33 = -((far + near) / (far - near));
+            var imguizmoView = viewMatrix;
+            imguizmoView.M44 = 1.0f;
+
+            // フルスクリーン透明オーバーレイウィンドウ
+            ImGuiHelpers.ForceNextWindowMainViewport();
+            ImGuiHelpers.SetNextWindowPosRelativeMainViewport(Vector2.Zero);
+            ImGui.SetNextWindowSize(ImGui.GetIO().DisplaySize);
+
+            var flags = ImGuiWindowFlags.NoDecoration |
+                        ImGuiWindowFlags.NoSavedSettings |
+                        ImGuiWindowFlags.NoFocusOnAppearing |
+                        ImGuiWindowFlags.NoNav |
+                        ImGuiWindowFlags.NoBackground |
+                        ImGuiWindowFlags.NoBringToFrontOnFocus;
+
+            if (!isHoveredOrUsing)
+            {
+                flags |= ImGuiWindowFlags.NoInputs;
+            }
+
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, 0);
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0);
+
+            if (ImGui.Begin("##CharacterSpawnGizmoOverlay", flags))
             {
                 ImGuizmo.BeginFrame();
-
                 ImGuizmo.SetDrawlist();
                 ImGuizmo.Enable(true);
                 ImGuizmo.SetID((int)ImGui.GetID("CharacterSpawnGizmo"));
@@ -152,66 +188,67 @@ public unsafe class GizmoRenderer
                 var vp = ImGui.GetWindowViewport();
                 ImGuizmo.SetRect(vp.Pos.X, vp.Pos.Y, vp.Size.X, vp.Size.Y);
 
-            // ターゲットアクターの Transform 行列を構築 (Quaternion を用いて 180 度境界でのフリップ・ジンバルロックを完全に防止)
-            var pos = selectedActor.Transform.Position;
-            var rotQuat = Quaternion.CreateFromAxisAngle(Vector3.UnitY, selectedActor.Transform.Rotation);
-            var scaleVec = Vector3.One * (selectedActor.Transform.Scale > 0 ? selectedActor.Transform.Scale : 1.0f);
+                // ターゲットアクターの Transform 行列を構築
+                var pos = selectedActor.Transform.Position;
+                var rotQuat = Quaternion.CreateFromAxisAngle(Vector3.UnitY, selectedActor.Transform.Rotation);
+                var scaleVec = Vector3.One * (selectedActor.Transform.Scale > 0 ? selectedActor.Transform.Scale : 1.0f);
 
-            var matrix = Matrix4x4.CreateScale(scaleVec) *
-                         Matrix4x4.CreateFromQuaternion(rotQuat) *
-                         Matrix4x4.CreateTranslation(pos);
+                var matrix = Matrix4x4.CreateScale(scaleVec) *
+                             Matrix4x4.CreateFromQuaternion(rotQuat) *
+                             Matrix4x4.CreateTranslation(pos);
 
-            // 操作モード: Translate / Rotate / Scale
-            var op = configuration.CurrentGizmoMode switch
-            {
-                GizmoMode.Rotate => ImGuizmoOperation.RotateY,
-                GizmoMode.Scale => ImGuizmoOperation.Scale,
-                _ => ImGuizmoOperation.Translate
-            };
-
-            var mode = ImGuizmoMode.World;
-
-            // ImGuizmo によるマニピュレート
-            if (ImGuizmo.Manipulate(ref viewMatrix.M11, ref projMatrix.M11, op, mode, ref matrix.M11))
-            {
-                if (Matrix4x4.Decompose(matrix, out var newScale, out var newRot, out var newPos))
+                var op = configuration.CurrentGizmoMode switch
                 {
-                    // クォータニオンから前方ベクトルを算出し、Atan2 で 360 度シームレスに水平回転角（Yaw）を導出
-                    var forward = Vector3.Transform(Vector3.UnitZ, newRot);
-                    float newYawRad = MathF.Atan2(forward.X, forward.Z);
+                    GizmoMode.Rotate => ImGuizmoOperation.RotateY,
+                    GizmoMode.Scale => ImGuizmoOperation.Scale,
+                    _ => ImGuizmoOperation.Translate
+                };
 
-                    // Scale モード操作時のみ均等スケールを導出して通知 (移動・回転モードでの不要なスケール破壊を完全防止)
-                    float? updatedScale = null;
-                    if (configuration.CurrentGizmoMode == GizmoMode.Scale)
+                var mode = ImGuizmoMode.World;
+
+                if (ImGuizmo.Manipulate(ref imguizmoView.M11, ref imguizmoProj.M11, op, mode, ref matrix.M11))
+                {
+                    if (Matrix4x4.Decompose(matrix, out var newScale, out var newRot, out var newPos))
                     {
-                        updatedScale = Math.Clamp((newScale.X + newScale.Y + newScale.Z) / 3.0f, 0.01f, 10.0f);
-                    }
+                        var forward = Vector3.Transform(Vector3.UnitZ, newRot);
+                        float newYawRad = MathF.Atan2(forward.X, forward.Z);
 
-                    onTransformChanged(newPos, newYawRad, updatedScale);
+                        float? updatedScale = null;
+                        if (configuration.CurrentGizmoMode == GizmoMode.Scale)
+                        {
+                            updatedScale = Math.Clamp((newScale.X + newScale.Y + newScale.Z) / 3.0f, 0.01f, 10.0f);
+                        }
+
+                        onTransformChanged(newPos, newYawRad, updatedScale);
+                    }
                 }
-            }
 
                 // 次フレームの NoInputs 判定用にホバー・使用状態を記録
                 isHoveredOrUsing = ImGuizmo.IsOver() || ImGuizmo.IsUsing();
-
                 ImGuizmo.SetID(-1);
+
+                ImGui.End();
             }
 
-            ImGui.End();
+            ImGui.PopStyleVar();
+            ImGui.PopStyleColor();
         }
-
-        ImGui.PopStyleVar();
-        ImGui.PopStyleColor();
     }
 
     /// <summary>
     /// 3D 空間上にウェイポイント巡回ルート（パスラインと番号ピン）を描画
     /// </summary>
-    public void RenderWaypointsPath(IReadOnlyList<SceneActorWaypoint> waypoints, PatrolLoopType loopType, Vector3? homePosition = null)
+    private void RenderWaypointsPath(
+        ImDrawListPtr drawList,
+        IReadOnlyList<SceneActorWaypoint> waypoints,
+        PatrolLoopType loopType,
+        Vector3? homePosition,
+        Matrix4x4 viewProj,
+        Vector2 vpPos,
+        Vector2 vpSize)
     {
         if (waypoints == null || waypoints.Count == 0) return;
 
-        var drawList = ImGui.GetWindowDrawList();
         var yellowLineCol = ImGui.GetColorU32(new Vector4(1.0f, 0.85f, 0.2f, 0.85f));
         var loopLineCol = ImGui.GetColorU32(new Vector4(1.0f, 0.85f, 0.2f, 0.45f));
         var homeLineCol = ImGui.GetColorU32(new Vector4(0.4f, 0.8f, 1.0f, 0.65f));
@@ -223,9 +260,9 @@ public unsafe class GizmoRenderer
         bool hasPrev = false;
 
         // ホーム位置から最初のウェイポイントへの接続線
-        if (homePosition.HasValue && gameGui.WorldToScreen(homePosition.Value, out var homeScreenPos))
+        if (homePosition.HasValue && ProjectWorldToScreen(homePosition.Value, viewProj, vpPos, vpSize, out var homeScreenPos))
         {
-            if (gameGui.WorldToScreen(waypoints[0].Position, out var firstWpScreenPos))
+            if (ProjectWorldToScreen(waypoints[0].Position, viewProj, vpPos, vpSize, out var firstWpScreenPos))
             {
                 drawList.AddLine(homeScreenPos, firstWpScreenPos, homeLineCol, 1.5f);
             }
@@ -237,7 +274,7 @@ public unsafe class GizmoRenderer
         for (int i = 0; i < waypoints.Count; i++)
         {
             var wp = waypoints[i];
-            if (gameGui.WorldToScreen(wp.Position, out var screenPos))
+            if (ProjectWorldToScreen(wp.Position, viewProj, vpPos, vpSize, out var screenPos))
             {
                 if (!hasFirst)
                 {
@@ -274,5 +311,288 @@ public unsafe class GizmoRenderer
         {
             drawList.AddLine(prevScreenPos, firstScreenPos, loopLineCol, 1.5f);
         }
+    }
+
+    /// <summary>
+    /// 各種距離（Trigger Dist, Stop Dist, LookAt Dist）および Body Turn の 3D 可視化を描画
+    /// </summary>
+    private void RenderRangeOverlays(
+        ImDrawListPtr drawList,
+        Vector3 center,
+        float rotation,
+        SceneActorPlacement placement,
+        Matrix4x4 viewProj,
+        Vector2 vpPos,
+        Vector2 vpSize)
+    {
+        // 1. 移動・追従範囲 (Trigger Dist & Stop Dist)
+        if (configuration.ShowMovementRanges && placement.Movement != null)
+        {
+            // FollowPlayer または PatrolAndFollow の場合に追従範囲を描画
+            if (placement.Movement.Mode == MovementMode.FollowPlayer || placement.Movement.Mode == MovementMode.PatrolAndFollow)
+            {
+                float triggerDist = placement.Movement.FollowTriggerDistance;
+                float stopDist = placement.Movement.FollowStopDistance;
+
+                // Stop Dist: ライムグリーン (#33FF66)
+                var stopColor = ImGui.GetColorU32(new Vector4(0.2f, 1.0f, 0.4f, 0.85f));
+                DrawHorizontalCircle(drawList, center, stopDist, stopColor, 2.0f, viewProj, vpPos, vpSize);
+                DrawRangeLabel(drawList, center, stopDist, $"Stop: {stopDist:F1}m", stopColor, viewProj, vpPos, vpSize, 0f);
+
+                // Trigger Dist: シアン・水色 (#33CCFF)
+                var trigColor = ImGui.GetColorU32(new Vector4(0.2f, 0.8f, 1.0f, 0.85f));
+                DrawHorizontalCircle(drawList, center, triggerDist, trigColor, 2.0f, viewProj, vpPos, vpSize);
+                DrawRangeLabel(drawList, center, triggerDist, $"Trigger: {triggerDist:F1}m", trigColor, viewProj, vpPos, vpSize, MathF.PI * 0.25f);
+            }
+        }
+
+        // 2. アニメーション・視線追従範囲 (LookAt Distance & Body Turn)
+        if (configuration.ShowAnimationRanges && placement.Motion != null)
+        {
+            // LookAt が有効な場合 (LookAtPlayer または LookAtCustomSpawn)
+            if (placement.Motion.LookAtPlayer || placement.Motion.LookAtCustomSpawn)
+            {
+                float lookAtDist = placement.Motion.LookAtMaxDistance;
+                float bodyTurnAngle = placement.Motion.BodyTurnAngleLimit;
+
+                // LookAt Distance: オレンジ色 (#FF9933)
+                var lookAtColor = ImGui.GetColorU32(new Vector4(1.0f, 0.6f, 0.2f, 0.85f));
+                DrawHorizontalCircle(drawList, center, lookAtDist, lookAtColor, 1.8f, viewProj, vpPos, vpSize, 64);
+                DrawRangeLabel(drawList, center, lookAtDist, $"LookAt: {lookAtDist:F1}m", lookAtColor, viewProj, vpPos, vpSize, MathF.PI * 0.5f);
+
+                // Body Turn: 黄色扇形 (#FFEE33)
+                DrawBodyTurnArc(drawList, center, rotation, bodyTurnAngle, viewProj, vpPos, vpSize);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 水平面（XZ平面）上に指定半径の円を描画
+    /// </summary>
+    private void DrawHorizontalCircle(
+        ImDrawListPtr drawList,
+        Vector3 center,
+        float radius,
+        uint color,
+        float thickness,
+        Matrix4x4 viewProj,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        int segments = 48)
+    {
+        if (radius <= 0.05f) return;
+
+        Vector2 prevPt = Vector2.Zero;
+        bool hasPrev = false;
+
+        float step = MathF.PI * 2.0f / segments;
+        for (int i = 0; i <= segments; i++)
+        {
+            float angle = i * step;
+            var worldPt = new Vector3(
+                center.X + MathF.Sin(angle) * radius,
+                center.Y,
+                center.Z + MathF.Cos(angle) * radius
+            );
+
+            if (ProjectWorldToScreen(worldPt, viewProj, vpPos, vpSize, out var screenPt))
+            {
+                if (hasPrev)
+                {
+                    drawList.AddLine(prevPt, screenPt, color, thickness);
+                }
+                prevPt = screenPt;
+                hasPrev = true;
+            }
+            else
+            {
+                hasPrev = false;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Body Turn 角度制限の扇形（アーク）を描画
+    /// </summary>
+    private void DrawBodyTurnArc(
+        ImDrawListPtr drawList,
+        Vector3 center,
+        float actorRotation,
+        float angleLimitDeg,
+        Matrix4x4 viewProj,
+        Vector2 vpPos,
+        Vector2 vpSize)
+    {
+        var arcBorderCol = ImGui.GetColorU32(new Vector4(1.0f, 0.92f, 0.25f, 0.95f)); // 黄色
+        var arcFillCol = ImGui.GetColorU32(new Vector4(1.0f, 0.92f, 0.25f, 0.12f));   // 半透明黄色
+        float arcRadius = 2.8f; // 見やすい標準的な半径
+
+        if (!ProjectWorldToScreen(center, viewProj, vpPos, vpSize, out var centerScreen))
+            return;
+
+        // 角度が 0 度（首・視線のみ、体は回転しない）
+        if (angleLimitDeg <= 0.5f)
+        {
+            var forwardWorld = new Vector3(
+                center.X + MathF.Sin(actorRotation) * arcRadius,
+                center.Y,
+                center.Z + MathF.Cos(actorRotation) * arcRadius
+            );
+            if (ProjectWorldToScreen(forwardWorld, viewProj, vpPos, vpSize, out var forwardScreen))
+            {
+                drawList.AddLine(centerScreen, forwardScreen, arcBorderCol, 2.5f);
+                drawList.AddCircleFilled(forwardScreen, 4.0f, arcBorderCol);
+                DrawLabel(drawList, forwardScreen, "Body Turn: 0° (Head only)", arcBorderCol);
+            }
+            return;
+        }
+
+        // 角度が 180 度以上（全方位体回転）
+        if (angleLimitDeg >= 179.5f)
+        {
+            DrawHorizontalCircle(drawList, center, arcRadius, arcBorderCol, 2.0f, viewProj, vpPos, vpSize, 36);
+            DrawRangeLabel(drawList, center, arcRadius, "Body Turn: ±180° (All directions)", arcBorderCol, viewProj, vpPos, vpSize, MathF.PI);
+            return;
+        }
+
+        // 0 < angleLimitDeg < 180 (扇形アーク)
+        float limitRad = angleLimitDeg * (MathF.PI / 180.0f);
+        float startAngle = actorRotation - limitRad;
+        float endAngle = actorRotation + limitRad;
+        int segments = Math.Max(8, (int)(angleLimitDeg / 5.0f));
+        float step = (endAngle - startAngle) / segments;
+
+        Vector2 leftEdgeScreen = Vector2.Zero;
+        Vector2 rightEdgeScreen = Vector2.Zero;
+        bool hasLeftEdge = false;
+        bool hasRightEdge = false;
+
+        Vector2 prevPt = Vector2.Zero;
+        bool hasPrev = false;
+
+        for (int i = 0; i <= segments; i++)
+        {
+            float curAngle = startAngle + i * step;
+            var ptWorld = new Vector3(
+                center.X + MathF.Sin(curAngle) * arcRadius,
+                center.Y,
+                center.Z + MathF.Cos(curAngle) * arcRadius
+            );
+
+            if (ProjectWorldToScreen(ptWorld, viewProj, vpPos, vpSize, out var curPtScreen))
+            {
+                if (i == 0)
+                {
+                    leftEdgeScreen = curPtScreen;
+                    hasLeftEdge = true;
+                }
+                if (i == segments)
+                {
+                    rightEdgeScreen = curPtScreen;
+                    hasRightEdge = true;
+                }
+
+                if (hasPrev)
+                {
+                    drawList.AddLine(prevPt, curPtScreen, arcBorderCol, 2.0f);
+                    drawList.AddTriangleFilled(centerScreen, prevPt, curPtScreen, arcFillCol);
+                }
+
+                prevPt = curPtScreen;
+                hasPrev = true;
+            }
+            else
+            {
+                hasPrev = false;
+            }
+        }
+
+        if (hasLeftEdge)
+        {
+            drawList.AddLine(centerScreen, leftEdgeScreen, arcBorderCol, 2.0f);
+        }
+        if (hasRightEdge)
+        {
+            drawList.AddLine(centerScreen, rightEdgeScreen, arcBorderCol, 2.0f);
+        }
+
+        // 正面ライン（中央ガイド線）
+        var fwdWorld = new Vector3(
+            center.X + MathF.Sin(actorRotation) * arcRadius,
+            center.Y,
+            center.Z + MathF.Cos(actorRotation) * arcRadius
+        );
+        if (ProjectWorldToScreen(fwdWorld, viewProj, vpPos, vpSize, out var fwdScreen))
+        {
+            var fwdLineCol = ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 1.0f, 0.6f));
+            drawList.AddLine(centerScreen, fwdScreen, fwdLineCol, 1.2f);
+            DrawLabel(drawList, fwdScreen, $"Body Turn: ±{angleLimitDeg:F0}°", arcBorderCol);
+        }
+    }
+
+    /// <summary>
+    /// リング外周上の指定角度位置に距離ラベルを描画
+    /// </summary>
+    private void DrawRangeLabel(
+        ImDrawListPtr drawList,
+        Vector3 center,
+        float radius,
+        string text,
+        uint color,
+        Matrix4x4 viewProj,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        float angleOffset = 0f)
+    {
+        var pos = new Vector3(
+            center.X + MathF.Sin(angleOffset) * radius,
+            center.Y,
+            center.Z + MathF.Cos(angleOffset) * radius
+        );
+
+        if (ProjectWorldToScreen(pos, viewProj, vpPos, vpSize, out var screenPos))
+        {
+            DrawLabel(drawList, screenPos, text, color);
+        }
+    }
+
+    private void DrawLabel(ImDrawListPtr drawList, Vector2 pos, string text, uint color)
+    {
+        var textSize = ImGui.CalcTextSize(text);
+        var bgMin = new Vector2(pos.X - textSize.X * 0.5f - 4, pos.Y - textSize.Y * 0.5f - 2);
+        var bgMax = new Vector2(pos.X + textSize.X * 0.5f + 4, pos.Y + textSize.Y * 0.5f + 2);
+        var bgCol = ImGui.GetColorU32(new Vector4(0.1f, 0.1f, 0.14f, 0.85f));
+
+        drawList.AddRectFilled(bgMin, bgMax, bgCol, 3.0f);
+        drawList.AddText(new Vector2(pos.X - textSize.X * 0.5f, pos.Y - textSize.Y * 0.5f), color, text);
+    }
+
+    /// <summary>
+    /// 3D ワールド座標をスクリーン座標へ高精度に投影。
+    /// ゲームカメラの最新 ViewProjection 行列から直接計算し、TAAジッターやウィンドウ位置ずれに影響されない完全同期を実現。
+    /// </summary>
+    private bool ProjectWorldToScreen(
+        Vector3 worldPos,
+        Matrix4x4 viewProj,
+        Vector2 vpPos,
+        Vector2 vpSize,
+        out Vector2 screenPos)
+    {
+        var clip = Vector4.Transform(new Vector4(worldPos, 1.0f), viewProj);
+        if (clip.W <= 0.01f) // カメラ背面
+        {
+            screenPos = Vector2.Zero;
+            return false;
+        }
+
+        float invW = 1.0f / clip.W;
+        float ndcX = clip.X * invW;
+        float ndcY = clip.Y * invW;
+
+        screenPos = new Vector2(
+            vpPos.X + (ndcX + 1.0f) * 0.5f * vpSize.X,
+            vpPos.Y + (1.0f - ndcY) * 0.5f * vpSize.Y
+        );
+        return true;
     }
 }

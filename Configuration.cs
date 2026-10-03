@@ -44,6 +44,12 @@ public class Configuration : IPluginConfiguration
     public bool AutoRestoreScenesOnZoneChange { get; set; } = true;
     public float GizmoSnapDistance { get; set; } = 0.1f;
 
+    // 3D 範囲・ルート可視化設定
+    public bool ShowVisualOverlays { get; set; } = true;
+    public bool ShowWaypointPath { get; set; } = true;
+    public bool ShowMovementRanges { get; set; } = true;
+    public bool ShowAnimationRanges { get; set; } = true;
+
     [NonSerialized]
     private IDalamudPluginInterface? pluginInterface;
 
