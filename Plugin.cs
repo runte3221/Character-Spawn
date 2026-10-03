@@ -185,7 +185,8 @@ public sealed class Plugin : IDalamudPlugin
                         selected =>
                         {
                             sceneManager.SelectedPlacement = selected;
-                        });
+                        },
+                        ObjectTable);
                 }
             }
         }

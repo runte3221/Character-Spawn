@@ -359,34 +359,26 @@ public unsafe class MovementService : IDisposable
         // 停止距離に到達
         if (horizDist <= stopDistance)
         {
-            // 停止時も足元を階段・地面に接地
+            // 停止時も足元を階段・地面に接地（BGCollision 地面レイキャスト）
             if (TryGetGroundHeight(curPos, out float gY))
             {
                 if (MathF.Abs(gY - curPos.Y) > 0.01f)
                 {
                     state.CurrentPosition = new Vector3(curPos.X, gY, curPos.Z);
-                    actorManager.UpdateActorTransform(actor, state.CurrentPosition, state.CurrentRotation);
                 }
             }
 
-            // プレイヤーをターゲットにしている場合、足元の高さを合わせ、立ち止まってプレイヤーの方を向く
+            // プレイヤーをターゲットにしている場合、立ち止まってプレイヤーの方を向く
             if (isPlayerTarget)
             {
-                float yDiffAtStop = diff.Y;
-                if (MathF.Abs(yDiffAtStop) > 0.02f)
-                {
-                    float snapSpeed = 6.0f * deltaTime;
-                    float stepY = Math.Clamp(yDiffAtStop, -snapSpeed, snapSpeed);
-                    state.CurrentPosition = new Vector3(curPos.X, curPos.Y + stepY, curPos.Z);
-                }
-
                 if (horizDist > 0.1f)
                 {
                     float targetYaw = MathF.Atan2(diff.X, diff.Z);
                     state.CurrentRotation = RotateToward(curRot, targetYaw, state.Config.TurnSpeed * 2.0f, deltaTime);
                 }
-                actorManager.UpdateActorTransform(actor, state.CurrentPosition, state.CurrentRotation);
             }
+
+            actorManager.UpdateActorTransform(actor, state.CurrentPosition, state.CurrentRotation);
             return true;
         }
 

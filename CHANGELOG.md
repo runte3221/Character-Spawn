@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.90] - 2026-10-04
+### Fixed
+- **追従停止時の上下振動（激しいジッター）の解消 (`Services/MovementService.cs`)**:
+  - **根本原因の特定**: 階段や段差の境界で停止距離に到達した際、足元を地面にスナップさせる処理（`TryGetGroundHeight`）の直後に、プレイヤーが高低差のある位置にいると `yDiffAtStop` によってプレイヤーのY座標へ引っ張る処理が毎フレーム競合し、上下に激しく振動（ジッター）していた。
+  - **対策**: 停止時の高度制御をゲームエンジンの地形衝突エンジン（BGCollision `TryGetGroundHeight`）に完全一元化し、不要なプレイヤーY追従処理を完全削除。階段の踏み面や踊り場にピタッと美しく静止するよう修正。
+- **モンスター・デミヒューマン・マウント・ミニオンの直接クリック選択＆ゲーム内ターゲット対応 (`Managers/ActorManager.cs`, `UI/GizmoRenderer.cs`, `Plugin.cs`)**:
+  - **ゲーム内ターゲット連動の完全化**:
+    - パイプライン D で生成されるモンスター、デミヒューマン（サキュバス等）、マウント、ミニオンが、`CopyFromCharacter` やモデル非同期再描画によって `TargetableStatus` がリセットされていた不具合を解消。
+    - `MonsterRedrawJob` / `HumanoidNpcApplyJob` 完了時の明示的再付与に加え、`EnforceActorDrawState`（毎フレーム実行）にて全アクティブアクターの `TargetableStatus |= ObjectTargetableFlags.IsTargetable` を常時維持。ゲーム画面上で通常通り左クリックでターゲット可能に。
+  - **3D スクリーン空間直接クリック判定の全モデル種別対応**:
+    - 各アクターのゲーム内実座標（`ICharacter.Position`）およびモデル固有の当たり判定半径（`HitboxRadius`）を取得。
+    - カメラの右方向ベクトルを用いて、3D空間上のモデル半径をスクリーン左右幅として正確に投影。横幅の広い大型モンスター・マウントの胴体や翼のクリックを確実に捕捉。
+    - ミニオンの低身長（0.5m〜0.8m）に対応し頭上虚空判定を排除するとともに、最小クリック判定領域（幅28px/高さ24px）を保証。
+    - サキュバスの浮遊位置やミニオン、巨大モンスターでも全身を快適にクリック＆ホバー選択可能に。
+
 ## [0.1.89] - 2026-10-04
 ### Added
 - **3D 空間モデル直接クリックによるスポーンアクター選択機能の実装 (`UI/GizmoRenderer.cs`, `Plugin.cs`, `Managers/ActorManager.cs`, `Managers/SceneManager.cs`)**:

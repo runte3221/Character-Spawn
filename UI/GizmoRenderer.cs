@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
+using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface;
 using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility;
@@ -88,12 +90,14 @@ public unsafe class GizmoRenderer
 
     /// <summary>
     /// 3D 空間上のモデルを直接クリックしてアクターを選択するヒットテスト。
-    /// スクリーン空間投影とカメラ距離（最前面優先）を用いて高精度に判定し、ImGui/ImGuizmo 操作中は除外する。
+    /// 人型だけでなく、モンスター・デミヒューマン・マウント・ミニオンなど全モデル種別の当たり判定半径（HitboxRadius）
+    /// およびスクリーン空間投影（最前面優先）を用いて高精度に判定し、ImGui/ImGuizmo 操作中は除外する。
     /// </summary>
     public void CheckActorClickSelection(
         IReadOnlyList<(SceneActorPlacement placement, SpawnedActorData actor)> spawnedActors,
         SceneActorPlacement? currentSelected,
-        Action<SceneActorPlacement> onSelect)
+        Action<SceneActorPlacement> onSelect,
+        IObjectTable? objectTable = null)
     {
         if (spawnedActors == null || spawnedActors.Count == 0) return;
 
@@ -118,37 +122,86 @@ public unsafe class GizmoRenderer
         if (!Matrix4x4.Invert(viewMatrix, out var invView))
             return;
         var cameraPos = invView.Translation;
+        var cameraRight = new Vector3(invView.M11, invView.M12, invView.M13);
 
         var mousePos = io.MousePos;
         bool isLeftClicked = ImGui.IsMouseClicked(ImGuiMouseButton.Left);
 
         SceneActorPlacement? bestPlacement = null;
         SpawnedActorData? bestActor = null;
+        Vector3 bestFeetPos = Vector3.Zero;
+        float bestRadius = 0.5f;
         float closestDistSq = float.MaxValue;
 
         foreach (var (placement, actor) in spawnedActors)
         {
             if (actor == null || !actor.IsSpawned) continue;
 
-            var feetPos = actor.Transform.Position;
+            Vector3 feetPos = actor.Transform.Position;
             float scale = actor.Transform.Scale > 0.001f ? actor.Transform.Scale : 1.0f;
+            float hitboxRadius = 0.5f * scale;
             float actorHeight = 1.85f * scale;
+
+            // ゲームエンジン内の実オブジェクト情報から高精度な実座標とコリジョン半径を取得
+            if (objectTable != null && actor.GlobalIndex < objectTable.Length)
+            {
+                var obj = objectTable[actor.GlobalIndex];
+                if (obj is ICharacter charaObj && charaObj.Address != nint.Zero)
+                {
+                    feetPos = charaObj.Position;
+                    if (charaObj.HitboxRadius > 0.1f)
+                    {
+                        hitboxRadius = MathF.Max(charaObj.HitboxRadius * scale, 0.35f);
+                    }
+                }
+            }
+
+            // モデル種別に応じた頭上高さの補正
+            // ミニオン: 通常 0.5m〜0.8m (頭上虚空判定を防止)
+            // マウント / 大型モンスター: 半径に応じて頭上高さを自動拡張 (翼や背中のクリックを確実に拾う)
+            if (hitboxRadius > 1.2f)
+            {
+                actorHeight = MathF.Max(2.5f * scale, hitboxRadius * 1.5f);
+            }
+            else if (hitboxRadius < 0.45f)
+            {
+                actorHeight = MathF.Max(0.75f * scale, hitboxRadius * 2.0f);
+            }
+            else
+            {
+                actorHeight = MathF.Max(1.95f * scale, hitboxRadius * 2.2f);
+            }
+
             var headPos = feetPos + new Vector3(0, actorHeight, 0);
+
+            // カメラの横方向（右方向ベクトル）に沿った左右端の3D座標
+            var leftWorld = feetPos - cameraRight * hitboxRadius;
+            var rightWorld = feetPos + cameraRight * hitboxRadius;
 
             if (!ProjectWorldToScreen(feetPos, viewProj, vpPos, vpSize, out var feetScreen))
                 continue;
             if (!ProjectWorldToScreen(headPos, viewProj, vpPos, vpSize, out var headScreen))
                 continue;
 
-            float screenHeight = MathF.Abs(feetScreen.Y - headScreen.Y);
-            if (screenHeight < 10f) screenHeight = 10f;
+            // 左右端のスクリーン投影（投影できない場合は中心基準のフォールバック）
+            float screenRadiusX = 18f;
+            if (ProjectWorldToScreen(leftWorld, viewProj, vpPos, vpSize, out var leftScreen) &&
+                ProjectWorldToScreen(rightWorld, viewProj, vpPos, vpSize, out var rightScreen))
+            {
+                screenRadiusX = MathF.Max(MathF.Abs(rightScreen.X - leftScreen.X) * 0.5f, 18f);
+            }
 
-            float screenWidth = MathF.Max(screenHeight * 0.45f, 24f);
+            float screenHeight = MathF.Abs(feetScreen.Y - headScreen.Y);
+            if (screenHeight < 24f) screenHeight = 24f; // ミニオンや遠距離でも最小高さを保証
+
+            // スクリーン上での体幅（コリジョン幅 + 人型スリム補正の最大値、最小28px保証）
+            float screenWidth = MathF.Max(screenRadiusX * 2.0f, MathF.Max(screenHeight * 0.45f, 28f));
+
             float centerX = (feetScreen.X + headScreen.X) * 0.5f;
-            float minX = MathF.Min(centerX - screenWidth * 0.5f, MathF.Min(feetScreen.X, headScreen.X) - screenWidth * 0.2f);
-            float maxX = MathF.Max(centerX + screenWidth * 0.5f, MathF.Max(feetScreen.X, headScreen.X) + screenWidth * 0.2f);
-            float minY = MathF.Min(feetScreen.Y, headScreen.Y) - screenHeight * 0.08f;
-            float maxY = MathF.Max(feetScreen.Y, headScreen.Y) + screenHeight * 0.05f;
+            float minX = centerX - screenWidth * 0.5f;
+            float maxX = centerX + screenWidth * 0.5f;
+            float minY = MathF.Min(feetScreen.Y, headScreen.Y) - screenHeight * 0.12f; // 頭上マージン
+            float maxY = MathF.Max(feetScreen.Y, headScreen.Y) + screenHeight * 0.08f; // 足元マージン
 
             if (mousePos.X >= minX && mousePos.X <= maxX && mousePos.Y >= minY && mousePos.Y <= maxY)
             {
@@ -158,6 +211,8 @@ public unsafe class GizmoRenderer
                     closestDistSq = distSq;
                     bestPlacement = placement;
                     bestActor = actor;
+                    bestFeetPos = feetPos;
+                    bestRadius = hitboxRadius;
                 }
             }
         }
@@ -169,9 +224,9 @@ public unsafe class GizmoRenderer
             if (bestPlacement != currentSelected)
             {
                 var foregroundDrawList = ImGui.GetForegroundDrawList(viewport);
-                var hoverCircleCol = ImGui.GetColorU32(new Vector4(0.35f, 0.75f, 1.0f, 0.65f));
-                float circleRadius = MathF.Max(0.5f, 0.6f * (bestActor.Transform.Scale > 0.001f ? bestActor.Transform.Scale : 1.0f));
-                DrawHorizontalCircle(foregroundDrawList, bestActor.Transform.Position, circleRadius, hoverCircleCol, 2.5f, viewProj, vpPos, vpSize, 36);
+                var hoverCircleCol = ImGui.GetColorU32(new Vector4(0.35f, 0.75f, 1.0f, 0.75f));
+                float circleRadius = MathF.Max(0.5f, bestRadius * 1.1f);
+                DrawHorizontalCircle(foregroundDrawList, bestFeetPos, circleRadius, hoverCircleCol, 2.5f, viewProj, vpPos, vpSize, 36);
             }
 
             if (isLeftClicked)

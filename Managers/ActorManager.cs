@@ -889,6 +889,10 @@ public unsafe class ActorManager : IDisposable
                         if (!ready && job.Ticks < MaxReadyTicks) continue;
 
                         try { chara->GameObject.EnableDraw(); } catch { }
+                        if (job.Spawned.IsTargetable)
+                        {
+                            try { chara->GameObject.TargetableStatus |= ObjectTargetableFlags.IsTargetable; } catch { }
+                        }
                         job.Spawned.IsReady = true;
                         monsterRedrawJobs.RemoveAt(i);
                         logManager?.Info($"Monster/Actor redraw complete for '{job.Spawned.DisplayName}' on Global#{job.GlobalIndex} after {job.Ticks} ticks.");
@@ -990,6 +994,10 @@ public unsafe class ActorManager : IDisposable
                                 SafeSetWeaponVisibility(chara, job.Template.WeaponVisible && job.Template.NpcMainHandModelId > 0);
 
                                 try { chara->GameObject.EnableDraw(); } catch { }
+                                if (job.Spawned.IsTargetable)
+                                {
+                                    try { chara->GameObject.TargetableStatus |= ObjectTargetableFlags.IsTargetable; } catch { }
+                                }
                                 job.Spawned.IsReady = true;
                                 humanoidNpcApplyJobs.RemoveAt(i);
                                 logManager?.Info($"[Pipeline C: NPC] Applied Humanoid NPC appearance fallback on Global#{actorIndex} after {job.Ticks} ticks.");
@@ -1010,6 +1018,10 @@ public unsafe class ActorManager : IDisposable
                             SafeSetWeaponVisibility(chara, job.Template.WeaponVisible && job.Template.NpcMainHandModelId > 0);
 
                             try { chara->GameObject.EnableDraw(); } catch { }
+                            if (job.Spawned.IsTargetable)
+                            {
+                                try { chara->GameObject.TargetableStatus |= ObjectTargetableFlags.IsTargetable; } catch { }
+                            }
                             job.Spawned.IsReady = true;
                             humanoidNpcApplyJobs.RemoveAt(i);
                             logManager?.Info($"[Pipeline C: NPC] Humanoid NPC DrawObject rebuild complete on Global#{actorIndex} ('{job.Spawned.DisplayName}') after {job.Ticks} ticks (Rebuild: {job.RebuildTicks} ticks).");
@@ -1218,6 +1230,12 @@ public unsafe class ActorManager : IDisposable
                             try { chara->GameObject.DrawObject->NotifyTransformChanged(); } catch { }
                         }
                     }
+                }
+
+                // 4. ターゲット可否フラグ常時維持 (モンスター・デミヒューマン・マウント・ミニオン・人型NPCの直接クリック選択保証)
+                if (actor.IsTargetable && (chara->GameObject.TargetableStatus & ObjectTargetableFlags.IsTargetable) == 0)
+                {
+                    chara->GameObject.TargetableStatus |= ObjectTargetableFlags.IsTargetable;
                 }
             }
         }
