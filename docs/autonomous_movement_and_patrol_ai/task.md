@@ -38,5 +38,5 @@
 ### 6. 実機動作検証 ＆ リリース
 - [x] バージョン更新（`tools/bump-version.ps1 0.1.82.0`）
 - [x] CHANGELOG.md および docs の同期
-- [ ] Git commit & push、GitHub Actions ビルド完了確認
+- [x] Git commit & push、GitHub Actions ビルド完了確認 (Success)
 
