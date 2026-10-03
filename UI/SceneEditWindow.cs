@@ -411,6 +411,32 @@ public class SceneEditWindow : Window, IDisposable
                 actorManager.UpdateActorTransform(spawned, myPos, myRot);
             }
         }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Copies the local player's current world position and facing angle to this placement.");
+        }
+
+        ImGui.SameLine();
+
+        // 9. Default Scale (モンスターの原寸サイズまたは標準サイズ 1.0 に復元)
+        if (ImGui.Button("Default Scale", new Vector2(120, 26)))
+        {
+            var template = configuration.Templates.FirstOrDefault(t => t.Id == placement.CharacterTemplateId);
+            float defaultScale = (template != null && template.Scale > 0.001f) ? template.Scale : 1.0f;
+            placement.Scale = defaultScale;
+            sceneManager.SaveScenes();
+
+            var spawned = sceneManager.GetSpawnedActor(placement.PlacementId);
+            if (spawned != null)
+            {
+                spawned.Transform.Scale = defaultScale;
+                actorManager.UpdateActorTransform(spawned, placement.Position, placement.Rotation, defaultScale);
+            }
+        }
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Resets the scale to the template's default value (e.g. original monster size or 1.0).");
+        }
     }
 
     private void DrawSceneTabPlaceholder(SceneData scene)

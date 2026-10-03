@@ -328,12 +328,13 @@ public class SceneManager : IDisposable
             CharacterTemplateId = template.Id,
             CustomDisplayName = template.Name,
             Position = position,
-            Rotation = rotation
+            Rotation = rotation,
+            Scale = template.Scale > 0.001f ? template.Scale : 1.0f
         };
         scene.Placements.Add(placement);
         scene.UpdatedAt = DateTime.UtcNow;
         SaveScenes();
-        logManager?.Info($"Added actor placement '{template.Name}' to scene '{scene.Name}'.");
+        logManager?.Info($"Added actor placement '{template.Name}' to scene '{scene.Name}' (Scale: {placement.Scale}).");
         return placement;
     }
 

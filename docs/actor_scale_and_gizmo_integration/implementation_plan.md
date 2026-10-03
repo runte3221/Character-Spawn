@@ -68,3 +68,18 @@
 2. **3D ギズモ検証**: ギズモを Scale モード（赤アイコン）に切り替え、3D ギズモをドラッグしてモデルが直感的に拡大縮小するか。
 3. **シーン保存・復元検証**: スケールを変更した状態で [Hide] -> [Show] を行い、指定したスケールで再スポーンされるか。
 4. **他パイプライン検証**: Chonk、MCDF、NPC、モンスターそれぞれでスケール変更が正常に機能し、外見や体型が崩れないか。
+
+---
+
+## 5. リアルタイム化・モンスター初期サイズ継承・ギズモ隔離・Default Scaleボタン追加 (v0.1.66)
+
+### 5.1 課題とアーキテクチャ改訂
+1. **リアルタイム拡大縮小（Hide/Show不要化）**:
+   - `GameObject.Scale` はスポーン初期化時にのみゲームエンジンが読み込むため、稼働中アクターには DirectX 描画オブジェクトの内部 `chara->GameObject.DrawObject->Object.Scale = new Vector3(targetScale)` を直接更新し、`NotifyTransformChanged()` を呼び出してリアルタイムに反映。
+2. **モンスター固有サイズの自動継承**:
+   - `SceneManager.AddPlacement` で `Scale = template.Scale > 0.001f ? template.Scale : 1.0f` を初期代入し、統制者ハシュマルト等の巨大モンスターをシーン配置した際にデフォルトサイズが維持されるように修正。
+3. **ギズモ操作モードの完全隔離**:
+   - `GizmoRenderer` からの通知を `float? newScale` に変更。`CurrentGizmoMode == GizmoMode.Scale` の時のみスケール値を渡し、移動（Translate）や回転（Rotate）の操作中は `null` を渡して既存スケール値を一切変更しない安全ガードを構築。
+4. **[Default Scale] リセットボタン**:
+   - `SceneEditWindow` の [Apply Own Transform] の隣に `[Default Scale]` ボタンを配置。ワンクリックでテンプレート固有のサイズ（モンスター原寸や人型 1.0）へ瞬時に復元・保存。
+

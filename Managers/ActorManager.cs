@@ -511,6 +511,7 @@ public unsafe class ActorManager : IDisposable
                         {
                             try
                             {
+                                chara->GameObject.DrawObject->Object.Scale = new Vector3(targetScale, targetScale, targetScale);
                                 chara->GameObject.DrawObject->NotifyTransformChanged();
                             }
                             catch { }

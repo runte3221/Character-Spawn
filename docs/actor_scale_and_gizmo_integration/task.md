@@ -28,3 +28,11 @@
   - [x] 各パイプライン（MCDF、NPC、モンスター、Chonk）への非干渉確認
   - [x] `tools/release.ps1 0.1.65.0` での自動リリース、CI/CD 成功確認
   - [x] `walkthrough.md` の確定・Git 同期
+
+- [x] **7. リアルタイムスケール＆ギズモ隔離＆Default Scale機能拡張 (`v0.1.66.0`)**
+  - [x] `Managers/ActorManager.cs`: `UpdateActorTransform` で `chara->GameObject.DrawObject->Object.Scale = new Vector3(targetScale)` を設定し、DirectX 描画ジオメトリをリアルタイム更新
+  - [x] `Managers/SceneManager.cs`: `AddPlacement` 時に `template.Scale` を `placement.Scale` に引き継ぎ、モンスター固有サイズを自動継承
+  - [x] `UI/GizmoRenderer.cs`: `CurrentGizmoMode == GizmoMode.Scale` の時のみ Scale を通知し、移動・回転ギズモによるスケール誤上書きを完全隔離
+  - [x] `Plugin.cs` & `UI/StageSceneTab.cs`: `float? newScale` が非 null の時のみスケールを更新・保存するガードを配線
+  - [x] `UI/SceneEditWindow.cs`: [Apply Own Transform] の隣に [Default Scale] ボタンを追加し、テンプレート固有のサイズにワンクリック復元
+  - [ ] ドキュメント更新、CHANGELOG.md 追記、`tools/release.ps1 0.1.66.0` でのリリース

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.66] - 2026-10-03
+### Added
+- **DirectX 描画オブジェクト（`DrawObject->Object.Scale`）リアルタイム連動、モンスター原寸自動継承、および [Default Scale] 復元ボタン**:
+  - **リアルタイム拡大縮小の完全実現 (`Managers/ActorManager.cs`)**:
+    - ゲーム論理用 `GameObject.Scale` に加え、DirectX レンダラーが直接参照する描画ジオメトリ `chara->GameObject.DrawObject->Object.Scale = new Vector3(targetScale)` を直接更新し、`DrawObject->NotifyTransformChanged()` を発火。Hide/Show の再スポーンを挟むことなく、スライダーや 3D ギズモ操作中にモデルがリアルタイムで滑らかに伸縮。
+  - **モンスター固有サイズの自動継承 (`Managers/SceneManager.cs`)**:
+    - `AddPlacement` 時に、テンプレートの `template.Scale`（統制者ハシュマルトの `3.448` 等）を自動的に `placement.Scale` に初期代入。ライブラリから配置した時点で本来の巨大サイズを維持。
+  - **[Default Scale] リセットボタンの実装 (`UI/SceneEditWindow.cs`)**:
+    - [Apply Own Transform] ボタンの隣に `[Default Scale]` ボタンを新設。スケールを変更した後でも、ワンクリックでテンプレート固有の原寸サイズ（モンスターの規定サイズ、または人型の 1.0）へ瞬時に復元・保存。
+- **ギズモ操作モードの完全隔離・誤上書き防止 (`UI/GizmoRenderer.cs` & `Plugin.cs` & `UI/StageSceneTab.cs`)**:
+  - ギズモコールバックを `Action<Vector3, float, float?>`（nullable）に変更。`CurrentGizmoMode == GizmoMode.Scale` の時のみ Scale 値を通知し、移動（Translate）や回転（Rotate）のドラッグ操作中はスケールを一切変更しない安全ガードを構築。移動・回転操作による意図しないスケール破壊を完全根絶。
+
 ## [0.1.65] - 2026-10-03
 ### Added
 - **アクタースケール（Scale: 0.01x 〜 10.0x）リアルタイム変更および3D Scaleギズモ完全配線**:

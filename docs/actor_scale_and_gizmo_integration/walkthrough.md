@@ -41,3 +41,15 @@ UI の数値スライダー（`DragFloat`）および 3D ギズモ（`GizmoMode.
 ### 検証 4: 他パイプライン（Chonk / MCDF / モンスター）との共存
 1. Chonk（CustomizePlus 体型変形アクター）のスケールを変更し、太身ボーン変形が崩れずに全体が拡大縮小されることを確認。
 2. モンスター（レストレス・ラプトルやハシュマリム）のスケールを変更し、正常にサイズが変わることを確認。
+
+---
+
+## 4. v0.1.66 改訂内容（リアルタイム描画・モンスター原寸継承・ギズモ操作隔離・Default Scale）
+
+| 項目 | 修正内容 | 効果 |
+|---|---|---|
+| **リアルタイム描画更新** | `ActorManager.cs`: `chara->GameObject.DrawObject->Object.Scale = new Vector3(targetScale)` を直接設定 | スライダーやギズモ操作中に、Hide/Show を挟まず即座にモデルの大きさが滑らかに変化 |
+| **モンスター原寸継承** | `SceneManager.cs`: `AddPlacement` 時に `template.Scale` を自動継承 | 統制者ハシュマルト等の巨大モンスターを配置した際、自動的に原寸（3.448等）で出現 |
+| **ギズモ操作モード隔離** | `GizmoRenderer.cs`: Scale モード以外では `newScale = null` を通知 | 移動（Translate）や回転（Rotate）をドラッグしても、アクターのスケール値が一切破壊されない |
+| **[Default Scale] ボタン** | `SceneEditWindow.cs`: [Apply Own Transform] の隣にリセットボタンを追加 | スケール変更後、ワンクリックでテンプレート固有の原寸サイズまたは 1.0 にリアルタイム復元 |
+
