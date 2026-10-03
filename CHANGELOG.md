@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.65] - 2026-10-03
+### Added
+- **アクタースケール（Scale: 0.01x 〜 10.0x）リアルタイム変更および3D Scaleギズモ完全配線**:
+  - **FFXIV ネイティブスケール制御の実装 (`Managers/ActorManager.cs`)**:
+    - `UpdateActorTransform` に `float? newScale = null` 引数を追加。`chara->GameObject.Scale = targetScale` を設定後、即座に `chara->GameObject.DrawObject->NotifyTransformChanged()` を呼び出して DirectX 描画行列をリアルタイム再計算。
+    - `SpawnCharacter` のシグネチャを拡張し、モンスター（ModelCharaId > 0）だけでなく人型アクター（Glamourer / MCDF / NPC）の初期スポーン時にもシーン配置（`placement.Scale`）またはテンプレート（`template.Scale`）の大きさを確実に適用。
+  - **3D Scale ギズモの完全連携 (`UI/GizmoRenderer.cs`)**:
+    - `GizmoRenderer.Render` のコールバックデリゲートを `Action<Vector3, float, float>`（Position, Rotation, Scale）に拡張。
+    - `ImGuizmoOperation.Scale` 操作時に `Matrix4x4.Decompose` から得られた `newScale` を均等スケール化（0.01f〜10.0f クランプ）し、リアルタイムにアクターおよびシーンデータへ反映。
+  - **UI スライダー＆ギズモモードの双方向配線 (`UI/SceneEditWindow.cs` & `UI/MainWindow.cs` & `UI/StageSceneTab.cs`)**:
+    - `SceneEditWindow.cs` の `DragFloat("##Scale")` 変更時に `actorManager.UpdateActorTransform` を発火させ、スライダー操作で即座にモデルサイズが変化するように配線。
+    - `StageSceneTab.SyncPlacementTransformFromGizmo` で Scale を受け取り、シーン設定（`placement.Scale`）へ自動保存。
+    - `MainWindow.cs` の Settings タブのギズモモード選択肢に `Scale (Resize)` ラジオボタンを追加。
+  - **完全隔離の保証**:
+    - 第1工程のコア（外見、Glamourer、Penumbra、MCDF、NPC、モンスター、CustomizePlus）の基本仕様を壊さず完全隔離・安全保持。自キャラ（LocalPlayer）への二重物理遮断を厳守。
+
 ## [0.1.64] - 2026-10-03
 ### Fixed
 - **Chonk 等の Glamourer デザイン指定アクターにおける遅延外見適用・リトライ耐性強化（外見抜け・自キャラ素体化の完全根絶）**:

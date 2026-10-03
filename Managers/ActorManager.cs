@@ -251,7 +251,7 @@ public unsafe class ActorManager : IDisposable
     /// <summary>
     /// テンプレートをもとに新しいキャラクターをスポーンする (HDM & AQR アーキテクチャ準拠)
     /// </summary>
-    public SpawnedActorData? SpawnCharacter(CharacterTemplate template, Vector3? spawnPosition = null, float? spawnRotation = null)
+    public SpawnedActorData? SpawnCharacter(CharacterTemplate template, Vector3? spawnPosition = null, float? spawnRotation = null, float? spawnScale = null)
     {
         try
         {
@@ -320,7 +320,11 @@ public unsafe class ActorManager : IDisposable
                 }
             }
 
-            logManager?.Info($"Spawning '{template.Name}' (Source: {template.SourceType}, ModelChara: {template.ModelCharaId}, Weapon: {template.WeaponVisible}) at COM#{comIdx}...");
+            float targetScale = (spawnScale.HasValue && spawnScale.Value > 0.001f)
+                ? spawnScale.Value
+                : (template.Scale > 0.001f ? template.Scale : 1.0f);
+
+            logManager?.Info($"Spawning '{template.Name}' (Source: {template.SourceType}, ModelChara: {template.ModelCharaId}, Scale: {targetScale}, Weapon: {template.WeaponVisible}) at COM#{comIdx}...");
 
             // 1. 自キャラからベースラインをコピーして drawable 骨格を確立 (AQR / Brio 準拠)
             nativeChara->CharacterSetup.CopyFromCharacter(meNative, CharacterCopyFlags.WeaponHiding);
@@ -328,7 +332,7 @@ public unsafe class ActorManager : IDisposable
 
             // 2. ベースラインのリセット
             nativeChara->ModelContainer.ModelCharaId = 0;
-            nativeChara->GameObject.Scale = 1.0f;
+            nativeChara->GameObject.Scale = targetScale;
             if (template.ModelCharaId == 0)
             {
                 nativeChara->DrawData.IsWeaponHidden = !template.WeaponVisible;
@@ -386,7 +390,7 @@ public unsafe class ActorManager : IDisposable
                 {
                     Position = pos,
                     Rotation = rot,
-                    Scale = 1.0f
+                    Scale = targetScale
                 },
                 NamePlate = new NamePlateSettings
                 {
@@ -403,7 +407,7 @@ public unsafe class ActorManager : IDisposable
             {
                 nativeChara->GameObject.DisableDraw();
                 nativeChara->ModelContainer.ModelCharaId = (int)template.ModelCharaId;
-                nativeChara->GameObject.Scale = template.Scale > 0 ? template.Scale : 1.0f;
+                nativeChara->GameObject.Scale = targetScale;
 
                 if (template.NpcEquipmentModelIds != null && template.NpcEquipmentModelIds.Length > 0)
                 {
@@ -473,12 +477,16 @@ public unsafe class ActorManager : IDisposable
     }
 
     /// <summary>
-    /// スポーン中アクターの位置・回転を更新
+    /// スポーン中アクターの位置・回転・スケールを更新
     /// </summary>
-    public void UpdateActorTransform(SpawnedActorData actor, Vector3 newPosition, float newRotation)
+    public void UpdateActorTransform(SpawnedActorData actor, Vector3 newPosition, float newRotation, float? newScale = null)
     {
         actor.Transform.Position = newPosition;
         actor.Transform.Rotation = newRotation;
+        if (newScale.HasValue && newScale.Value > 0.001f)
+        {
+            actor.Transform.Scale = newScale.Value;
+        }
 
         if (actor.NativeAddress == 0 || !actor.IsReady) return;
 
@@ -494,6 +502,20 @@ public unsafe class ActorManager : IDisposable
                     chara->GameObject.SetRotation(newRotation);
                     chara->GameObject.DefaultPosition = newPosition;
                     chara->GameObject.DefaultRotation = newRotation;
+
+                    float targetScale = actor.Transform.Scale;
+                    if (targetScale > 0.001f)
+                    {
+                        chara->GameObject.Scale = targetScale;
+                        if (chara->GameObject.DrawObject != null)
+                        {
+                            try
+                            {
+                                chara->GameObject.DrawObject->NotifyTransformChanged();
+                            }
+                            catch { }
+                        }
+                    }
                 }
             }
         }

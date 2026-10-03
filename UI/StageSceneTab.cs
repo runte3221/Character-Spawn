@@ -42,13 +42,17 @@ public class StageSceneTab
         }
     }
 
-    public void SyncPlacementTransformFromGizmo(Vector3 newPos, float newRot)
+    public void SyncPlacementTransformFromGizmo(Vector3 newPos, float newRot, float newScale)
     {
         var p = sceneManager.SelectedPlacement;
         if (p != null)
         {
             p.Position = newPos;
             p.Rotation = newRot;
+            if (newScale > 0.001f)
+            {
+                p.Scale = newScale;
+            }
             sceneManager.SaveScenes();
         }
     }

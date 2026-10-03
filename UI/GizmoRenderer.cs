@@ -85,7 +85,7 @@ public unsafe class GizmoRenderer
 
     private bool isHoveredOrUsing = false;
 
-    public void Render(SpawnedActorData? selectedActor, Action<Vector3, float> onTransformChanged)
+    public void Render(SpawnedActorData? selectedActor, Action<Vector3, float, float> onTransformChanged)
     {
         if (selectedActor == null || !selectedActor.IsSpawned)
             return;
@@ -176,7 +176,10 @@ public unsafe class GizmoRenderer
                     var forward = Vector3.Transform(Vector3.UnitZ, newRot);
                     float newYawRad = MathF.Atan2(forward.X, forward.Z);
 
-                    onTransformChanged(newPos, newYawRad);
+                    // 均等スケールを導出 (Scale 操作時は X/Y/Z の平均値。0.01f〜10.0f にクランプして発散を防ぐ)
+                    float uniformScale = Math.Clamp((newScale.X + newScale.Y + newScale.Z) / 3.0f, 0.01f, 10.0f);
+
+                    onTransformChanged(newPos, newYawRad, uniformScale);
                 }
             }
 

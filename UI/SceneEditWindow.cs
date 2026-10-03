@@ -389,6 +389,7 @@ public class SceneEditWindow : Window, IDisposable
             if (spawned != null)
             {
                 spawned.Transform.Scale = scale;
+                actorManager.UpdateActorTransform(spawned, placement.Position, placement.Rotation, scale);
             }
         }
         ImGui.SameLine();

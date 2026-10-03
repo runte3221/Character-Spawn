@@ -142,10 +142,10 @@ public sealed class Plugin : IDalamudPlugin
 
                 if (targetActor != null && targetActor.IsSpawned && targetActor.IsReady)
                 {
-                    gizmoRenderer.Render(targetActor, (newPos, newRot) =>
+                    gizmoRenderer.Render(targetActor, (newPos, newRot, newScale) =>
                     {
-                        actorManager.UpdateActorTransform(targetActor, newPos, newRot);
-                        stageTab.SyncPlacementTransformFromGizmo(newPos, newRot);
+                        actorManager.UpdateActorTransform(targetActor, newPos, newRot, newScale);
+                        stageTab.SyncPlacementTransformFromGizmo(newPos, newRot, newScale);
                     });
                 }
             }

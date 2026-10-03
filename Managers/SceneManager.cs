@@ -488,7 +488,7 @@ public class SceneManager : IDisposable
         }
 
         // 第1工程のコア SpawnCharacter を呼び出し（完全隔離・安全実行）
-        var spawned = actorManager.SpawnCharacter(template, placement.Position, placement.Rotation);
+        var spawned = actorManager.SpawnCharacter(template, placement.Position, placement.Rotation, placement.Scale);
         if (spawned != null)
         {
             spawned.Transform.Scale = placement.Scale > 0 ? placement.Scale : 1.0f;

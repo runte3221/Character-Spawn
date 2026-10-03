@@ -85,7 +85,8 @@ public class MainWindow : Window, IDisposable
         int modeInt = (int)configuration.CurrentGizmoMode;
         if (ImGui.RadioButton("Select (Hide Gizmo)", ref modeInt, (int)GizmoMode.Select) ||
             ImGui.RadioButton("Translate (Move Axis + Quad Planes)", ref modeInt, (int)GizmoMode.Translate) ||
-            ImGui.RadioButton("Rotate (Rings)", ref modeInt, (int)GizmoMode.Rotate))
+            ImGui.RadioButton("Rotate (Rings)", ref modeInt, (int)GizmoMode.Rotate) ||
+            ImGui.RadioButton("Scale (Resize)", ref modeInt, (int)GizmoMode.Scale))
         {
             configuration.CurrentGizmoMode = (GizmoMode)modeInt;
             configuration.Save();
