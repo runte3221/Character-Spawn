@@ -57,6 +57,11 @@ public class CharacterLibraryTab
     private string modalMcdfPath = string.Empty;
     private string modalMcdfGlamourerDesign = string.Empty;
 
+    // Mount / Minion modal fields
+    private string mountMinionSearchQuery = string.Empty;
+    private bool modalMountMinionIsMount = false;
+    private GameDataService.MountMinionEntry? modalSelectedMountMinion;
+
     // Customize+ modal fields
     private string customizePlusSearch = string.Empty;
     private string selectedCustomizePlusProfileGuid = string.Empty;
@@ -203,6 +208,7 @@ public class CharacterLibraryTab
             CharacterSourceType.Npc => "👤",
             CharacterSourceType.Glamourer => "✨",
             CharacterSourceType.Mcdf => "📦",
+            CharacterSourceType.MountMinion => template.IsMount ? "🐎" : "🐾",
             _ => "🎮"
         };
 
@@ -381,6 +387,18 @@ public class CharacterLibraryTab
                     ImGui.BulletText($"File: {System.IO.Path.GetFileName(selectedTemplate.McdfFilePath)}");
                     ImGui.BulletText("Penumbra: Auto Temporary Collection (Embedded Mods)");
                     break;
+                case CharacterSourceType.MountMinion:
+                    ImGui.BulletText(selectedTemplate.IsMount ? "Type: Mount" : "Type: Minion (Companion)");
+                    ImGui.BulletText($"ModelChara ID: {selectedTemplate.ModelCharaId}");
+                    if (selectedTemplate.DataId > 0)
+                    {
+                        ImGui.BulletText($"Data ID: {selectedTemplate.DataId}");
+                    }
+                    if (selectedTemplate.IconId > 0)
+                    {
+                        ImGui.BulletText($"Icon ID: {selectedTemplate.IconId}");
+                    }
+                    break;
             }
 
             if (!string.IsNullOrWhiteSpace(selectedTemplate.CustomizePlusProfileName))
@@ -441,6 +459,10 @@ public class CharacterLibraryTab
         modalMcdfPath = string.Empty;
         modalMcdfGlamourerDesign = string.Empty;
 
+        mountMinionSearchQuery = string.Empty;
+        modalMountMinionIsMount = false;
+        modalSelectedMountMinion = null;
+
         customizePlusSearch = string.Empty;
         selectedCustomizePlusProfileGuid = string.Empty;
         selectedCustomizePlusProfileName = string.Empty;
@@ -468,6 +490,10 @@ public class CharacterLibraryTab
         glamourerSearch = string.Empty;
         selectedGlamourerDesignGuid = string.Empty;
         selectedGlamourerDesignName = string.Empty;
+
+        mountMinionSearchQuery = string.Empty;
+        modalMountMinionIsMount = false;
+        modalSelectedMountMinion = null;
 
         if (template.SourceType == CharacterSourceType.Glamourer && !string.IsNullOrWhiteSpace(template.GlamourerDesignString))
         {
@@ -502,6 +528,18 @@ public class CharacterLibraryTab
         {
             modalSelectedNpc = new GameDataService.NpcEntry(template.DataId, template.Name, template.ModelCharaId);
             cachedNpcAppearance = new GameDataService.NpcAppearanceData(template.ModelCharaId, template.CustomizeData, template.NpcEquipmentModelIds);
+        }
+        else if (template.SourceType == CharacterSourceType.MountMinion && template.DataId > 0)
+        {
+            modalMountMinionIsMount = template.IsMount;
+            modalSelectedMountMinion = new GameDataService.MountMinionEntry(
+                template.DataId,
+                template.Name,
+                template.ModelCharaId,
+                template.IconId,
+                template.IsMount,
+                template.Scale
+            );
         }
 
         isModalOpen = true;
@@ -607,6 +645,19 @@ public class CharacterLibraryTab
             }
             if (isMonster) ImGui.PopStyleColor(2);
 
+            // 3段目: [ Mount / Minion ]
+            bool isMountMinion = modalSourceType == CharacterSourceType.MountMinion;
+            if (isMountMinion)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Button, activeBtnCol);
+                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, hoverBtnCol);
+            }
+            if (ImGui.Button("Mount / Minion", new Vector2(-1, btnHeight)))
+            {
+                modalSourceType = CharacterSourceType.MountMinion;
+            }
+            if (isMountMinion) ImGui.PopStyleColor(2);
+
             ImGui.Spacing();
             ImGui.Separator();
             ImGui.Spacing();
@@ -628,6 +679,9 @@ public class CharacterLibraryTab
                         break;
                     case CharacterSourceType.Monster:
                         DrawModalMonsterSection();
+                        break;
+                    case CharacterSourceType.MountMinion:
+                        DrawModalMountMinionSection();
                         break;
                 }
                 ImGui.EndChild();
@@ -905,6 +959,51 @@ public class CharacterLibraryTab
         }
     }
 
+    private void DrawModalMountMinionSection()
+    {
+        // Minion / Mount ラジオ切り替え
+        if (ImGui.RadioButton("Minion (Companion)", !modalMountMinionIsMount))
+        {
+            modalMountMinionIsMount = false;
+        }
+        ImGui.SameLine(180);
+        if (ImGui.RadioButton("Mount", modalMountMinionIsMount))
+        {
+            modalMountMinionIsMount = true;
+        }
+
+        ImGui.Spacing();
+
+        string hint = modalMountMinionIsMount ? "Search Mounts (by name or ID)..." : "Search Minions (by name or ID)...";
+        ImGui.InputTextWithHint("##SearchMountMinion", hint, ref mountMinionSearchQuery, 64);
+
+        var list = modalMountMinionIsMount
+            ? gameDataService.SearchMounts(mountMinionSearchQuery, 0)
+            : gameDataService.SearchCompanions(mountMinionSearchQuery, 0);
+
+        if (ImGui.BeginListBox("##ModalMountMinionList", new Vector2(-1, 160)))
+        {
+            foreach (var item in list)
+            {
+                bool isSelected = modalSelectedMountMinion?.Id == item.Id && modalSelectedMountMinion?.IsMount == item.IsMount;
+                string label = $"[{item.Id}] {item.Name} (Model: {item.ModelCharaId})";
+                if (ImGui.Selectable(label, isSelected))
+                {
+                    modalSelectedMountMinion = item;
+                    modalName = item.Name;
+                }
+            }
+            ImGui.EndListBox();
+        }
+
+        if (modalSelectedMountMinion != null && modalSelectedMountMinion.IsMount == modalMountMinionIsMount)
+        {
+            string cat = modalSelectedMountMinion.IsMount ? "Mount" : "Minion";
+            ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f),
+                $"Selected: [{modalSelectedMountMinion.Id}] {modalSelectedMountMinion.Name} ({cat}, Model: {modalSelectedMountMinion.ModelCharaId})");
+        }
+    }
+
     private void SaveModalTemplate()
     {
         var target = isEditing ? editingTemplate : new CharacterTemplate();
@@ -925,6 +1024,8 @@ public class CharacterLibraryTab
             target.McdfFilePath = string.Empty;
             target.ModelCharaId = 0;
             target.DataId = 0;
+            target.IconId = 0;
+            target.IsMount = false;
             target.CustomizeData = null;
             target.NpcEquipmentModelIds = null;
         }
@@ -934,6 +1035,8 @@ public class CharacterLibraryTab
             target.PenumbraCollectionName = string.Empty; // MCDF uses automatic temporary collection
             target.ModelCharaId = 0;
             target.DataId = 0;
+            target.IconId = 0;
+            target.IsMount = false;
             target.CustomizeData = null;
             target.NpcEquipmentModelIds = null;
 
@@ -952,6 +1055,8 @@ public class CharacterLibraryTab
         {
             target.DataId = modalSelectedNpc.Id;
             target.ModelCharaId = modalSelectedNpc.ModelCharaId;
+            target.IconId = 0;
+            target.IsMount = false;
             target.GlamourerDesignString = string.Empty;
             target.PenumbraCollectionName = string.Empty;
             target.McdfFilePath = string.Empty;
@@ -969,6 +1074,8 @@ public class CharacterLibraryTab
         {
             target.DataId = modalSelectedMonster.Id;
             target.ModelCharaId = modalSelectedMonster.ModelCharaId;
+            target.IconId = 0;
+            target.IsMount = false;
             target.Scale = modalSelectedMonster.Scale > 0 ? modalSelectedMonster.Scale : 1.0f;
             target.McType = modalSelectedMonster.McType;
             target.GlamourerDesignString = string.Empty;
@@ -977,6 +1084,21 @@ public class CharacterLibraryTab
             target.CustomizeData = null;
             target.NpcEquipmentModelIds = null;
             target.WeaponVisible = false; // モンスターはデフォルトで武器非表示
+        }
+        else if (modalSourceType == CharacterSourceType.MountMinion && modalSelectedMountMinion != null)
+        {
+            target.DataId = modalSelectedMountMinion.Id;
+            target.ModelCharaId = modalSelectedMountMinion.ModelCharaId;
+            target.IconId = modalSelectedMountMinion.IconId;
+            target.IsMount = modalSelectedMountMinion.IsMount;
+            target.Scale = modalSelectedMountMinion.Scale > 0 ? modalSelectedMountMinion.Scale : 1.0f;
+            target.McType = 3; // Monster/Creature
+            target.GlamourerDesignString = string.Empty;
+            target.PenumbraCollectionName = string.Empty;
+            target.McdfFilePath = string.Empty;
+            target.CustomizeData = null;
+            target.NpcEquipmentModelIds = null;
+            target.WeaponVisible = false; // ミニオン・マウントは武器非表示
         }
         else if (modalSourceType == CharacterSourceType.PlayerClone)
         {

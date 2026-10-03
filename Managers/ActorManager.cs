@@ -302,6 +302,18 @@ public unsafe class ActorManager : IDisposable
                 }
             }
 
+            // ミニオン・マウントのモデルID補完 (未設定の場合のみ補完)
+            if (template.SourceType == CharacterSourceType.MountMinion && template.ModelCharaId == 0 && template.DataId > 0 && gameDataService != null)
+            {
+                var candidates = template.IsMount ? gameDataService.SearchMounts(template.DataId.ToString(), 5) : gameDataService.SearchCompanions(template.DataId.ToString(), 5);
+                var match = candidates.FirstOrDefault(x => x.Id == template.DataId);
+                if (match != null && match.ModelCharaId > 0)
+                {
+                    logManager?.Info($"Resolved MountMinion ModelCharaId for '{template.Name}' to {match.ModelCharaId} (DataId: {template.DataId}).");
+                    template.ModelCharaId = match.ModelCharaId;
+                }
+            }
+
             // NPCデータの補完・自動リフレッシュ (HDM ENpcBase 逆引き解決)
             if (template.SourceType == CharacterSourceType.Npc && gameDataService != null)
             {
@@ -430,7 +442,10 @@ public unsafe class ActorManager : IDisposable
 
                 activeActors.Add(spawned);
                 createdIndexes.Add(globalIdx);
-                logManager?.Info($"[Pipeline D: Monster] Spawned '{spawned.DisplayName}' on Global#{globalIdx}. Enqueued to MonsterRedrawJob.");
+                string pipelineLabel = template.SourceType == CharacterSourceType.MountMinion
+                    ? (template.IsMount ? "Pipeline D: Mount" : "Pipeline D: Minion")
+                    : "Pipeline D: Monster";
+                logManager?.Info($"[{pipelineLabel}] Spawned '{spawned.DisplayName}' on Global#{globalIdx}. Enqueued to MonsterRedrawJob.");
                 return spawned;
             }
 

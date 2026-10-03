@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.70] - 2026-10-03
+### Added
+- **ミニオン・マウント（Companion / Mount）のカスタムキャラクター登録・スポーン対応 (`Models/CharacterModels.cs`, `Services/GameDataService.cs`, `Managers/ActorManager.cs`, `UI/CharacterLibraryTab.cs`)**:
+  - **Lumina ゲームデータ層の拡張 (`Services/GameDataService.cs`)**:
+    - `Companion`（ミニオン）シートから全ミニオンデータ（ID, 名称, ModelCharaId, IconId, Scale）の自動キャッシュ・インクリメンタル検索機構（`SearchCompanions`）を実装。
+    - `Mount`（マウント）シートから全マウントデータ（ID, 名称, ModelCharaId, IconId）の自動キャッシュ・インクリメンタル検索機構（`SearchMounts`）を実装。
+    - 同一名・同一モデルの重複排除および安全なスケール正規化処理を内蔵。
+  - **データモデル層の拡張 (`Models/CharacterModels.cs`)**:
+    - `CharacterSourceType` に `MountMinion` を追加。
+    - `CharacterTemplate` に `IconId`, `IsMount` プロパティを追加。
+  - **カスタムキャラクター登録 UI の拡充 (`UI/CharacterLibraryTab.cs`)**:
+    - 新規作成・編集モーダル（Select Appearance Source）に 5 つ目のソース区分として `[ Mount / Minion ]` ボタンを追加。
+    - ミニオンとマウントをワンクリックで切り替え可能なラジオボタンセレクターと、名称・ID によるリアルタイム検索リストボックスを実装。
+    - 登録キャラクター一覧のツリービューで、ミニオン（🐾）とマウント（🐎）の専用識別アイコンを表示。
+    - キャラクター詳細ペインにマウント/ミニオンの種別、ModelChara ID、Data ID、Icon ID の情報表示を追加。
+    - キャラクター編集モーダル（Edit）を開いた際の既存マウント・ミニオン設定の自動復元に対応。
+  - **描画・スポーン基盤の連携 (`Managers/ActorManager.cs`)**:
+    - ミニオン・マウントのモデル描画をモンスター共通パイプライン（パイプライン D）へ自動配線し、確実かつ安全なスポーンとギズモによるリアルタイム拡大縮小（スケール）、位置・回転調整、シーン配置をサポート。
+
 ## [0.1.69] - 2026-10-03
 ### Changed
 - **SceneEditWindow 閉鎖時の 3D ギズモ自動非表示連動 (`Plugin.cs`)**:

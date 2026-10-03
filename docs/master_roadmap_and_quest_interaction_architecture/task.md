@@ -11,18 +11,19 @@
 
 ---
 
-### 【Step 1】キャラクター種別の完全網羅（ミニオン・マウント登録）
-- [ ] **1.1 ゲームデータ層の拡張 (`Services/GameDataService.cs`)**
-  - [ ] Lumina の `Companion`（ミニオン）シートの検索・キャッシュ機構実装（Name, ModelCharaId, Scale, IconId）
-  - [ ] Lumina の `Mount`（マウント）シートの検索・キャッシュ機構実装（Name, ModelCharaId, IconId）
-- [ ] **1.2 データモデル層の拡張 (`Models/CharacterModels.cs`)**
-  - [ ] `CharacterSourceType` に `Companion` / `Mount`（または `MountMinion`）を追加
-- [ ] **1.3 UI 層の拡張 (`UI/CharacterLibraryTab.cs`)**
-  - [ ] カスタムキャラクター登録モーダルに「Mount / Minion」タブ（5つ目）を新設
-  - [ ] ミニオン・マウントのアイコン付きリスト表示、検索ボックス、プレビュー機能
-- [ ] **1.4 描画・シーン配置連携 (`Managers/ActorManager.cs` & `Managers/SceneManager.cs`)**
-  - [ ] モンスター共通パイプライン（パイプライン D）を活用した単独アクターとしてのスポーン
-  - [ ] シーン配置、リアルタイムスケール（拡大縮小）、移動・回転、アニメーション適用の検証
+### 【Step 1】キャラクター種別の完全網羅（ミニオン・マウント登録） (完了 / v0.1.70.0)
+- [x] **1.1 ゲームデータ層の拡張 (`Services/GameDataService.cs`)**
+  - [x] Lumina の `Companion`（ミニオン）シートの検索・キャッシュ機構実装（Name, ModelCharaId, Scale, IconId）
+  - [x] Lumina の `Mount`（マウント）シートの検索・キャッシュ機構実装（Name, ModelCharaId, IconId）
+- [x] **1.2 データモデル層の拡張 (`Models/CharacterModels.cs`)**
+  - [x] `CharacterSourceType` に `MountMinion` を追加、`IconId`, `IsMount` プロパティ追加
+- [x] **1.3 UI 層の拡張 (`UI/CharacterLibraryTab.cs`)**
+  - [x] カスタムキャラクター登録モーダルに「Mount / Minion」タブ（5つ目）を新設
+  - [x] ミニオン・マウントのカテゴリ切り替え、検索ボックス、一覧表示、プレビュー表示
+  - [x] リストツリー表示時のアイコン対応（ミニオン: 🐾、マウント: 🐎）
+- [x] **1.4 描画・シーン配置連携 (`Managers/ActorManager.cs` & `Managers/SceneManager.cs`)**
+  - [x] モンスター共通パイプライン（パイプライン D）を活用した単独アクターとしてのスポーン
+  - [x] シーン配置、リアルタイムスケール（拡大縮小）、移動・回転、アニメーション適用のサポート確認
 
 ---
 

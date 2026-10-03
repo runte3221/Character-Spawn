@@ -12,7 +12,8 @@ public enum CharacterSourceType
     Monster,
     Npc,
     Mcdf,
-    PlayerClone
+    PlayerClone,
+    MountMinion
 }
 
 public class CharacterTemplate
@@ -22,9 +23,11 @@ public class CharacterTemplate
     public string FolderPath { get; set; } = string.Empty;
     public CharacterSourceType SourceType { get; set; } = CharacterSourceType.PlayerClone;
 
-    // NPC / Monster IDs
-    public uint DataId { get; set; } = 0; // ENpcBase or BNpcBase ID
+    // NPC / Monster / Minion / Mount IDs
+    public uint DataId { get; set; } = 0; // ENpcBase, BNpcBase, Companion, or Mount ID
     public uint ModelCharaId { get; set; } = 0;
+    public uint IconId { get; set; } = 0;
+    public bool IsMount { get; set; } = false;
 
     // Appearance / Customization
     public int McType { get; set; } = 1; // 1=Human, 2=Demihuman, 3=Monster

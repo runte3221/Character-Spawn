@@ -13,6 +13,7 @@ public class GameDataService
 
     public record NpcEntry(uint Id, string Name, uint ModelCharaId);
     public record MonsterEntry(uint Id, string Name, uint ModelCharaId, uint BaseId = 0, int McType = 3, float Scale = 1.0f);
+    public record MountMinionEntry(uint Id, string Name, uint ModelCharaId, uint IconId, bool IsMount, float Scale = 1.0f);
     public record TimelineEntry(ushort Id, string Key, string Description, bool IsEmote);
 
     public record NpcAppearanceData(
@@ -24,6 +25,8 @@ public class GameDataService
 
     private List<NpcEntry>? cachedNpcs;
     private List<MonsterEntry>? cachedMonsters;
+    private List<MountMinionEntry>? cachedCompanions;
+    private List<MountMinionEntry>? cachedMounts;
     private List<TimelineEntry>? cachedTimelines;
     private List<TimelineEntry>? cachedFacialExpressions;
 
@@ -54,6 +57,36 @@ public class GameDataService
         if (!string.IsNullOrWhiteSpace(query))
         {
             filtered = filtered.Where(m => m.Name.Contains(query, StringComparison.OrdinalIgnoreCase) || m.Id.ToString().Contains(query));
+        }
+
+        return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
+    }
+
+    public IReadOnlyList<MountMinionEntry> SearchCompanions(string query, int maxResults = 0)
+    {
+        cachedCompanions ??= BuildCompanionCache();
+
+        IEnumerable<MountMinionEntry> filtered = cachedCompanions;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                           c.Id.ToString().Contains(query) ||
+                                           c.ModelCharaId.ToString().Contains(query));
+        }
+
+        return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
+    }
+
+    public IReadOnlyList<MountMinionEntry> SearchMounts(string query, int maxResults = 0)
+    {
+        cachedMounts ??= BuildMountCache();
+
+        IEnumerable<MountMinionEntry> filtered = cachedMounts;
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            filtered = filtered.Where(m => m.Name.Contains(query, StringComparison.OrdinalIgnoreCase) ||
+                                           m.Id.ToString().Contains(query) ||
+                                           m.ModelCharaId.ToString().Contains(query));
         }
 
         return maxResults > 0 ? filtered.Take(maxResults).ToList() : filtered.ToList();
@@ -488,5 +521,60 @@ public class GameDataService
         catch { }
 
         return $"エリア {territoryId}";
+    }
+
+    private List<MountMinionEntry> BuildCompanionCache()
+    {
+        var list = new List<MountMinionEntry>();
+        var sheet = dataManager.GetExcelSheet<Companion>();
+        if (sheet == null) return list;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in sheet)
+        {
+            string name = row.Singular.ExtractText().Trim();
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            uint modelCharaId = row.Model.RowId;
+            if (modelCharaId == 0) continue;
+
+            float scale = row.Scale > 0 ? (row.Scale > 10 ? row.Scale / 100f : row.Scale) : 1.0f;
+            if (scale <= 0.01f) scale = 1.0f;
+
+            string dedupKey = $"{name}_{modelCharaId}";
+            if (!seen.Add(dedupKey)) continue;
+
+            list.Add(new MountMinionEntry(row.RowId, name, modelCharaId, row.Icon, false, scale));
+        }
+
+        logManager?.Info($"Built Companion cache: {list.Count} minions.");
+        return list;
+    }
+
+    private List<MountMinionEntry> BuildMountCache()
+    {
+        var list = new List<MountMinionEntry>();
+        var sheet = dataManager.GetExcelSheet<Mount>();
+        if (sheet == null) return list;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in sheet)
+        {
+            string name = row.Singular.ExtractText().Trim();
+            if (string.IsNullOrWhiteSpace(name)) continue;
+
+            uint modelCharaId = row.ModelChara.RowId;
+            if (modelCharaId == 0) continue;
+
+            string dedupKey = $"{name}_{modelCharaId}";
+            if (!seen.Add(dedupKey)) continue;
+
+            list.Add(new MountMinionEntry(row.RowId, name, modelCharaId, row.Icon, true, 1.0f));
+        }
+
+        logManager?.Info($"Built Mount cache: {list.Count} mounts.");
+        return list;
     }
 }
