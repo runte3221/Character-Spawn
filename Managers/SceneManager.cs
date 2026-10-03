@@ -25,8 +25,10 @@ public class SceneManager : IDisposable
     private readonly ActorManager actorManager;
     private readonly Configuration configuration;
     private readonly AnimationService? animationService;
+    private readonly MovementService? movementService;
 
     public AnimationService? Animation => animationService;
+    public MovementService? Movement => movementService;
 
     private readonly string scenesFilePath;
 
@@ -74,7 +76,8 @@ public class SceneManager : IDisposable
         LogManager? logManager,
         ActorManager actorManager,
         Configuration configuration,
-        AnimationService? animationService = null)
+        AnimationService? animationService = null,
+        MovementService? movementService = null)
     {
         this.pluginInterface = pluginInterface;
         this.clientState = clientState;
@@ -82,6 +85,7 @@ public class SceneManager : IDisposable
         this.actorManager = actorManager;
         this.configuration = configuration;
         this.animationService = animationService;
+        this.movementService = movementService;
         this.animationService?.SetTargetActorResolver(pid => GetSpawnedActor(pid));
 
         var configDir = pluginInterface.GetPluginConfigDirectory();
@@ -429,6 +433,7 @@ public class SceneManager : IDisposable
                 actorManager.DespawnCharacter(actor);
             }
         }
+        movementService?.ClearAll();
         spawnedSceneActors.Clear();
         ActiveSpawnedScene = null;
     }
@@ -477,6 +482,7 @@ public class SceneManager : IDisposable
         if (spawnedSceneActors.TryGetValue(placement.PlacementId, out var actor))
         {
             animationService?.StopMotion(actor);
+            movementService?.StopMovement(placement.PlacementId);
             actorManager.DespawnCharacter(actor);
             spawnedSceneActors.Remove(placement.PlacementId);
             logManager?.Info($"Despawned scene actor '{placement.CustomDisplayName}'.");
@@ -518,6 +524,12 @@ public class SceneManager : IDisposable
                  MathF.Abs(placement.Motion.Speed - 1.0f) > 0.01f))
             {
                 animationService.ApplyMotion(spawned, placement.Motion, placement.Rotation, isInitialSpawn: true);
+            }
+
+            // 自律移動・巡回ルーチンの自動開始
+            if (movementService != null && placement.Movement != null && placement.Movement.Mode != MovementMode.None)
+            {
+                movementService.StartMovement(placement, spawned);
             }
 
             return spawned;

@@ -102,6 +102,9 @@ public class SceneEditWindow : Window, IDisposable
             case 2:
                 DrawAnimationTab(scene);
                 break;
+            case 3:
+                DrawMovementTab(scene);
+                break;
         }
     }
 
@@ -111,9 +114,9 @@ public class SceneEditWindow : Window, IDisposable
     {
         var tabActiveCol = new Vector4(0.7f, 0.15f, 0.15f, 1.0f); // Stagehand 風の赤アクセント
         var tabInactiveCol = new Vector4(0.22f, 0.22f, 0.24f, 1.0f);
-        var tabBtnSize = new Vector2((ImGui.GetContentRegionAvail().X - 16) / 3f, 26);
+        string[] tabNames = { "Spawn", "Scene", "Animation", "Movement" };
+        var tabBtnSize = new Vector2((ImGui.GetContentRegionAvail().X - (tabNames.Length - 1) * 8) / tabNames.Length, 26);
 
-        string[] tabNames = { "Spawn", "Scene", "Animation" };
         for (int i = 0; i < tabNames.Length; i++)
         {
             bool isActive = currentTabIndex == i;
@@ -851,6 +854,287 @@ public class SceneEditWindow : Window, IDisposable
         if (spawned != null && sceneManager.Animation != null)
         {
             sceneManager.Animation.ApplyMotion(spawned, placement.Motion, placement.Rotation);
+        }
+    }
+
+    private void DrawMovementTab(SceneData scene)
+    {
+        var placement = sceneManager.SelectedPlacement;
+        if (placement == null)
+        {
+            ImGui.TextDisabled("上段の一覧から編集するキャラクターを選択してください。");
+            return;
+        }
+
+        placement.Movement ??= new();
+        var move = placement.Movement;
+
+        // 1. 移動モード選択 (Movement Mode)
+        ImGui.TextUnformatted("Movement Mode");
+        ImGui.SameLine(130);
+        int modeIdx = (int)move.Mode;
+        string[] modeLabels = { "None (静止)", "Patrol (巡回)", "Follow Player (追従)", "Patrol + Follow (巡回+追従)" };
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.Combo("##MovementModeCombo", ref modeIdx, modeLabels, modeLabels.Length))
+        {
+            move.Mode = (MovementMode)modeIdx;
+            sceneManager.SaveScenes();
+            ApplyCurrentMovement(placement);
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        if (move.Mode == MovementMode.None)
+        {
+            ImGui.TextDisabled("自律移動は無効です。このアクターはその場に留まります。");
+            return;
+        }
+
+        // 2. 移動速度・旋回速度
+        float speed = move.Speed;
+        ImGui.TextUnformatted("Speed");
+        ImGui.SameLine(130);
+        ImGui.SetNextItemWidth(140);
+        if (ImGui.SliderFloat("##MoveSpeedSlider", ref speed, 0.5f, 10.0f, "%.1f m/s"))
+        {
+            move.Speed = speed;
+            sceneManager.SaveScenes();
+            ApplyCurrentMovement(placement);
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("歩き (2.0)##SetWalkSpeed"))
+        {
+            move.Speed = 2.0f;
+            sceneManager.SaveScenes();
+            ApplyCurrentMovement(placement);
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("駆け足 (4.0)##SetJogSpeed"))
+        {
+            move.Speed = 4.0f;
+            sceneManager.SaveScenes();
+            ApplyCurrentMovement(placement);
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("走り (6.0)##SetRunSpeed"))
+        {
+            move.Speed = 6.0f;
+            sceneManager.SaveScenes();
+            ApplyCurrentMovement(placement);
+        }
+
+        float turnSpeed = move.TurnSpeed;
+        ImGui.TextUnformatted("Turn Speed");
+        ImGui.SameLine(130);
+        ImGui.SetNextItemWidth(140);
+        if (ImGui.SliderFloat("##TurnSpeedSlider", ref turnSpeed, 90f, 720f, "%.0f °/s"))
+        {
+            move.TurnSpeed = turnSpeed;
+            sceneManager.SaveScenes();
+            ApplyCurrentMovement(placement);
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Reset##ResetTurnSpeed"))
+        {
+            move.TurnSpeed = 360f;
+            sceneManager.SaveScenes();
+            ApplyCurrentMovement(placement);
+        }
+
+        // 3. プレイヤー接近追従設定 (FollowPlayer または PatrolAndFollow の場合)
+        if (move.Mode == MovementMode.FollowPlayer || move.Mode == MovementMode.PatrolAndFollow)
+        {
+            ImGui.Spacing();
+            ImGui.TextColored(new Vector4(0.4f, 0.8f, 1.0f, 1.0f), "Player Follow & Return (接近追従 ＆ 帰還設定)");
+
+            float trigDist = move.FollowTriggerDistance;
+            ImGui.TextUnformatted("Trigger Dist");
+            ImGui.SameLine(130);
+            ImGui.SetNextItemWidth(140);
+            if (ImGui.SliderFloat("##FollowTrigDist", ref trigDist, 1.0f, 15.0f, "%.1f m"))
+            {
+                move.FollowTriggerDistance = trigDist;
+                sceneManager.SaveScenes();
+                ApplyCurrentMovement(placement);
+            }
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("プレイヤーがこの距離内に入ったら歩み寄りを開始します (デフォルト: 4.0m)");
+
+            float stopDist = move.FollowStopDistance;
+            ImGui.TextUnformatted("Stop Dist");
+            ImGui.SameLine(130);
+            ImGui.SetNextItemWidth(140);
+            if (ImGui.SliderFloat("##FollowStopDist", ref stopDist, 0.5f, 5.0f, "%.1f m"))
+            {
+                move.FollowStopDistance = stopDist;
+                sceneManager.SaveScenes();
+                ApplyCurrentMovement(placement);
+            }
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("プレイヤーの手前この距離で立ち止まります (デフォルト: 1.8m)");
+
+            float maxTerritory = move.MaxTerritoryDistance;
+            ImGui.TextUnformatted("Territory Limit");
+            ImGui.SameLine(130);
+            ImGui.SetNextItemWidth(140);
+            if (ImGui.SliderFloat("##MaxTerritoryDist", ref maxTerritory, 3.0f, 30.0f, "%.1f m"))
+            {
+                move.MaxTerritoryDistance = maxTerritory;
+                sceneManager.SaveScenes();
+                ApplyCurrentMovement(placement);
+            }
+            if (ImGui.IsItemHovered()) ImGui.SetTooltip("初期配置（ホーム）からこの距離以上離れたら追従を中断して戻ります (デフォルト: 15.0m)");
+
+            bool retHome = move.ReturnToHome;
+            ImGui.SetCursorPosX(130);
+            if (ImGui.Checkbox("Return to Home upon loss (追従解除時にホームへ自律帰還)##RetHome", ref retHome))
+            {
+                move.ReturnToHome = retHome;
+                sceneManager.SaveScenes();
+                ApplyCurrentMovement(placement);
+            }
+        }
+
+        // 4. ウェイポイント巡回設定 (Patrol または PatrolAndFollow の場合)
+        if (move.Mode == MovementMode.Patrol || move.Mode == MovementMode.PatrolAndFollow)
+        {
+            ImGui.Spacing();
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            ImGui.TextColored(new Vector4(0.5f, 0.95f, 0.5f, 1.0f), "Patrol Route & Waypoints (巡回ルート・通過地点)");
+
+            int loopIdx = (int)move.LoopType;
+            string[] loopLabels = { "Loop (循環: A->B->C->A...)", "PingPong (往復: A->B->C->B...)", "Once (片道: A->B->C 停止)" };
+            ImGui.TextUnformatted("Loop Type");
+            ImGui.SameLine(130);
+            ImGui.SetNextItemWidth(220);
+            if (ImGui.Combo("##PatrolLoopTypeCombo", ref loopIdx, loopLabels, loopLabels.Length))
+            {
+                move.LoopType = (PatrolLoopType)loopIdx;
+                sceneManager.SaveScenes();
+                ApplyCurrentMovement(placement);
+            }
+
+            ImGui.Spacing();
+
+            // ウェイポイント追加ボタン
+            if (ImGui.Button("📍 自キャラ位置を追加##AddPlayerPosWp"))
+            {
+                var (pPos, _) = GetPlayerTransform();
+                move.Waypoints.Add(new SceneActorWaypoint
+                {
+                    Position = pPos,
+                    Description = $"WP #{move.Waypoints.Count + 1}"
+                });
+                sceneManager.SaveScenes();
+                ApplyCurrentMovement(placement);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("📍 アクター位置を追加##AddActorPosWp"))
+            {
+                var spawned = sceneManager.GetSpawnedActor(placement.PlacementId);
+                Vector3 addPos = spawned != null ? spawned.Transform.Position : placement.Position;
+                move.Waypoints.Add(new SceneActorWaypoint
+                {
+                    Position = addPos,
+                    Description = $"WP #{move.Waypoints.Count + 1}"
+                });
+                sceneManager.SaveScenes();
+                ApplyCurrentMovement(placement);
+            }
+            ImGui.SameLine();
+            if (move.Waypoints.Count > 0 && ImGui.Button("全消去##ClearWps"))
+            {
+                move.Waypoints.Clear();
+                sceneManager.SaveScenes();
+                ApplyCurrentMovement(placement);
+            }
+
+            ImGui.Spacing();
+
+            // ウェイポイント一覧
+            if (move.Waypoints.Count == 0)
+            {
+                ImGui.TextDisabled("通過地点（ウェイポイント）が登録されていません。\n上の「📍 自キャラ位置を追加」ボタンを押して巡回ルートを作成してください。");
+            }
+            else
+            {
+                if (ImGui.BeginChild("##WaypointsListArea", new Vector2(0, 160), true))
+                {
+                    for (int i = 0; i < move.Waypoints.Count; i++)
+                    {
+                        var wp = move.Waypoints[i];
+                        ImGui.PushID($"WP_Row_{i}");
+
+                        ImGui.TextColored(new Vector4(0.9f, 0.75f, 0.2f, 1.0f), $"#{i + 1}");
+                        ImGui.SameLine();
+                        ImGui.TextUnformatted($"<{wp.Position.X:F1}, {wp.Position.Y:F1}, {wp.Position.Z:F1}>");
+
+                        ImGui.SameLine(180);
+                        float wait = wp.WaitSeconds;
+                        ImGui.SetNextItemWidth(60);
+                        if (ImGui.DragFloat("##WaitSec", ref wait, 0.5f, 0f, 60f, "%.1fs"))
+                        {
+                            wp.WaitSeconds = wait;
+                            sceneManager.SaveScenes();
+                            ApplyCurrentMovement(placement);
+                        }
+                        if (ImGui.IsItemHovered()) ImGui.SetTooltip("到着後の待機秒数 (0=ノンストップ通過)");
+
+                        // 上へ・下へボタン
+                        ImGui.SameLine();
+                        ImGui.BeginDisabled(i == 0);
+                        if (ImGui.SmallButton("▲##MoveUpWp"))
+                        {
+                            (move.Waypoints[i], move.Waypoints[i - 1]) = (move.Waypoints[i - 1], move.Waypoints[i]);
+                            sceneManager.SaveScenes();
+                            ApplyCurrentMovement(placement);
+                        }
+                        ImGui.EndDisabled();
+
+                        ImGui.SameLine();
+                        ImGui.BeginDisabled(i == move.Waypoints.Count - 1);
+                        if (ImGui.SmallButton("▼##MoveDownWp"))
+                        {
+                            (move.Waypoints[i], move.Waypoints[i + 1]) = (move.Waypoints[i + 1], move.Waypoints[i]);
+                            sceneManager.SaveScenes();
+                            ApplyCurrentMovement(placement);
+                        }
+                        ImGui.EndDisabled();
+
+                        // 削除ボタン
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton("✕##DelWp"))
+                        {
+                            move.Waypoints.RemoveAt(i);
+                            sceneManager.SaveScenes();
+                            ApplyCurrentMovement(placement);
+                            ImGui.PopID();
+                            break;
+                        }
+
+                        ImGui.PopID();
+                    }
+                }
+                ImGui.EndChild();
+            }
+        }
+    }
+
+    private void ApplyCurrentMovement(SceneActorPlacement placement)
+    {
+        var spawned = sceneManager.GetSpawnedActor(placement.PlacementId);
+        if (spawned != null && sceneManager.Movement != null)
+        {
+            if (placement.Movement.Mode == MovementMode.None)
+            {
+                sceneManager.Movement.StopMovement(placement.PlacementId);
+            }
+            else
+            {
+                sceneManager.Movement.StartMovement(placement, spawned);
+            }
         }
     }
 

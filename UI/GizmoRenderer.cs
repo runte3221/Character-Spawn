@@ -85,15 +85,13 @@ public unsafe class GizmoRenderer
 
     private bool isHoveredOrUsing = false;
 
-    public void Render(SpawnedActorData? selectedActor, Action<Vector3, float, float?> onTransformChanged)
+    public void Render(
+        SpawnedActorData? selectedActor,
+        Action<Vector3, float, float?> onTransformChanged,
+        IReadOnlyList<SceneActorWaypoint>? waypoints = null,
+        PatrolLoopType loopType = PatrolLoopType.Loop,
+        Vector3? homePosition = null)
     {
-        if (selectedActor == null || !selectedActor.IsSpawned)
-            return;
-
-        // Select モードの場合はギズモ非表示
-        if (configuration.CurrentGizmoMode == GizmoMode.Select)
-            return;
-
         // FFXIV ゲームカメラの取得 (Stagehand / BDTH 準拠)
         var cameraManager = CameraManager.Instance();
         if (cameraManager == null || cameraManager->CurrentCamera == null || cameraManager->CurrentCamera->RenderCamera == null)
@@ -115,8 +113,6 @@ public unsafe class GizmoRenderer
         viewMatrix.M44 = 1.0f;
 
         // フルスクリーン透明オーバーレイウィンドウ
-        // ギズモにカーソルが乗っている/操作中の時だけ NoInputs を解除してゲーム側へのクリック透過(NPC会話暴発)を防ぎ、
-        // それ以外の時は NoInputs を有効にしてゲームのカメラ視点移動を自由に許可する
         ImGuiHelpers.ForceNextWindowMainViewport();
         ImGuiHelpers.SetNextWindowPosRelativeMainViewport(Vector2.Zero);
         ImGui.SetNextWindowSize(ImGui.GetIO().DisplaySize);
@@ -138,15 +134,23 @@ public unsafe class GizmoRenderer
 
         if (ImGui.Begin("##CharacterSpawnGizmoOverlay", flags))
         {
-            ImGuizmo.BeginFrame();
+            // 3D 空間上のウェイポイント巡回ルートライン描画
+            if (waypoints != null && waypoints.Count > 0)
+            {
+                RenderWaypointsPath(waypoints, loopType, homePosition);
+            }
 
-            ImGuizmo.SetDrawlist();
-            ImGuizmo.Enable(true);
-            ImGuizmo.SetID((int)ImGui.GetID("CharacterSpawnGizmo"));
-            ImGuizmo.SetOrthographic(false);
+            if (selectedActor != null && selectedActor.IsSpawned && configuration.CurrentGizmoMode != GizmoMode.Select)
+            {
+                ImGuizmo.BeginFrame();
 
-            var vp = ImGui.GetWindowViewport();
-            ImGuizmo.SetRect(vp.Pos.X, vp.Pos.Y, vp.Size.X, vp.Size.Y);
+                ImGuizmo.SetDrawlist();
+                ImGuizmo.Enable(true);
+                ImGuizmo.SetID((int)ImGui.GetID("CharacterSpawnGizmo"));
+                ImGuizmo.SetOrthographic(false);
+
+                var vp = ImGui.GetWindowViewport();
+                ImGuizmo.SetRect(vp.Pos.X, vp.Pos.Y, vp.Size.X, vp.Size.Y);
 
             // ターゲットアクターの Transform 行列を構築 (Quaternion を用いて 180 度境界でのフリップ・ジンバルロックを完全に防止)
             var pos = selectedActor.Transform.Position;
@@ -196,5 +200,77 @@ public unsafe class GizmoRenderer
 
         ImGui.PopStyleVar();
         ImGui.PopStyleColor();
+    }
+
+    /// <summary>
+    /// 3D 空間上にウェイポイント巡回ルート（パスラインと番号ピン）を描画
+    /// </summary>
+    public void RenderWaypointsPath(IReadOnlyList<SceneActorWaypoint> waypoints, PatrolLoopType loopType, Vector3? homePosition = null)
+    {
+        if (waypoints == null || waypoints.Count == 0) return;
+
+        var drawList = ImGui.GetWindowDrawList();
+        var yellowLineCol = ImGui.GetColorU32(new Vector4(1.0f, 0.85f, 0.2f, 0.85f));
+        var loopLineCol = ImGui.GetColorU32(new Vector4(1.0f, 0.85f, 0.2f, 0.45f));
+        var homeLineCol = ImGui.GetColorU32(new Vector4(0.4f, 0.8f, 1.0f, 0.65f));
+        var circleFillCol = ImGui.GetColorU32(new Vector4(0.12f, 0.12f, 0.18f, 0.9f));
+        var circleBorderCol = ImGui.GetColorU32(new Vector4(1.0f, 0.85f, 0.2f, 1.0f));
+        var textCol = ImGui.GetColorU32(new Vector4(1.0f, 1.0f, 1.0f, 1.0f));
+
+        Vector2 prevScreenPos = Vector2.Zero;
+        bool hasPrev = false;
+
+        // ホーム位置から最初のウェイポイントへの接続線
+        if (homePosition.HasValue && gameGui.WorldToScreen(homePosition.Value, out var homeScreenPos))
+        {
+            if (gameGui.WorldToScreen(waypoints[0].Position, out var firstWpScreenPos))
+            {
+                drawList.AddLine(homeScreenPos, firstWpScreenPos, homeLineCol, 1.5f);
+            }
+        }
+
+        Vector2 firstScreenPos = Vector2.Zero;
+        bool hasFirst = false;
+
+        for (int i = 0; i < waypoints.Count; i++)
+        {
+            var wp = waypoints[i];
+            if (gameGui.WorldToScreen(wp.Position, out var screenPos))
+            {
+                if (!hasFirst)
+                {
+                    firstScreenPos = screenPos;
+                    hasFirst = true;
+                }
+
+                // 前の地点からの線
+                if (hasPrev)
+                {
+                    drawList.AddLine(prevScreenPos, screenPos, yellowLineCol, 2.5f);
+                }
+
+                // 地点マーカー (ピン)
+                float radius = 10f;
+                drawList.AddCircleFilled(screenPos, radius, circleFillCol);
+                drawList.AddCircle(screenPos, radius, circleBorderCol, 16, 2.0f);
+
+                string numStr = $"{i + 1}";
+                var textSize = ImGui.CalcTextSize(numStr);
+                drawList.AddText(new Vector2(screenPos.X - textSize.X * 0.5f, screenPos.Y - textSize.Y * 0.5f), textCol, numStr);
+
+                prevScreenPos = screenPos;
+                hasPrev = true;
+            }
+            else
+            {
+                hasPrev = false;
+            }
+        }
+
+        // Loop の場合、末尾から先頭へ線を結ぶ
+        if (loopType == PatrolLoopType.Loop && hasPrev && hasFirst && waypoints.Count > 1)
+        {
+            drawList.AddLine(prevScreenPos, firstScreenPos, loopLineCol, 1.5f);
+        }
     }
 }

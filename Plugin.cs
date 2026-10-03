@@ -44,6 +44,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly NamePlateController namePlateController;
     private readonly ActorManager actorManager;
     private readonly AnimationService animationService;
+    private readonly MovementService movementService;
     private readonly SceneManager sceneManager;
 
     private readonly GizmoRenderer gizmoRenderer;
@@ -74,7 +75,8 @@ public sealed class Plugin : IDalamudPlugin
         timelineManager = new TimelineManager(Log);
         headTrackingManager = new HeadTrackingManager(ObjectTable, Log);
         actorManager = new ActorManager(ClientState, ObjectTable, SigScanner, Log, timelineManager, headTrackingManager, glamourerIpc, penumbraIpc, logManager, mcdfParser, PluginInterface, customizePlusIpc, gameDataService, Framework);
-        sceneManager = new SceneManager(PluginInterface, ClientState, logManager, actorManager, Configuration, animationService);
+        movementService = new MovementService(Framework, ObjectTable, actorManager, animationService, Log, logManager);
+        sceneManager = new SceneManager(PluginInterface, ClientState, logManager, actorManager, Configuration, animationService, movementService);
         namePlateController = new NamePlateController(NamePlateGui, Log, () => actorManager.ActiveActors);
 
         // UI
@@ -133,9 +135,9 @@ public sealed class Plugin : IDalamudPlugin
         {
             WindowSystem.Draw();
 
-            // 3D Gizmo Overlay 描画 (SceneEditWindow または MainWindow プレビュー中のみアクティブ化)
+            // 3D Gizmo & Waypoints Overlay 描画 (SceneEditWindow または MainWindow プレビュー中のみアクティブ化)
             bool shouldDrawGizmo = sceneEditWindow.IsOpen || (mainWindow.IsOpen && actorManager.CurrentPreviewActor != null);
-            if (shouldDrawGizmo && Configuration.CurrentGizmoMode != GizmoMode.Select)
+            if (shouldDrawGizmo)
             {
                 var targetActor = stageTab.SelectedActor;
                 if (targetActor == null || !targetActor.IsSpawned || !targetActor.IsReady)
@@ -143,13 +145,29 @@ public sealed class Plugin : IDalamudPlugin
                     targetActor = actorManager.CurrentPreviewActor;
                 }
 
-                if (targetActor != null && targetActor.IsSpawned && targetActor.IsReady)
+                var curPlacement = sceneManager.SelectedPlacement;
+                var waypoints = curPlacement?.Movement?.Waypoints;
+                var loopType = curPlacement?.Movement?.LoopType ?? PatrolLoopType.Loop;
+                var homePos = curPlacement?.Position;
+
+                bool hasWaypoints = waypoints != null && waypoints.Count > 0;
+                bool canDrawGizmo = targetActor != null && targetActor.IsSpawned && targetActor.IsReady && Configuration.CurrentGizmoMode != GizmoMode.Select;
+
+                if (canDrawGizmo || hasWaypoints)
                 {
-                    gizmoRenderer.Render(targetActor, (newPos, newRot, newScale) =>
-                    {
-                        actorManager.UpdateActorTransform(targetActor, newPos, newRot, newScale);
-                        stageTab.SyncPlacementTransformFromGizmo(newPos, newRot, newScale);
-                    });
+                    gizmoRenderer.Render(
+                        canDrawGizmo ? targetActor : null,
+                        (newPos, newRot, newScale) =>
+                        {
+                            if (targetActor != null)
+                            {
+                                actorManager.UpdateActorTransform(targetActor, newPos, newRot, newScale);
+                                stageTab.SyncPlacementTransformFromGizmo(newPos, newRot, newScale);
+                            }
+                        },
+                        hasWaypoints ? waypoints : null,
+                        loopType,
+                        homePos);
                 }
             }
         }
@@ -187,6 +205,7 @@ public sealed class Plugin : IDalamudPlugin
         mainWindow.Dispose();
         sceneEditWindow.Dispose();
         namePlateController.Dispose();
+        movementService.Dispose();
         sceneManager.Dispose();
         actorManager.Dispose();
         animationService.Dispose();

@@ -82,6 +82,11 @@ public class SceneActorPlacement
     /// Phase 4: 接近時サウンド設定
     /// </summary>
     public SceneActorSoundConfig Sound { get; set; } = new();
+
+    /// <summary>
+    /// Step 2.2: 自律移動・パトロール・追従設定
+    /// </summary>
+    public SceneActorMovementConfig Movement { get; set; } = new();
 }
 
 /// <summary>
@@ -148,3 +153,62 @@ public class SceneHiddenAssetEntry
     public Vector3 Position { get; set; } = Vector3.Zero;
     public string Description { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// 自律移動モード
+/// </summary>
+public enum MovementMode
+{
+    None = 0,               // 静止
+    Patrol = 1,             // ウェイポイント巡回
+    FollowPlayer = 2,       // プレイヤー追従
+    PatrolAndFollow = 3     // 巡回＋プレイヤー接近時一時追従
+}
+
+/// <summary>
+/// 巡回ループ方式
+/// </summary>
+public enum PatrolLoopType
+{
+    Loop = 0,               // 循環 (A -> B -> C -> A ...)
+    PingPong = 1,           // 往復 (A -> B -> C -> B -> A ...)
+    Once = 2                // 片道 (A -> B -> C で停止)
+}
+
+/// <summary>
+/// 巡回ウェイポイント
+/// </summary>
+public class SceneActorWaypoint
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Vector3 Position { get; set; } = Vector3.Zero;
+    public float WaitSeconds { get; set; } = 0.0f; // 到着時の待機秒数
+    public ushort ActionTimelineId { get; set; } = 0; // 到着時のモーション (0=待機維持)
+    public string ActionTimelineKey { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Step 2.2: 自律移動・パトロール・追従設定
+/// </summary>
+public class SceneActorMovementConfig
+{
+    public MovementMode Mode { get; set; } = MovementMode.None;
+    public PatrolLoopType LoopType { get; set; } = PatrolLoopType.Loop;
+    public float Speed { get; set; } = 2.5f; // 移動速度 (m/s) [歩き=2.0, 駆け足=4.0, 走り=6.0]
+    public float TurnSpeed { get; set; } = 360.0f; // 旋回速度 (度/秒)
+    
+    // ウェイポイントリスト
+    public List<SceneActorWaypoint> Waypoints { get; set; } = new();
+
+    // 移動中モーション設定 (0=自動/未指定)
+    public ushort WalkTimelineId { get; set; } = 0;
+    public string WalkTimelineKey { get; set; } = string.Empty;
+
+    // プレイヤー接近追従 & テリトリー帰還設定
+    public float FollowTriggerDistance { get; set; } = 4.0f; // 接近検知距離
+    public float FollowStopDistance { get; set; } = 1.8f;    // 停止距離
+    public float MaxTerritoryDistance { get; set; } = 15.0f; // テリトリー限界距離 (ホームからの最大距離)
+    public bool ReturnToHome { get; set; } = true;          // 追従解除時にホーム/直前地点へ歩いて戻る
+}
+

@@ -2,7 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.1.81] - 2026-10-04
+## [0.1.82] - 2026-10-04
+### Added
+- **【Step 2.2】自律移動 AI ＆ パトロール・追従・復帰ルーチン統合 (`Models/SceneData.cs`, `Services/MovementService.cs`, `Managers/SceneManager.cs`, `Plugin.cs`, `UI/SceneEditWindow.cs`, `UI/GizmoRenderer.cs`)**:
+  - **自律移動エンジン基盤 (`Services/MovementService.cs`)**:
+    - `IFramework.Update` による滑らかな座標更新と向き（Yaw角度）の補間（自然な旋回）を実装。
+    - デルタタイムと速度に応じた前進、および到着判定・待機タイマーを搭載。
+    - ゲーム内の Puppet（COM スロット）に対してリアルタイムに座標を反映し、カクつきのないスムーズな歩行・走行を実現。
+  - **ウェイポイント巡回（パトロール移動）ルーチン**:
+    - 複数地点を結ぶ巡回ルート（`Loop` 循環、`PingPong` 往復、`Once` 片道）をサポート。
+    - 各地点での待機秒数（`WaitSeconds`）および到着時モーション再生（`ActionTimelineId`）を制御。
+  - **プレイヤー接近追従 ＆ ホーム自律帰還ステートマシン**:
+    - プレイヤーが接近した時（検知距離: 例 4.0m）に自キャラへ向かって歩み寄り、手前（停止距離: 例 1.8m）で立ち止まる追従ルーチン。
+    - プレイヤーが離れた場合や、初期位置（ホーム）からテリトリー限界（例: 15.0m）を超えた場合に、自動的に初期位置へ歩いて戻る安全帰還（Return to Home）ルーチンを実装。
+  - **Scene Edit UI「Movement」タブの新設**:
+    - 移動モード（静止 / 巡回 / 追従 / 巡回+追従）の選択。
+    - 移動速度スライダー（プリセット: 歩き 2.0m/s、駆け足 4.0m/s、走り 6.0m/s）と旋回速度設定。
+    - 「📍 自キャラ位置を追加」「📍 アクター位置を追加」ボタンによるワンクリックでのウェイポイント登録。
+    - ウェイポイント一覧（並び替え ▲▼、待機秒数編集、個別削除、全消去）。
+  - **3D 空間上での巡回パス・ピン可視化 (`UI/GizmoRenderer.cs`)**:
+    - 各ウェイポイント間を結ぶラインと、番号ピンマーカー（#1, #2...）をゲーム画面内にオーバーレイ描画。
+
+
 ### Improved
 - **LookAt（視線・目線追従）の有効距離（Distance）デフォルト拡大およびUI支援機能の新設 (`Models/SceneData.cs`, `Services/AnimationService.cs`, `UI/SceneEditWindow.cs`)**:
   - `LookAtMaxDistance` のデフォルト値を従来の `8.0m` から `15.0m` へ拡大。
